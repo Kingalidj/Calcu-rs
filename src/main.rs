@@ -129,7 +129,7 @@ impl BooleanAtom {
 impl Boolean for BooleanAtom {}
 impl_basic!(BooleanAtom);
 
-/// Calcurus version of [true], a singleton that can be accessed via [False]
+/// Calcurus version of [true], a singleton that can be accessed via [True]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BooleanTrue {
     base: Base,
@@ -151,6 +151,7 @@ impl From<BooleanTrue> for bool {
     }
 }
 
+/// Calcurus version of [false], a singleton that can be accessed via [False]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BooleanFalse {
     base: Base,
