@@ -26,4 +26,11 @@ jobs:
       run: cargo clippy --all-targets --all-features
       
     - name: Build docs
-      run: cargo doc --no-deps --document-private-items
+      run: cargo doc --document-private-items
+
+    - name: Deploy
+      uses: peaceiris/actions-gh-pages@v3
+      if: github.ref == 'refs/heads/main'
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./target/doc
