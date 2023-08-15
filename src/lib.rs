@@ -1,12 +1,15 @@
-#![allow(dead_code)]
+//! simple symbolic algebra system in rust
 
-use calcurus_internals::Inherited;
+#![warn(missing_docs)]
+#![allow(dead_code)]
 use core::fmt;
 use std::ops;
 
-use calcurus_macros::*;
+use calcurs_internals::Inherited;
+use calcurs_macros::*;
 
 #[derive(Clone, Copy, PartialEq)]
+/// All calcu-rs types have a field with this type
 pub struct Base {
     is_number: bool,
     is_atom: bool,
@@ -92,6 +95,7 @@ macro_rules! base {
     }
 }
 
+/// Implemented by all Calcurs types
 pub trait Basic: Inherited<Base> {}
 
 /// Instances of Application represent the result of applying an application of any type to any object
@@ -103,14 +107,15 @@ pub trait BooleanFunc: Application + Boolean {}
 /// A Boolean object is an object for which logic operations make sense
 pub trait Boolean: Basic {}
 
-/// Ambiguous Boolean
-/// same structure as BooleanTrue / BooleanFalse
+/// Ambiguous Boolean: same structure as BooleanTrue / BooleanFalse
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[inherit(Base)]
 pub struct BooleanAtom {}
 
 impl BooleanAtom {
-    pub const fn default() -> Self {
+    /// create a new [BooleanAtom]
+
+    pub const fn new() -> Self {
         let base = base!(is_commutative = true, is_boolean = true, is_atom = true);
         BooleanAtom { base }
     }
@@ -128,7 +133,8 @@ impl Basic for BooleanTrue {}
 impl Boolean for BooleanTrue {}
 
 impl BooleanTrue {
-    const fn new() -> Self {
+    /// create a new [BooleanTrue]
+    pub const fn new() -> Self {
         let base = base!(is_commutative = true, is_boolean = true, is_atom = true);
         BooleanTrue { base }
     }
@@ -149,7 +155,8 @@ impl Basic for BooleanFalse {}
 impl Boolean for BooleanFalse {}
 
 impl BooleanFalse {
-    const fn new() -> Self {
+    /// create a new [BooleanFalse]
+    pub const fn new() -> Self {
         let base = base!(is_commutative = true, is_boolean = true, is_atom = true);
         BooleanFalse { base }
     }
@@ -161,7 +168,7 @@ impl From<BooleanFalse> for bool {
     }
 }
 
-/// Logical AND function
+/// Logical AND function.
 /// The [ops::BitAnd] operator is overloaded for convenience
 #[inherit(Base)]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -180,6 +187,7 @@ where
     T: Boolean,
     U: Boolean,
 {
+    /// create a new [And<T, U>]
     pub const fn new(left: T, right: U) -> Self {
         let base = base!(is_commutative = true, is_boolean = true);
         And { base, left, right }
@@ -218,7 +226,7 @@ impl<T: Boolean, U: Boolean> ops::BitAnd<U> for And<T, U> {
     }
 }
 
-/// Calcurus version of [true]
+/// Calcurus version of [false]
 #[allow(non_upper_case_globals)]
 pub static False: BooleanFalse = BooleanFalse::new();
 /// Calcurus version of [true]
