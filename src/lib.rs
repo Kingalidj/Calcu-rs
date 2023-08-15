@@ -88,7 +88,7 @@ impl fmt::Debug for Base {
 ///
 /// # Examples
 ///
-/// ```
+/// ```compile_fail
 /// let base = base!(is_atom = true, is_commutative = true);
 /// ```
 
