@@ -11,12 +11,48 @@ env:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v3
+    
     - name: Build
       run: cargo build --verbose
+      
     - name: Run tests
       run: cargo test --verbose
+      
+    - name: Run Clippy
+      run: cargo clippy --all-targets --all-features
+  
+  deploy:
+    runs-on: ubuntu-22.04
+    needs: build
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Build docs
+      run: 
+        cargo doc --no-deps -p calcu-rs -p internals -p macros --document-private-items
+        
+        echo '
+        <!DOCTYPE html>
+        <html>
+          <head>
+          <meta http-equiv="refresh"content="0;url=calcu_rs/index.html">
+          </head>
+        <body>
+          <p>If you are not redirected, <a href="calcu_rs/index.html">click here </a>. </p>
+        </body>
+        </html>' > target/doc/index.html
+
+    - name: Deploy
+      uses: peaceiris/actions-gh-pages@v3
+      if: github.ref == 'refs/heads/main'
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_branch: docs  
+        publish_dir: ./target/doc      

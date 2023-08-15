@@ -9,7 +9,7 @@ use calcurs_internals::Inherited;
 use calcurs_macros::*;
 
 #[derive(Clone, Copy, PartialEq)]
-/// All calcu-rs types have a field with this type
+/// All calcu-rs types have the field { base: [Base] }
 pub struct Base {
     is_number: bool,
     is_atom: bool,
@@ -83,6 +83,14 @@ impl fmt::Debug for Base {
         write!(f, "Base {{...}}")
     }
 }
+
+/// a simple macro for generating [Base] structs with
+///
+/// # Examples
+///
+/// ```compile_fail
+/// let base = base!(is_atom = true, is_commutative = true);
+/// ```
 
 macro_rules! base {
     ($($field:ident = $value:expr),* $(,)?) => {
@@ -194,13 +202,13 @@ where
     }
 }
 
-// impl<U: Boolean> ops::BitAnd<U> for BooleanAtom {
-//     type Output = And<Self, U>;
+impl<U: Boolean> ops::BitAnd<U> for BooleanAtom {
+    type Output = And<Self, U>;
 
-//     fn bitand(self, rhs: U) -> Self::Output {
-//         And::new(self, rhs)
-//     }
-// }
+    fn bitand(self, rhs: U) -> Self::Output {
+        And::new(self, rhs)
+    }
+}
 
 impl<U: Boolean> ops::BitAnd<U> for BooleanTrue {
     type Output = And<Self, U>;
