@@ -35,7 +35,19 @@ jobs:
     - uses: actions/checkout@v3
 
     - name: Build docs
-      run: cargo doc --no-deps --package internals --package macros --document-private-items
+      run: 
+        cargo doc --no-deps --package internals --package macros --document-private-items
+        
+        echo '
+        <!DOCTYPE html>
+        <html>
+          <head>
+          <meta http-equiv="refresh"content="0;url=calcu_rs/index.html">
+          </head>
+        <body>
+          <p>If you are not redirected, <a href="calcu_rs/index.html">click here </a>. </p>
+        </body>
+        </html>' > target/doc/index.html
 
     - name: Deploy
       uses: peaceiris/actions-gh-pages@v3
