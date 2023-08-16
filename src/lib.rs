@@ -42,6 +42,26 @@ pub struct Base {
     is_commutative: bool,
 }
 
+define_categories! {
+    Boolean => is_boolean & is_commutative,
+}
+
+/*
+
+categroy! {
+    Boolean => is_boolean + is_commutative,
+    BooleanFunc => Application + Boolean + is_foo,
+}
+
+#[in_category(Boolean, BooleanFunc)]
+
+pub trait BooleanFunc: Application + Boolean {}
+
+then build base struct
+implement traits?
+
+*/
+
 impl Base {
     const fn default() -> Self {
         Base {
@@ -190,6 +210,7 @@ impl<T, U> Application for And<T, U> {}
 impl<T, U> BooleanFunc for And<T, U> {}
 impl<T, U> Basic for And<T, U> {}
 
+// TODO: use category to generate new func
 impl<T, U> And<T, U>
 where
     T: Boolean,
