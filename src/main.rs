@@ -2,5 +2,6 @@ extern crate calcu_rs;
 use calcu_rs::*;
 
 fn main() {
-    println!("{:?}", True & False);
+    let b = BooleanAtom {};
+    let a: Box<dyn CalcrsType> = Box::new(b);
 }
