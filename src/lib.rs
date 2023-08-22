@@ -1,10 +1,10 @@
 //! simple symbolic algebra system in rust
 
-use calcrs_internals::Inherited;
+use calcurs_internals::Inherited;
 use core::fmt::Debug;
 use std::ops;
 
-use calcrs_macros::*;
+use calcurs_macros::*;
 
 #[derive(Default, Clone, Copy, PartialEq)]
 pub struct Base {
@@ -93,18 +93,16 @@ macro_rules! base {
     }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum CalcrsType {
-    BooleanAtom(BooleanAtom),
+pub enum CalcursType {
     BooleanTrue(BooleanTrue),
     BooleanFalse(BooleanFalse),
     And(And),
 }
 
-macro_rules! map_calcrs_type {
+macro_rules! map_calcurs_type {
     ($e: expr, $func: expr) => {{
-        use CalcrsType::*;
+        use CalcursType::*;
         match $e {
-            BooleanAtom(ref x) => $func(x),
             BooleanTrue(ref x) => $func(x),
             BooleanFalse(ref x) => $func(x),
             And(ref x) => $func(x),
@@ -112,12 +110,11 @@ macro_rules! map_calcrs_type {
     }};
 }
 
-impl Inherited<Base> for CalcrsType {
+impl Inherited<Base> for CalcursType {
     fn base(&self) -> &Base {
-        use CalcrsType::*;
+        use CalcursType::*;
 
         match self {
-            BooleanAtom(x) => x.base(),
             BooleanTrue(x) => x.base(),
             BooleanFalse(x) => x.base(),
             And(x) => x.base(),
@@ -125,34 +122,25 @@ impl Inherited<Base> for CalcrsType {
     }
 }
 
-pub type Eval = CalcrsType;
+pub type Eval = CalcursType;
 
 /// this is only used, because innert attribute macros are unstable
-#[init_calcrs_macro_scope]
+#[init_calcurs_macro_scope]
 mod __ {
 
-    pub trait Basic: Debug + Clone + PartialEq + Into<CalcrsType> + Inherited<Base> {
-        fn eval(&self) -> CalcrsType {
+    pub trait Basic: Debug + Clone + PartialEq + Into<CalcursType> + Inherited<Base> {
+        fn eval(&self) -> CalcursType {
             self.clone().into()
         }
     }
+
+    // #[calcurs_trait(is_boolean = true)]
     pub trait Boolean: Basic {}
     pub trait Application: Basic {}
-    pub trait BooleanFunc: Boolean + Application {}
+    pub trait BooleanAtom: Boolean {}
+    pub trait BooleanFunc: BooleanAtom + Application {}
 
-    #[calcrs_type]
-    #[derive(Debug, Default, Clone, Copy, PartialEq)]
-    pub struct BooleanAtom {}
-    impl Basic for BooleanAtom {}
-    impl Boolean for BooleanAtom {}
-
-    impl From<BooleanAtom> for CalcrsType {
-        fn from(value: BooleanAtom) -> Self {
-            CalcrsType::BooleanAtom(value)
-        }
-    }
-
-    #[calcrs_type]
+    #[calcurs_type]
     #[derive(Debug, Clone, Default, Copy, PartialEq)]
     pub struct BooleanTrue {}
     impl Basic for BooleanTrue {}
@@ -165,13 +153,13 @@ mod __ {
         }
     }
 
-    impl From<BooleanTrue> for CalcrsType {
+    impl From<BooleanTrue> for CalcursType {
         fn from(value: BooleanTrue) -> Self {
-            CalcrsType::BooleanTrue(value)
+            CalcursType::BooleanTrue(value)
         }
     }
 
-    #[calcrs_type]
+    #[calcurs_type]
     #[derive(Debug, Clone, Default, Copy, PartialEq)]
     pub struct BooleanFalse {}
     impl Basic for BooleanFalse {}
@@ -184,17 +172,17 @@ mod __ {
         }
     }
 
-    impl From<BooleanFalse> for CalcrsType {
+    impl From<BooleanFalse> for CalcursType {
         fn from(value: BooleanFalse) -> Self {
-            CalcrsType::BooleanFalse(value)
+            CalcursType::BooleanFalse(value)
         }
     }
 
-    #[calcrs_type]
+    #[calcurs_type]
     #[derive(Debug, Clone, PartialEq)]
     pub struct And {
-        left: Box<CalcrsType>,
-        right: Box<CalcrsType>,
+        left: Box<CalcursType>,
+        right: Box<CalcursType>,
     }
 
     impl And {
@@ -208,9 +196,9 @@ mod __ {
     }
 
     impl Basic for And {
-        fn eval(&self) -> CalcrsType {
-            let lhs = map_calcrs_type!(*self.left, Basic::eval);
-            let rhs = map_calcrs_type!(*self.right, Basic::eval);
+        fn eval(&self) -> CalcursType {
+            let lhs = map_calcurs_type!(*self.left, Basic::eval);
+            let rhs = map_calcurs_type!(*self.right, Basic::eval);
 
             if lhs.base().is_negative.is_none() || rhs.base().is_negative.is_none() {
                 return self.clone().into();
@@ -226,12 +214,13 @@ mod __ {
         }
     }
     impl Boolean for And {}
+    impl BooleanAtom for And {}
     impl Application for And {}
     impl BooleanFunc for And {}
 
-    impl From<And> for CalcrsType {
+    impl From<And> for CalcursType {
         fn from(value: And) -> Self {
-            CalcrsType::And(value)
+            CalcursType::And(value)
         }
     }
 }
@@ -274,6 +263,6 @@ mod test {
     #[test]
     fn boolean() {
         assert_eq!(And::new(True, False), True & False);
-        assert_eq!(CalcrsType::from(False), (True & False).eval());
+        assert_eq!(CalcursType::from(False), (True & False).eval());
     }
 }

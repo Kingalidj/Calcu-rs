@@ -60,7 +60,10 @@ pub fn inherit(attr: proc::TokenStream, item: proc::TokenStream) -> proc::TokenS
 }
 
 #[proc_macro_attribute]
-pub fn init_calcrs_macro_scope(_: proc::TokenStream, item: proc::TokenStream) -> proc::TokenStream {
+pub fn init_calcurs_macro_scope(
+    _: proc::TokenStream,
+    item: proc::TokenStream,
+) -> proc::TokenStream {
     let input: syn::ItemMod = parse_macro_input!(item as syn::ItemMod);
 
     let mut stream = TokenStream::new();
@@ -71,10 +74,10 @@ pub fn init_calcrs_macro_scope(_: proc::TokenStream, item: proc::TokenStream) ->
 
     let items = input.content.unwrap().1;
 
-    let mut calcrs_types: Vec<Ident> = vec![];
+    let mut calcurs_types: Vec<Ident> = vec![];
 
     items.into_iter().for_each(|mut item: Item| {
-        let mut calcrs_type = None;
+        let mut calcurs_type = None;
 
         match item {
             Item::Struct(ItemStruct {
@@ -90,15 +93,15 @@ pub fn init_calcrs_macro_scope(_: proc::TokenStream, item: proc::TokenStream) ->
 
                         let macro_name = &p.segments.last().unwrap().ident;
 
-                        if macro_name == "calcrs_type" {
-                            calcrs_type = Some(index);
-                            calcrs_types.push(ident.clone());
+                        if macro_name == "calcurs_type" {
+                            calcurs_type = Some(index);
+                            calcurs_types.push(ident.clone());
                             break;
                         }
                     }
                 }
 
-                if let Some(indx) = calcrs_type {
+                if let Some(indx) = calcurs_type {
                     attrs.remove(indx);
 
                     let inherit_attr = quote!(#[inherit(Base)]);
@@ -113,7 +116,7 @@ pub fn init_calcrs_macro_scope(_: proc::TokenStream, item: proc::TokenStream) ->
         item.to_tokens(&mut stream);
     });
 
-    calcrs_types
+    calcurs_types
         .iter()
         .for_each(|typ| println!("{:?}", typ.to_string()));
 
@@ -121,10 +124,10 @@ pub fn init_calcrs_macro_scope(_: proc::TokenStream, item: proc::TokenStream) ->
 }
 
 #[proc_macro_attribute]
-pub fn calcrs_type(_: proc::TokenStream, _: proc::TokenStream) -> proc::TokenStream {
+pub fn calcurs_type(_: proc::TokenStream, _: proc::TokenStream) -> proc::TokenStream {
     return syn::Error::new(
         Span::call_site().into(),
-        "called attribute calcrs_type outside a calcrs_scope",
+        "called attribute calcurs_type outside a calcurs_scope",
     )
     .into_compile_error()
     .into();
