@@ -2,5 +2,6 @@ extern crate calcu_rs;
 use calcu_rs::*;
 
 fn main() {
-    let a = True;
+    println!("{:?}", True & False);
+    println!("{:?}", (True & False).eval());
 }
