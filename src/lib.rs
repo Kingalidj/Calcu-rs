@@ -131,7 +131,7 @@ pub type Eval = CalcrsType;
 #[init_calcrs_macro_scope]
 mod __ {
 
-    pub trait Basic: Debug + Clone + Into<CalcrsType> + Inherited<Base> {
+    pub trait Basic: Debug + Clone + PartialEq + Into<CalcrsType> + Inherited<Base> {
         fn eval(&self) -> CalcrsType {
             self.clone().into()
         }
@@ -140,7 +140,7 @@ mod __ {
     pub trait Application: Basic {}
     pub trait BooleanFunc: Boolean + Application {}
 
-    #[inherit(Base)]
+    #[calcrs_type]
     #[derive(Debug, Default, Clone, Copy, PartialEq)]
     pub struct BooleanAtom {}
     impl Basic for BooleanAtom {}
@@ -152,7 +152,7 @@ mod __ {
         }
     }
 
-    #[inherit(Base)]
+    #[calcrs_type]
     #[derive(Debug, Clone, Default, Copy, PartialEq)]
     pub struct BooleanTrue {}
     impl Basic for BooleanTrue {}
@@ -171,7 +171,7 @@ mod __ {
         }
     }
 
-    #[inherit(Base)]
+    #[calcrs_type]
     #[derive(Debug, Clone, Default, Copy, PartialEq)]
     pub struct BooleanFalse {}
     impl Basic for BooleanFalse {}
@@ -190,7 +190,7 @@ mod __ {
         }
     }
 
-    #[inherit(Base)]
+    #[calcrs_type]
     #[derive(Debug, Clone, PartialEq)]
     pub struct And {
         left: Box<CalcrsType>,
@@ -265,3 +265,15 @@ pub static False: BooleanFalse = BooleanFalse::new();
 
 #[allow(non_upper_case_globals)]
 pub static True: BooleanTrue = BooleanTrue::new();
+
+#[cfg(test)]
+mod test {
+
+    use crate::*;
+
+    #[test]
+    fn boolean() {
+        assert_eq!(And::new(True, False), True & False);
+        assert_eq!(CalcrsType::from(False), (True & False).eval());
+    }
+}

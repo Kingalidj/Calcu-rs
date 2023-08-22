@@ -1,13 +1,14 @@
-use proc_macro2::{Ident, TokenStream};
+use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote, ToTokens};
-use syn::{parse::Parser, parse_macro_input, Field, FieldsNamed};
+use syn::{parse::Parser, parse_macro_input, Field, FieldsNamed, Item, ItemStruct, Meta};
 
 use proc_macro_crate::{crate_name, FoundCrate};
 
 extern crate proc_macro as proc;
 
 fn import_crate(name: &str) -> TokenStream {
-    let found_crate = crate_name(name).expect(&format!("{name} is not present in Cargo.toml"));
+    let found_crate =
+        crate_name(name).unwrap_or_else(|_| panic!("{name} is not present in Cargo.toml"));
 
     match found_crate {
         FoundCrate::Itself => quote!(crate),
@@ -64,10 +65,67 @@ pub fn init_calcrs_macro_scope(_: proc::TokenStream, item: proc::TokenStream) ->
 
     let mut stream = TokenStream::new();
 
-    input.content.map(|x| {
-        x.1.into_iter()
-            .for_each(|item: syn::Item| item.to_tokens(&mut stream))
+    if input.content.is_none() {
+        return stream.into();
+    }
+
+    let items = input.content.unwrap().1;
+
+    let mut calcrs_types: Vec<Ident> = vec![];
+
+    items.into_iter().for_each(|mut item: Item| {
+        let mut calcrs_type = None;
+
+        match item {
+            Item::Struct(ItemStruct {
+                ref ident,
+                ref mut attrs,
+                ..
+            }) => {
+                for (index, attr) in attrs.iter().enumerate() {
+                    if let Meta::Path(ref p) = attr.meta {
+                        if p.segments.is_empty() {
+                            continue;
+                        }
+
+                        let macro_name = &p.segments.last().unwrap().ident;
+
+                        if macro_name == "calcrs_type" {
+                            calcrs_type = Some(index);
+                            calcrs_types.push(ident.clone());
+                            break;
+                        }
+                    }
+                }
+
+                if let Some(indx) = calcrs_type {
+                    attrs.remove(indx);
+
+                    let inherit_attr = quote!(#[inherit(Base)]);
+
+                    let attr = &syn::Attribute::parse_outer.parse2(inherit_attr).unwrap()[0];
+                    attrs.insert(0, attr.clone());
+                }
+            }
+            _ => (),
+        }
+
+        item.to_tokens(&mut stream);
     });
 
+    calcrs_types
+        .iter()
+        .for_each(|typ| println!("{:?}", typ.to_string()));
+
     stream.into()
+}
+
+#[proc_macro_attribute]
+pub fn calcrs_type(_: proc::TokenStream, _: proc::TokenStream) -> proc::TokenStream {
+    return syn::Error::new(
+        Span::call_site().into(),
+        "called attribute calcrs_type outside a calcrs_scope",
+    )
+    .into_compile_error()
+    .into();
 }
