@@ -6,39 +6,6 @@ use std::ops;
 
 use calcurs_macros::*;
 
-#[derive(Default, Clone, Copy, PartialEq)]
-pub struct Base {
-    is_number: bool,
-    is_atom: bool,
-    is_symbol: bool,
-    is_function: bool,
-    is_add: bool,
-    is_mul: bool,
-    is_pow: bool,
-    is_float: bool,
-    is_rational: bool,
-    is_integer: bool,
-    is_numbersymbol: bool,
-    is_order: bool,
-    is_derivative: bool,
-    is_piecewise: bool,
-    is_poly: bool,
-    is_algebraicnumber: bool,
-    is_relational: bool,
-    is_equality: bool,
-    is_boolean: bool,
-    is_not: bool,
-    is_matrix: bool,
-    is_vector: bool,
-    is_point: bool,
-    is_matadd: bool,
-    is_matmul: Option<bool>,
-    is_real: Option<bool>,
-    is_zero: Option<bool>,
-    is_negative: Option<bool>,
-    is_commutative: Option<bool>,
-}
-
 impl Base {
     pub const fn new() -> Self {
         Base {
@@ -82,15 +49,15 @@ impl Debug for Base {
 }
 
 macro_rules! base {
-        ($($field:ident = $value:expr),* $(,)?) => {
-            Base {
-                $(
-                    $field: $value,
-                )*
-            ..Base::new()
-            }
-        }
+    ($($field:ident = $value:expr),* $(,)?) => {
+        Base {
+            $(
+                $field: $value,
+            )*
+        ..Base::new()
     }
+}
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CalcursType {
@@ -124,9 +91,42 @@ impl Inherited<Base> for CalcursType {
 
 pub type Eval = CalcursType;
 
-/// this is only used, because innert attribute macros are unstable
 #[init_calcurs_macro_scope]
 mod __ {
+
+    #[calcurs_base]
+    #[derive(Default, Clone, Copy, PartialEq)]
+    pub struct Base {
+        is_number: bool,
+        is_atom: bool,
+        is_symbol: bool,
+        is_function: bool,
+        is_add: bool,
+        is_mul: bool,
+        is_pow: bool,
+        is_float: bool,
+        is_rational: bool,
+        is_integer: bool,
+        is_numbersymbol: bool,
+        is_order: bool,
+        is_derivative: bool,
+        is_piecewise: bool,
+        is_poly: bool,
+        is_algebraicnumber: bool,
+        is_relational: bool,
+        is_equality: bool,
+        is_boolean: bool,
+        is_not: bool,
+        is_matrix: bool,
+        is_vector: bool,
+        is_point: bool,
+        is_matadd: bool,
+        is_matmul: Option<bool>,
+        is_real: Option<bool>,
+        is_zero: Option<bool>,
+        is_negative: Option<bool>,
+        is_commutative: Option<bool>,
+    }
 
     pub trait Basic: Debug + Clone + PartialEq + Into<CalcursType> + Inherited<Base> {
         fn eval(&self) -> CalcursType {
