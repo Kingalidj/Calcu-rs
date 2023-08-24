@@ -66,16 +66,16 @@ pub enum CalcursType {
     And(And),
 }
 
-macro_rules! map_calcurs_type {
-    ($e: expr, $func: expr) => {{
-        use CalcursType::*;
-        match $e {
-            BooleanTrue(ref x) => $func(x),
-            BooleanFalse(ref x) => $func(x),
-            And(ref x) => $func(x),
-        }
-    }};
-}
+// macro_rules! map_calcurs_type {
+//     ($e: expr, $func: expr) => {{
+//         use CalcursType::*;
+//         match $e {
+//             BooleanTrue(ref x) => $func(x),
+//             BooleanFalse(ref x) => $func(x),
+//             And(ref x) => $func(x),
+//         }
+//     }};
+// }
 
 impl Inherited<Base> for CalcursType {
     fn base(&self) -> &Base {
@@ -93,6 +93,7 @@ pub type Eval = CalcursType;
 
 #[init_calcurs_macro_scope]
 mod __ {
+    use std::any::Any;
 
     #[calcurs_base]
     #[derive(Default, Clone, Copy, PartialEq)]
@@ -128,14 +129,113 @@ mod __ {
         is_commutative: Option<bool>,
     }
 
-    pub trait Basic: Debug + Clone + PartialEq + Into<CalcursType> + Inherited<Base> {
-        fn eval(&self) -> CalcursType {
+    pub trait DynBasic: Debug {
+        fn dyn_clone(&self) -> Box<dyn Basic>;
+        fn calcrs_type(&self) -> CalcursType;
+        fn as_any(&self) -> &dyn Any;
+        fn dyn_eq(&self, _: &dyn Basic) -> bool;
+    }
+
+    impl<T: Basic + Clone + Into<CalcursType> + PartialEq + 'static> DynBasic for T {
+        fn dyn_clone(&self) -> Box<dyn Basic> {
+            Box::new(self.clone())
+        }
+
+        fn calcrs_type(&self) -> CalcursType {
             self.clone().into()
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn dyn_eq(&self, other: &dyn Basic) -> bool {
+            DynBasic::as_any(other)
+                .downcast_ref::<T>()
+                .map_or(false, |x| self == x)
+        }
+    }
+
+    impl Clone for Box<dyn Basic> {
+        fn clone(&self) -> Box<dyn Basic> {
+            self.dyn_clone()
+        }
+    }
+
+    impl Into<CalcursType> for Box<dyn Basic> {
+        fn into(self) -> CalcursType {
+            self.calcrs_type()
+        }
+    }
+
+    impl PartialEq for dyn Basic {
+        fn eq(&self, other: &dyn Basic) -> bool {
+            self.dyn_eq(other)
+        }
+    }
+
+    // pub trait Basic: Debug + Clone + Into<CalcursType> + Inherited<Base> {
+    pub trait Basic: DynBasic + Inherited<Base> {
+        fn eval_impl(&self) -> Box<dyn Basic> {
+            self.dyn_clone()
+        }
+
+        fn eval(&self) -> CalcursType {
+            self.eval_impl().into()
+        }
+    }
+
+    pub trait DynBoolean: Debug {
+        fn dyn_clone(&self) -> Box<dyn Boolean>;
+        fn calcrs_type(&self) -> CalcursType;
+        fn as_any(&self) -> &dyn Any;
+        fn dyn_eq(&self, _: &dyn Boolean) -> bool;
+    }
+
+    impl<T: Boolean + Clone + Into<CalcursType> + PartialEq + 'static> DynBoolean for T {
+        fn dyn_clone(&self) -> Box<dyn Boolean> {
+            Box::new(self.clone())
+        }
+
+        fn calcrs_type(&self) -> CalcursType {
+            self.clone().into()
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn dyn_eq(&self, other: &dyn Boolean) -> bool {
+            DynBoolean::as_any(other)
+                .downcast_ref::<T>()
+                .map_or(false, |x| self == x)
+        }
+    }
+
+    impl Clone for Box<dyn Boolean> {
+        fn clone(&self) -> Box<dyn Boolean> {
+            DynBoolean::dyn_clone(self.as_ref())
+        }
+    }
+
+    impl PartialEq for dyn Boolean {
+        fn eq(&self, other: &dyn Boolean) -> bool {
+            DynBoolean::dyn_eq(self, other)
+        }
+    }
+
+    impl Into<CalcursType> for Box<dyn Boolean> {
+        fn into(self) -> CalcursType {
+            DynBoolean::calcrs_type(self.as_ref())
         }
     }
 
     // #[calcurs_trait(is_boolean = true)]
-    pub trait Boolean: Basic {}
+    pub trait Boolean: DynBoolean + Basic {
+        fn eval_impl(&self) -> Box<dyn Boolean> {
+            DynBoolean::dyn_clone(self)
+        }
+    }
     pub trait Application: Basic {}
     pub trait BooleanAtom: Boolean {}
     pub trait BooleanFunc: BooleanAtom + Application {}
@@ -179,41 +279,46 @@ mod __ {
     }
 
     #[calcurs_type]
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Debug, Clone)]
     pub struct And {
-        left: Box<CalcursType>,
-        right: Box<CalcursType>,
+        left: Box<dyn Boolean>,
+        right: Box<dyn Boolean>,
+    }
+
+    impl PartialEq for And {
+        fn eq(&self, other: &And) -> bool {
+            self.left.as_ref() == other.left.as_ref() && self.right.as_ref() == other.right.as_ref()
+        }
     }
 
     impl And {
         pub fn new(lhs: impl Boolean, rhs: impl Boolean) -> Self {
             And {
                 base: Default::default(),
-                left: Box::new(lhs.into()),
-                right: Box::new(rhs.into()),
+                left: DynBoolean::dyn_clone(&rhs),
+                right: DynBoolean::dyn_clone(&lhs),
             }
         }
     }
 
     impl Basic for And {
         fn eval(&self) -> CalcursType {
-            let lhs = map_calcurs_type!(*self.left, Basic::eval);
-            let rhs = map_calcurs_type!(*self.right, Basic::eval);
+            Basic::eval_impl(Boolean::eval_impl(self).as_ref()).into()
+        }
+    }
 
-            if lhs.base().is_negative.is_none() || rhs.base().is_negative.is_none() {
-                return self.clone().into();
-            }
+    impl Boolean for And {
+        fn eval_impl(&self) -> Box<dyn Boolean> {
+            let lhs = Boolean::eval_impl(self.left.as_ref());
+            let rhs = Boolean::eval_impl(self.right.as_ref());
 
-            let lhs = lhs.base().is_negative.unwrap();
-            let rhs = rhs.base().is_negative.unwrap();
-
-            match lhs && rhs {
-                true => True.into(),
-                false => False.into(),
+            match lhs == rhs {
+                true => DynBoolean::dyn_clone(&True),
+                false => DynBoolean::dyn_clone(&False),
             }
         }
     }
-    impl Boolean for And {}
+
     impl BooleanAtom for And {}
     impl Application for And {}
     impl BooleanFunc for And {}
