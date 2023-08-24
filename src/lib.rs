@@ -66,33 +66,10 @@ pub enum CalcursType {
     And(And),
 }
 
-// macro_rules! map_calcurs_type {
-//     ($e: expr, $func: expr) => {{
-//         use CalcursType::*;
-//         match $e {
-//             BooleanTrue(ref x) => $func(x),
-//             BooleanFalse(ref x) => $func(x),
-//             And(ref x) => $func(x),
-//         }
-//     }};
-// }
-
-impl Inherited<Base> for CalcursType {
-    fn base(&self) -> &Base {
-        use CalcursType::*;
-
-        match self {
-            BooleanTrue(x) => x.base(),
-            BooleanFalse(x) => x.base(),
-            And(x) => x.base(),
-        }
-    }
-}
-
 pub type Eval = CalcursType;
 
 #[init_calcurs_macro_scope]
-mod __ {
+mod scope {
     use std::any::Any;
 
     #[calcurs_base]
@@ -129,55 +106,29 @@ mod __ {
         is_commutative: Option<bool>,
     }
 
-    pub trait DynBasic: Debug {
-        fn dyn_clone(&self) -> Box<dyn Basic>;
-        fn calcrs_type(&self) -> CalcursType;
-        fn as_any(&self) -> &dyn Any;
-        fn dyn_eq(&self, _: &dyn Basic) -> bool;
+    pub trait IsCalcursType {
+        fn as_calcrs_type(&self) -> CalcursType;
     }
 
-    impl<T: Basic + Clone + Into<CalcursType> + PartialEq + 'static> DynBasic for T {
-        fn dyn_clone(&self) -> Box<dyn Basic> {
-            Box::new(self.clone())
-        }
-
-        fn calcrs_type(&self) -> CalcursType {
+    impl<T> IsCalcursType for T
+    where
+        T: Basic + Clone + Into<CalcursType> + PartialEq + 'static,
+    {
+        fn as_calcrs_type(&self) -> CalcursType {
             self.clone().into()
-        }
-
-        fn as_any(&self) -> &dyn Any {
-            self
-        }
-
-        fn dyn_eq(&self, other: &dyn Basic) -> bool {
-            DynBasic::as_any(other)
-                .downcast_ref::<T>()
-                .map_or(false, |x| self == x)
-        }
-    }
-
-    impl Clone for Box<dyn Basic> {
-        fn clone(&self) -> Box<dyn Basic> {
-            self.dyn_clone()
         }
     }
 
     impl Into<CalcursType> for Box<dyn Basic> {
         fn into(self) -> CalcursType {
-            self.calcrs_type()
+            self.as_calcrs_type()
         }
     }
 
-    impl PartialEq for dyn Basic {
-        fn eq(&self, other: &dyn Basic) -> bool {
-            self.dyn_eq(other)
-        }
-    }
-
-    // pub trait Basic: Debug + Clone + Into<CalcursType> + Inherited<Base> {
-    pub trait Basic: DynBasic + Inherited<Base> {
+    #[dyn_trait]
+    pub trait Basic: Debug + IsCalcursType + Inherited<Base> {
         fn eval_impl(&self) -> Box<dyn Basic> {
-            self.dyn_clone()
+            DynBasic::dyn_clone(self)
         }
 
         fn eval(&self) -> CalcursType {
@@ -185,59 +136,21 @@ mod __ {
         }
     }
 
-    pub trait DynBoolean: Debug {
-        fn dyn_clone(&self) -> Box<dyn Boolean>;
-        fn calcrs_type(&self) -> CalcursType;
-        fn as_any(&self) -> &dyn Any;
-        fn dyn_eq(&self, _: &dyn Boolean) -> bool;
-    }
-
-    impl<T: Boolean + Clone + Into<CalcursType> + PartialEq + 'static> DynBoolean for T {
-        fn dyn_clone(&self) -> Box<dyn Boolean> {
-            Box::new(self.clone())
-        }
-
-        fn calcrs_type(&self) -> CalcursType {
-            self.clone().into()
-        }
-
-        fn as_any(&self) -> &dyn Any {
-            self
-        }
-
-        fn dyn_eq(&self, other: &dyn Boolean) -> bool {
-            DynBoolean::as_any(other)
-                .downcast_ref::<T>()
-                .map_or(false, |x| self == x)
-        }
-    }
-
-    impl Clone for Box<dyn Boolean> {
-        fn clone(&self) -> Box<dyn Boolean> {
-            DynBoolean::dyn_clone(self.as_ref())
-        }
-    }
-
-    impl PartialEq for dyn Boolean {
-        fn eq(&self, other: &dyn Boolean) -> bool {
-            DynBoolean::dyn_eq(self, other)
-        }
-    }
-
-    impl Into<CalcursType> for Box<dyn Boolean> {
-        fn into(self) -> CalcursType {
-            DynBoolean::calcrs_type(self.as_ref())
-        }
-    }
-
     // #[calcurs_trait(is_boolean = true)]
-    pub trait Boolean: DynBoolean + Basic {
+    #[dyn_trait]
+    pub trait Boolean: Basic {
         fn eval_impl(&self) -> Box<dyn Boolean> {
             DynBoolean::dyn_clone(self)
         }
     }
+
+    #[dyn_trait]
     pub trait Application: Basic {}
+
+    #[dyn_trait]
     pub trait BooleanAtom: Boolean {}
+
+    #[dyn_trait]
     pub trait BooleanFunc: BooleanAtom + Application {}
 
     #[calcurs_type]
@@ -256,6 +169,12 @@ mod __ {
     impl From<BooleanTrue> for CalcursType {
         fn from(value: BooleanTrue) -> Self {
             CalcursType::BooleanTrue(value)
+        }
+    }
+
+    impl From<BooleanTrue> for bool {
+        fn from(_: BooleanTrue) -> bool {
+            true
         }
     }
 
@@ -278,6 +197,12 @@ mod __ {
         }
     }
 
+    impl From<BooleanFalse> for bool {
+        fn from(_: BooleanFalse) -> bool {
+            false
+        }
+    }
+
     #[calcurs_type]
     #[derive(Debug, Clone)]
     pub struct And {
@@ -287,7 +212,7 @@ mod __ {
 
     impl PartialEq for And {
         fn eq(&self, other: &And) -> bool {
-            self.left.as_ref() == other.left.as_ref() && self.right.as_ref() == other.right.as_ref()
+            &self.left == &other.left && &self.right == &other.right
         }
     }
 
