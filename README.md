@@ -1,6 +1,6 @@
 # Calcu-rs
 
-a simple symbolic algebra system written in rust
+a simple algebra system written in rust
 
 <sup> inspired by sympy </sup>
 
