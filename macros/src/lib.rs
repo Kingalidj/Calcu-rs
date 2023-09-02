@@ -1,6 +1,7 @@
 extern crate proc_macro as proc;
 
 mod calcurs_scope;
+mod macro_scope;
 mod parsers;
 mod utils;
 
