@@ -15,7 +15,7 @@ impl Base {
 
 impl Debug for Base {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", "base {{ TODO }}")
+        self.diff_debug(f)
     }
 }
 
@@ -90,9 +90,9 @@ mod scope {
         }
     }
 
-    impl Into<CalcursType> for Box<dyn Basic> {
-        fn into(self) -> CalcursType {
-            self.as_calcrs_type()
+    impl From<Box<dyn Basic>> for CalcursType {
+        fn from(val: Box<dyn Basic>) -> Self {
+            val.as_calcrs_type()
         }
     }
 

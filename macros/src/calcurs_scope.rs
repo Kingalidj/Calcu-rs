@@ -8,7 +8,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens};
 use syn::{
     parse::{Parse, Parser},
-    Attribute, Error, ExprLit, Field, Ident, Item, ItemStruct, ItemTrait,
+    Error, ExprLit, Field, Ident, Item, ItemStruct, ItemTrait,
 };
 
 use crate::{
@@ -20,7 +20,7 @@ use crate::{
 struct TraitProperties(HashMap<Ident, ExprLit>);
 
 fn init_property_relations(
-    calcurs_props: Vec<(Attribute, ItemTrait)>,
+    calcurs_props: Vec<MarkedItem<ItemTrait>>,
 ) -> syn::Result<(
     HashMap<Ident, BTreeSet<Ident>>,
     HashMap<Ident, HashMap<Ident, ExprLit>>,
@@ -28,7 +28,11 @@ fn init_property_relations(
     let mut properties: HashMap<Ident, HashMap<Ident, ExprLit>> = HashMap::new();
     let mut relations: HashMap<Ident, BTreeSet<Ident>> = HashMap::new();
 
-    for (attrib, trt) in calcurs_props {
+    for MarkedItem {
+        mark: attrib,
+        item: trt,
+    } in calcurs_props
+    {
         let vals: HashMap<Ident, ExprLit> = attrib
             .parse_args_with(FieldValues::parse_terminated)?
             .into_iter()
@@ -95,7 +99,7 @@ fn build_dependency_tree(
             let item = marked_item.item.borrow().clone();
             let trt = cast_item!(item as Item::Trait);
 
-            Ok((marked_item.mark, trt))
+            Ok(MarkedItem::new(marked_item.mark, trt))
         })
         .collect();
     let calcurs_props = calcurs_props?;
@@ -125,13 +129,51 @@ fn build_dependency_tree(
     Ok(trait_props)
 }
 
-fn impl_base_constructor(
-    strct: (&Attribute, &ItemStruct),
+fn impl_diff_debug(base_type: &ItemStruct, default: &FuncMacroArg) -> syn::Result<TokenStream> {
+    let fields = match &base_type.fields {
+        syn::Fields::Named(syn::FieldsNamed { named, .. }) => {
+            named.iter().map(|field| field.ident.clone().unwrap())
+        }
+        _ => {
+            return Err(Error::new(
+                base_type.ident.span(),
+                "DiffDebug is not defined for structs without named fields",
+            ))
+        }
+    };
+
+    let ident = &base_type.ident;
+
+    Ok(quote! {
+        impl #ident {
+            fn diff_debug(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                use std::fmt::Write;
+
+                let default = #default();
+
+                let mut diff = String::new();
+
+                #(
+                if (self.#fields != default.#fields) {
+                    write!(diff, "{} = {:?}, ", stringify!(#fields), self.#fields)?;
+                }
+                )*
+
+                write!(f, "Base {{{}}}", diff)
+            }
+        }
+    })
+}
+
+fn impl_new_base(
+    item: MarkedItem<ItemStruct>,
     default: &FuncMacroArg,
     base_type: &Ident,
     calcurs_traits: &HashMap<Ident, TraitProperties>,
 ) -> syn::Result<TokenStream> {
-    let (attrib, strct) = strct;
+    let strct = item.item;
+    let attrib = item.mark;
+    // let (attrib, strct) = strct;
     let derived = attrib.parse_args_with(Ident::parse)?;
 
     let generics = &strct.generics;
@@ -196,6 +238,8 @@ fn impl_calcurs_types(
 
     let mut stream = TokenStream::new();
 
+    stream.extend(impl_diff_debug(&base.item, &constructor)?);
+
     for item in types {
         let strct = &mut *item.item.borrow_mut();
         let strct = cast_item!(strct as Item::Struct[ref mut]);
@@ -203,8 +247,8 @@ fn impl_calcurs_types(
 
         *strct = append_field(strct.clone(), base_field.clone())?;
 
-        stream.extend(impl_base_constructor(
-            (attrib, strct),
+        stream.extend(impl_new_base(
+            MarkedItem::new(attrib.clone(), strct.clone()),
             &constructor,
             base_type,
             &traits,
