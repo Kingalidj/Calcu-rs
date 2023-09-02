@@ -1,6 +1,7 @@
 //! simple symbolic algebra system in rust
 
 use calcurs_internals::Inherited;
+use const_default::ConstDefault;
 use core::fmt::Debug;
 use std::ops;
 
@@ -8,55 +9,25 @@ use calcurs_macros::*;
 
 impl Base {
     pub const fn new() -> Self {
-        Base {
-            is_number: false,
-            is_atom: false,
-            is_symbol: false,
-            is_function: false,
-            is_add: false,
-            is_mul: false,
-            is_pow: false,
-            is_float: false,
-            is_rational: false,
-            is_integer: false,
-            is_numbersymbol: false,
-            is_order: false,
-            is_derivative: false,
-            is_piecewise: false,
-            is_poly: false,
-            is_algebraicnumber: false,
-            is_relational: false,
-            is_equality: false,
-            is_boolean: false,
-            is_not: false,
-            is_matrix: false,
-            is_vector: false,
-            is_point: false,
-            is_matadd: false,
-            is_matmul: None,
-            is_real: None,
-            is_zero: None,
-            is_negative: None,
-            is_commutative: None,
-        }
+        <Self as ConstDefault>::DEFAULT
     }
 }
 
 impl Debug for Base {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Base {{...}}")
+        write!(f, "{:?}", "base {{ TODO }}")
     }
 }
 
 macro_rules! base {
-    ($($field:ident = $value:expr),* $(,)?) => {
+    ($($field:ident $(= $value:expr)?),* $(,)?) => {
         Base {
             $(
-                $field: $value,
+                $field $(: $value)?,
             )*
-        ..Base::new()
+        ..Self::new_base()
+        }
     }
-}
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -72,38 +43,38 @@ pub type Eval = CalcursType;
 mod scope {
     use std::any::Any;
 
-    #[calcurs_base]
-    #[derive(Default, Clone, Copy, PartialEq)]
+    #[calcurs_base(const Base::new)]
+    #[derive(ConstDefault, Default, Clone, Copy, PartialEq)]
     pub struct Base {
-        is_number: bool,
-        is_atom: bool,
-        is_symbol: bool,
-        is_function: bool,
-        is_add: bool,
-        is_mul: bool,
-        is_pow: bool,
-        is_float: bool,
-        is_rational: bool,
-        is_integer: bool,
-        is_numbersymbol: bool,
-        is_order: bool,
-        is_derivative: bool,
-        is_piecewise: bool,
-        is_poly: bool,
-        is_algebraicnumber: bool,
-        is_relational: bool,
-        is_equality: bool,
-        is_boolean: bool,
-        is_not: bool,
-        is_matrix: bool,
-        is_vector: bool,
-        is_point: bool,
-        is_matadd: bool,
-        is_matmul: Option<bool>,
-        is_real: Option<bool>,
-        is_zero: Option<bool>,
-        is_negative: Option<bool>,
-        is_commutative: Option<bool>,
+        pub is_number: bool,
+        pub is_atom: bool,
+        pub is_symbol: bool,
+        pub is_function: bool,
+        pub is_add: bool,
+        pub is_mul: bool,
+        pub is_pow: bool,
+        pub is_float: bool,
+        pub is_rational: bool,
+        pub is_integer: bool,
+        pub is_numbersymbol: bool,
+        pub is_order: bool,
+        pub is_derivative: bool,
+        pub is_piecewise: bool,
+        pub is_poly: bool,
+        pub is_algebraicnumber: bool,
+        pub is_relational: bool,
+        pub is_equality: bool,
+        pub is_boolean: bool,
+        pub is_not: bool,
+        pub is_matrix: bool,
+        pub is_vector: bool,
+        pub is_point: bool,
+        pub is_matadd: bool,
+        pub is_matmul: Option<bool>,
+        pub is_real: Option<bool>,
+        pub is_zero: Option<bool>,
+        pub is_negative: Option<bool>,
+        pub is_commutative: Option<bool>,
     }
 
     pub trait IsCalcursType {
@@ -126,6 +97,7 @@ mod scope {
     }
 
     #[dyn_trait]
+    #[calcurs_trait()]
     pub trait Basic: Debug + IsCalcursType + Inherited<Base> {
         fn eval_impl(&self) -> Box<dyn Basic> {
             DynBasic::dyn_clone(self)
@@ -136,8 +108,8 @@ mod scope {
         }
     }
 
-    // #[calcurs_trait(is_boolean = true)]
     #[dyn_trait]
+    #[calcurs_trait(is_boolean = true)]
     pub trait Boolean: Basic {
         fn eval_impl(&self) -> Box<dyn Boolean> {
             DynBoolean::dyn_clone(self)
@@ -145,15 +117,18 @@ mod scope {
     }
 
     #[dyn_trait]
-    pub trait Application: Basic {}
-
-    #[dyn_trait]
+    #[calcurs_trait(is_atom = true)]
     pub trait BooleanAtom: Boolean {}
 
     #[dyn_trait]
-    pub trait BooleanFunc: BooleanAtom + Application {}
+    #[calcurs_trait(is_function = true)]
+    pub trait Application: Basic {}
 
-    #[calcurs_type]
+    #[dyn_trait]
+    #[calcurs_trait()]
+    pub trait BooleanFunc: Boolean + Application {}
+
+    #[calcurs_type(BooleanAtom)]
     #[derive(Debug, Clone, Default, Copy, PartialEq)]
     pub struct BooleanTrue {}
     impl Basic for BooleanTrue {}
@@ -161,7 +136,7 @@ mod scope {
 
     impl BooleanTrue {
         pub const fn new() -> Self {
-            let base = base!(is_boolean = true, is_atom = true, is_negative = Some(false));
+            let base = base!(is_negative = Some(false));
             BooleanTrue { base }
         }
     }
@@ -178,7 +153,7 @@ mod scope {
         }
     }
 
-    #[calcurs_type]
+    #[calcurs_type(BooleanAtom)]
     #[derive(Debug, Clone, Default, Copy, PartialEq)]
     pub struct BooleanFalse {}
     impl Basic for BooleanFalse {}
@@ -186,7 +161,7 @@ mod scope {
 
     impl BooleanFalse {
         pub const fn new() -> Self {
-            let base = base!(is_boolean = true, is_atom = true, is_negative = Some(true));
+            let base = base!(is_negative = Some(true));
             BooleanFalse { base }
         }
     }
@@ -203,7 +178,7 @@ mod scope {
         }
     }
 
-    #[calcurs_type]
+    #[calcurs_type(BooleanFunc)]
     #[derive(Debug, Clone)]
     pub struct And {
         left: Box<dyn Boolean>,
@@ -218,8 +193,13 @@ mod scope {
 
     impl And {
         pub fn new(lhs: impl Boolean, rhs: impl Boolean) -> Self {
+            let is_negative = match (lhs.base().is_negative, rhs.base().is_negative) {
+                (Some(l), Some(r)) => Some(l && r),
+                (_, _) => None,
+            };
+
             And {
-                base: Default::default(),
+                base: base!(is_negative),
                 left: DynBoolean::dyn_clone(&rhs),
                 right: DynBoolean::dyn_clone(&lhs),
             }
@@ -294,5 +274,18 @@ mod test {
     fn boolean() {
         assert_eq!(And::new(True, False), True & False);
         assert_eq!(CalcursType::from(False), (True & False).eval());
+    }
+
+    #[test]
+    fn calcurs_traits() {
+        assert!(!True.base().is_negative.unwrap());
+        assert!(False.base().is_negative.unwrap());
+        assert!(True.base().is_atom);
+        assert!(False.base().is_atom);
+        assert!(And::new_base().is_function);
+        assert!(!And::new_base().is_number);
+        assert!(And::new_base().is_boolean);
+        assert!(!(True & False).base().is_negative.unwrap());
+        assert!((False & False).base().is_negative.unwrap());
     }
 }
