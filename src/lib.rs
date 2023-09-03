@@ -278,14 +278,14 @@ mod test {
 
     #[test]
     fn calcurs_traits() {
-        assert!(!True.base().is_negative.unwrap());
-        assert!(False.base().is_negative.unwrap());
-        assert!(True.base().is_atom);
-        assert!(False.base().is_atom);
+        assert!(!True.base.is_negative.unwrap());
+        assert!(False.base.is_negative.unwrap());
+        assert!(True.base.is_atom);
+        assert!(False.base.is_atom);
         assert!(And::new_base().is_function);
         assert!(!And::new_base().is_number);
         assert!(And::new_base().is_boolean);
-        assert!(!(True & False).base().is_negative.unwrap());
-        assert!((False & False).base().is_negative.unwrap());
+        assert!(!(True & False).base.is_negative.unwrap());
+        assert!((False & False).base.is_negative.unwrap());
     }
 }

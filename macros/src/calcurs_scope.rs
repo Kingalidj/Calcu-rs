@@ -198,7 +198,7 @@ fn impl_new_base(
 
     let code = quote! {
         impl #generics #name #generics {
-            pub #cnst fn new_base() -> #base_type {
+            #cnst fn new_base() -> #base_type {
                 #base_type {
                     #(#fields: #lit,)*
                     .. #default()
