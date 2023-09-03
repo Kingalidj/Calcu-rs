@@ -158,6 +158,7 @@ mod scope {
     pub struct BooleanFalse {}
     impl Basic for BooleanFalse {}
     impl Boolean for BooleanFalse {}
+    impl BooleanAtom for BooleanFalse {}
 
     impl BooleanFalse {
         pub const fn new() -> Self {
@@ -184,6 +185,8 @@ mod scope {
         left: Box<dyn Boolean>,
         right: Box<dyn Boolean>,
     }
+    impl BooleanFunc for And {}
+    impl Application for And {}
 
     impl PartialEq for And {
         fn eq(&self, other: &And) -> bool {
@@ -218,15 +221,11 @@ mod scope {
             let rhs = Boolean::eval_impl(self.right.as_ref());
 
             match lhs == rhs {
-                true => DynBoolean::dyn_clone(&True),
-                false => DynBoolean::dyn_clone(&False),
+                true => DynBoolean::dyn_clone(&TRUE),
+                false => DynBoolean::dyn_clone(&FALSE),
             }
         }
     }
-
-    impl BooleanAtom for And {}
-    impl Application for And {}
-    impl BooleanFunc for And {}
 
     impl From<And> for CalcursType {
         fn from(value: And) -> Self {
@@ -259,11 +258,8 @@ impl<U: Boolean> ops::BitAnd<U> for And {
     }
 }
 
-#[allow(non_upper_case_globals)]
-pub static False: BooleanFalse = BooleanFalse::new();
-
-#[allow(non_upper_case_globals)]
-pub static True: BooleanTrue = BooleanTrue::new();
+pub const FALSE: BooleanFalse = BooleanFalse::new();
+pub const TRUE: BooleanTrue = BooleanTrue::new();
 
 #[cfg(test)]
 mod test {
@@ -272,20 +268,20 @@ mod test {
 
     #[test]
     fn boolean() {
-        assert_eq!(And::new(True, False), True & False);
-        assert_eq!(CalcursType::from(False), (True & False).eval());
+        assert_eq!(And::new(TRUE, FALSE), TRUE & FALSE);
+        assert_eq!(CalcursType::from(FALSE), (TRUE & FALSE).eval());
     }
 
     #[test]
     fn calcurs_traits() {
-        assert!(!True.base.is_negative.unwrap());
-        assert!(False.base.is_negative.unwrap());
-        assert!(True.base.is_atom);
-        assert!(False.base.is_atom);
+        assert!(!TRUE.base.is_negative.unwrap());
+        assert!(FALSE.base.is_negative.unwrap());
+        assert!(TRUE.base.is_atom);
+        assert!(FALSE.base.is_atom);
         assert!(And::new_base().is_function);
         assert!(!And::new_base().is_number);
         assert!(And::new_base().is_boolean);
-        assert!(!(True & False).base.is_negative.unwrap());
-        assert!((False & False).base.is_negative.unwrap());
+        assert!(!(TRUE & FALSE).base.is_negative.unwrap());
+        assert!((FALSE & FALSE).base.is_negative.unwrap());
     }
 }

@@ -17,16 +17,17 @@ use crate::{
     utils::*,
 };
 
+#[derive(Debug, Clone, PartialEq)]
 struct TraitProperties(HashMap<Ident, ExprLit>);
 
 fn init_property_relations(
     calcurs_props: Vec<MarkedItem<ItemTrait>>,
 ) -> syn::Result<(
-    HashMap<Ident, BTreeSet<Ident>>,
+    TraitRelations,
     HashMap<Ident, HashMap<Ident, ExprLit>>,
 )> {
     let mut properties: HashMap<Ident, HashMap<Ident, ExprLit>> = HashMap::new();
-    let mut relations: HashMap<Ident, BTreeSet<Ident>> = HashMap::new();
+    let mut relations: TraitRelations = HashMap::new();
 
     for MarkedItem {
         mark: attrib,
@@ -62,9 +63,9 @@ fn init_property_relations(
 }
 
 fn dependencies_from_relation(
-    relations: &HashMap<Ident, BTreeSet<Ident>>,
-) -> syn::Result<HashMap<Ident, BTreeSet<Ident>>> {
-    let mut dep_trees: HashMap<Ident, BTreeSet<Ident>> = HashMap::new();
+    relations: &TraitRelations,
+) -> syn::Result<TraitRelations> {
+    let mut dep_trees: TraitRelations = HashMap::new();
 
     // build tree (overwriting values is ill supported, would need to support saving depth)
     for (item, parents) in relations {
@@ -90,10 +91,25 @@ fn dependencies_from_relation(
     Ok(dep_trees)
 }
 
+type TraitPropertieMap = HashMap<Ident, TraitProperties>;
+type TraitRelations = HashMap<Ident, BTreeSet<Ident>>;
+
+#[derive(Debug, Clone, PartialEq)]
+struct TraitDepTree {
+    property_map: TraitPropertieMap,
+    relations: TraitRelations
+}
+
+impl TraitDepTree {
+    fn new(property_map: TraitPropertieMap, relations: TraitRelations) -> Self {
+        Self {property_map, relations}
+    }
+}
+
 fn build_dependency_tree(
     calcurs_props: Vec<SharedMarkedItem<Item>>,
-) -> syn::Result<HashMap<Ident, TraitProperties>> {
-    let calcurs_props: Result<Vec<_>, _> = calcurs_props
+) -> syn::Result<TraitDepTree> {
+    let calcurs_traits: Result<Vec<_>, _> = calcurs_props
         .into_iter()
         .map(|marked_item| {
             let item = marked_item.item.borrow().clone();
@@ -102,13 +118,13 @@ fn build_dependency_tree(
             Ok(MarkedItem::new(marked_item.mark, trt))
         })
         .collect();
-    let calcurs_props = calcurs_props?;
+    let traits = calcurs_traits?;
 
-    let (relations, direct_props) = init_property_relations(calcurs_props)?;
+    let (relations, direct_props) = init_property_relations(traits)?;
 
     let dep_trees = dependencies_from_relation(&relations)?;
 
-    let mut trait_props: HashMap<Ident, TraitProperties> = HashMap::new();
+    let mut trait_props: TraitPropertieMap = HashMap::new();
 
     for (trt, deps) in dep_trees {
         let mut assigns = match direct_props.get(&trt) {
@@ -126,7 +142,7 @@ fn build_dependency_tree(
         trait_props.insert(trt, TraitProperties(assigns));
     }
 
-    Ok(trait_props)
+    Ok(TraitDepTree::new(trait_props, relations))
 }
 
 fn impl_diff_debug(base_type: &ItemStruct, default: &FuncMacroArg) -> syn::Result<TokenStream> {
@@ -166,13 +182,13 @@ fn impl_diff_debug(base_type: &ItemStruct, default: &FuncMacroArg) -> syn::Resul
 }
 
 fn impl_new_base(
-    item: MarkedItem<ItemStruct>,
+    item: &MarkedItem<ItemStruct>,
     default: &FuncMacroArg,
     base_type: &Ident,
-    calcurs_traits: &HashMap<Ident, TraitProperties>,
+    calcurs_traits: &TraitPropertieMap,
 ) -> syn::Result<TokenStream> {
-    let strct = item.item;
-    let attrib = item.mark;
+    let strct = &item.item;
+    let attrib = &item.mark;
     // let (attrib, strct) = strct;
     let derived = attrib.parse_args_with(Ident::parse)?;
 
@@ -210,10 +226,31 @@ fn impl_new_base(
     Ok(code)
 }
 
+fn _impl_trait_dependencies(calcurs_struct: &MarkedItem<ItemStruct>, relations: &TraitRelations) -> syn::Result<TokenStream> {
+    let item = &calcurs_struct.item;
+    let strct_name = &item.ident;
+    let generics = &item.generics;
+
+    let trait_name = calcurs_struct.mark.parse_args_with(Ident::parse)?;
+
+    println!("{:?}", trait_name);
+
+    let deps = match relations.get(&trait_name) {
+        Some(d) => d,
+        None => return Ok(quote!()),
+    }.iter();
+
+    Ok(quote!{
+        impl #generics #trait_name for #strct_name #generics {} 
+
+        #(impl #generics #deps for #strct_name #generics {} )*
+    })
+}
+
 fn impl_calcurs_types(
     base: MarkedItem<ItemStruct>,
     types: &[SharedMarkedItem<Item>],
-    traits: HashMap<Ident, TraitProperties>,
+    dep_tree: TraitDepTree,
 ) -> syn::Result<TokenStream> {
     let base_type = &base.item.ident;
     let base_attrib = base.mark;
@@ -240,19 +277,24 @@ fn impl_calcurs_types(
 
     stream.extend(impl_diff_debug(&base.item, &constructor)?);
 
-    for item in types {
-        let strct = &mut *item.item.borrow_mut();
+    for typ in types {
+        let strct = &mut *typ.item.borrow_mut();
         let strct = cast_item!(strct as Item::Struct[ref mut]);
-        let attrib = &item.mark;
+        let type_mark = &typ.mark;
+        let calcurs_struct = MarkedItem::new(type_mark.clone(), strct.clone());
 
         *strct = append_field(strct.clone(), base_field.clone())?;
 
+        // let s = impl_trait_dependencies(&calcurs_struct, &dep_tree.relations);
+        // stream.extend(s);
+
         stream.extend(impl_new_base(
-            MarkedItem::new(attrib.clone(), strct.clone()),
+            &calcurs_struct,
             &constructor,
             base_type,
-            &traits,
+            &dep_tree.property_map,
         )?);
+
 
         let generics = &strct.generics;
         let name = &strct.ident;
@@ -296,12 +338,12 @@ fn parse_calcurs_scope(items: &[Rc<RefCell<Item>>]) -> syn::Result<TokenStream> 
     let base = base_attrib.item.borrow().clone();
     let base = cast_item!(base as Item::Struct);
 
-    let calcurs_props = build_dependency_tree(calcurs_trait_props)?;
+    let trait_dep_tree = build_dependency_tree(calcurs_trait_props)?;
 
     stream.extend(impl_calcurs_types(
         MarkedItem::new(attrib, base),
         &calcurs_types,
-        calcurs_props,
+        trait_dep_tree,
     )?);
 
     Ok(stream)
