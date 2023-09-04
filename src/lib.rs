@@ -99,20 +99,23 @@ mod scope {
     #[dyn_trait]
     #[calcurs_trait()]
     pub trait Basic: Debug + IsCalcursType + Inherited<Base> {
-        fn eval_impl(&self) -> Box<dyn Basic> {
-            DynBasic::dyn_clone(self)
+        fn eval_impl(&self) -> Box<dyn Basic>
+        where
+            Self: Sized,
+        {
+            self.dyn_clone()
         }
 
         fn eval(&self) -> CalcursType {
-            self.eval_impl().into()
+            self.as_calcrs_type()
         }
     }
 
     #[dyn_trait]
     #[calcurs_trait(is_boolean = true)]
     pub trait Boolean: Basic {
-        fn eval_impl(&self) -> Box<dyn Boolean> {
-            DynBoolean::dyn_clone(self)
+        fn eval_impl(&self) -> &dyn Boolean {
+            DynBoolean::as_obj(self)
         }
     }
 
@@ -211,18 +214,21 @@ mod scope {
 
     impl Basic for And {
         fn eval(&self) -> CalcursType {
-            Basic::eval_impl(Boolean::eval_impl(self).as_ref()).into()
+            Boolean::eval_impl(self).as_calcrs_type()
         }
     }
 
     impl Boolean for And {
-        fn eval_impl(&self) -> Box<dyn Boolean> {
-            let lhs = Boolean::eval_impl(self.left.as_ref());
-            let rhs = Boolean::eval_impl(self.right.as_ref());
+        fn eval_impl(&self) -> &'static dyn Boolean {
+            let left = &self.left;
+            let right = &self.right;
 
-            match lhs == rhs {
-                true => DynBoolean::dyn_clone(&TRUE),
-                false => DynBoolean::dyn_clone(&FALSE),
+            let lhs = Boolean::eval_impl(left.as_ref());
+            let rhs = Boolean::eval_impl(right.as_ref());
+
+            match (lhs.base().is_negative, rhs.base().is_negative) {
+                (Some(false), Some(false)) | (Some(true), Some(true)) => &TRUE,
+                _ => &FALSE,
             }
         }
     }
