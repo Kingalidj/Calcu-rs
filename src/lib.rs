@@ -26,8 +26,8 @@ macro_rules! base {
                 $field $(: $value)?,
             )*
         ..Self::new_base()
-        }
     }
+}
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -35,9 +35,8 @@ pub enum CalcursType {
     BooleanTrue(BooleanTrue),
     BooleanFalse(BooleanFalse),
     And(And),
+    Symbol(Symbol),
 }
-
-pub type Eval = CalcursType;
 
 #[init_calcurs_macro_scope]
 mod scope {
@@ -75,67 +74,121 @@ mod scope {
         pub is_zero: Option<bool>,
         pub is_negative: Option<bool>,
         pub is_commutative: Option<bool>,
+        pub is_scalar: bool,
     }
 
     pub trait IsCalcursType {
-        fn as_calcrs_type(&self) -> CalcursType;
+        fn to_calcurs_type(&self) -> CalcursType;
     }
 
     impl<T> IsCalcursType for T
     where
         T: Basic + Clone + Into<CalcursType> + PartialEq + 'static,
     {
-        fn as_calcrs_type(&self) -> CalcursType {
+        fn to_calcurs_type(&self) -> CalcursType {
             self.clone().into()
         }
     }
 
-    impl From<Box<dyn Basic>> for CalcursType {
-        fn from(val: Box<dyn Basic>) -> Self {
-            val.as_calcrs_type()
+    pub trait Simplify {
+        fn simplify_obj(&self) -> Box<dyn Basic>;
+
+        fn simplify(&self) -> CalcursType {
+            self.simplify_obj().to_calcurs_type()
+        }
+    }
+
+    trait DefaultSimplify {}
+    impl<T: Basic + DefaultSimplify> Simplify for T {
+        fn simplify_obj(&self) -> Box<dyn Basic> {
+            self.to_basic()
+        }
+    }
+
+    pub trait Substitute {
+        fn subs(&self, name: &'static str, val: Box<dyn Basic>) -> Box<dyn Basic>;
+    }
+
+    trait DefaultSubstitute {}
+    impl<T: Basic + DefaultSubstitute> Substitute for T {
+        fn subs(&self, _: &'static str, _: Box<dyn Basic>) -> Box<dyn Basic> {
+            self.to_basic()
         }
     }
 
     #[dyn_trait]
     #[calcurs_trait()]
-    pub trait Basic: Debug + IsCalcursType + Inherited<Base> {
-        fn eval_impl(&self) -> Box<dyn Basic>
-        where
-            Self: Sized,
-        {
-            self.dyn_clone()
-        }
-
-        fn eval(&self) -> CalcursType {
-            self.as_calcrs_type()
-        }
-    }
-
-    #[dyn_trait]
-    #[calcurs_trait(is_boolean = true)]
-    pub trait Boolean: Basic {
-        fn eval_impl(&self) -> &dyn Boolean {
-            DynBoolean::as_obj(self)
+    pub trait Basic: Debug + IsCalcursType + Inherited<Base> + Simplify + Substitute {
+        fn to_basic(&self) -> Box<dyn Basic> {
+            self.box_clone()
         }
     }
 
     #[dyn_trait]
     #[calcurs_trait(is_atom = true)]
-    pub trait BooleanAtom: Boolean {}
+    pub trait Atom: Basic {}
+
+    #[dyn_trait]
+    #[calcurs_trait()]
+    pub trait Boolean: Basic {}
+
+    #[dyn_trait]
+    #[calcurs_trait(is_scalar = true)]
+    pub trait Expr: Basic {}
+
+    #[dyn_trait]
+    #[calcurs_trait()]
+    pub trait AtomicExpr: Atom + Expr {}
+
+    #[dyn_trait]
+    #[calcurs_trait(is_boolean = true)]
+    pub trait BooleanAtom: Atom + Boolean {}
 
     #[dyn_trait]
     #[calcurs_trait(is_function = true)]
     pub trait Application: Basic {}
 
     #[dyn_trait]
-    #[calcurs_trait()]
+    #[calcurs_trait(is_boolean = true)]
     pub trait BooleanFunc: Boolean + Application {}
+
+    #[calcurs_type(AtomicExpr + Boolean)]
+    #[derive(Debug, Clone, Default, Copy, PartialEq)]
+    pub struct Symbol {
+        name: &'static str,
+    }
+
+    impl DefaultSimplify for Symbol {}
+
+    impl Substitute for Symbol {
+        fn subs(&self, name: &'static str, val: Box<dyn Basic>) -> Box<dyn Basic> {
+            if self.name == name {
+                val
+            } else {
+                self.to_basic()
+            }
+        }
+    }
+
+    impl Symbol {
+        pub fn new(name: &'static str) -> Self {
+            let base = base!(is_symbol = true);
+            Self { name, base }
+        }
+    }
+
+    impl From<Symbol> for CalcursType {
+        fn from(value: Symbol) -> CalcursType {
+            CalcursType::Symbol(value)
+        }
+    }
 
     #[calcurs_type(BooleanAtom)]
     #[derive(Debug, Clone, Default, Copy, PartialEq)]
     pub struct BooleanTrue {}
-    impl Basic for BooleanTrue {}
-    impl Boolean for BooleanTrue {}
+
+    impl DefaultSubstitute for BooleanTrue {}
+    impl DefaultSimplify for BooleanTrue {}
 
     impl BooleanTrue {
         pub const fn new() -> Self {
@@ -159,9 +212,9 @@ mod scope {
     #[calcurs_type(BooleanAtom)]
     #[derive(Debug, Clone, Default, Copy, PartialEq)]
     pub struct BooleanFalse {}
-    impl Basic for BooleanFalse {}
-    impl Boolean for BooleanFalse {}
-    impl BooleanAtom for BooleanFalse {}
+
+    impl DefaultSubstitute for BooleanFalse {}
+    impl DefaultSimplify for BooleanFalse {}
 
     impl BooleanFalse {
         pub const fn new() -> Self {
@@ -182,18 +235,40 @@ mod scope {
         }
     }
 
+    // logical And: e.g: A && B
     #[calcurs_type(BooleanFunc)]
     #[derive(Debug, Clone)]
     pub struct And {
-        left: Box<dyn Boolean>,
-        right: Box<dyn Boolean>,
+        left: Box<dyn Basic>,
+        right: Box<dyn Basic>,
     }
-    impl BooleanFunc for And {}
-    impl Application for And {}
+
+    impl Substitute for And {
+        fn subs(&self, name: &'static str, val: Box<dyn Basic>) -> Box<dyn Basic> {
+            let mut res = self.clone();
+            res.left = self.left.subs(name, val.clone());
+            res.right = self.right.subs(name, val.clone());
+            res.to_basic()
+        }
+    }
+
+    impl Simplify for And {
+        fn simplify_obj(&self) -> Box<dyn Basic> {
+            self.simplify_impl().to_basic()
+        }
+    }
 
     impl PartialEq for And {
         fn eq(&self, other: &And) -> bool {
-            &self.left == &other.left && &self.right == &other.right
+            let lhs1 = self.left.base().is_negative;
+            let rhs1 = self.right.base().is_negative;
+            let lhs2 = other.left.base().is_negative;
+            let rhs2 = other.right.base().is_negative;
+
+            match ((lhs1, rhs1), (lhs2, rhs2)) {
+                ((Some(l1), Some(r1)), (Some(l2), Some(r2))) => l1 == l2 && r1 == r2,
+                _ => false,
+            }
         }
     }
 
@@ -206,25 +281,14 @@ mod scope {
 
             And {
                 base: base!(is_negative),
-                left: DynBoolean::dyn_clone(&rhs),
-                right: DynBoolean::dyn_clone(&lhs),
+                left: rhs.to_basic(),
+                right: lhs.to_basic(),
             }
         }
-    }
 
-    impl Basic for And {
-        fn eval(&self) -> CalcursType {
-            Boolean::eval_impl(self).as_calcrs_type()
-        }
-    }
-
-    impl Boolean for And {
-        fn eval_impl(&self) -> &'static dyn Boolean {
-            let left = &self.left;
-            let right = &self.right;
-
-            let lhs = Boolean::eval_impl(left.as_ref());
-            let rhs = Boolean::eval_impl(right.as_ref());
+        fn simplify_impl(&self) -> &'static dyn Boolean {
+            let lhs = self.left.simplify_obj();
+            let rhs = self.right.simplify_obj();
 
             match (lhs.base().is_negative, rhs.base().is_negative) {
                 (Some(false), Some(false)) | (Some(true), Some(true)) => &TRUE,
@@ -232,11 +296,19 @@ mod scope {
             }
         }
     }
+}
 
-    impl From<And> for CalcursType {
-        fn from(value: And) -> Self {
-            CalcursType::And(value)
-        }
+impl From<And> for CalcursType {
+    fn from(value: And) -> Self {
+        CalcursType::And(value)
+    }
+}
+
+impl<U: Boolean> ops::BitAnd<U> for Symbol {
+    type Output = And;
+
+    fn bitand(self, rhs: U) -> Self::Output {
+        And::new(self, rhs)
     }
 }
 
@@ -275,7 +347,7 @@ mod test {
     #[test]
     fn boolean() {
         assert_eq!(And::new(TRUE, FALSE), TRUE & FALSE);
-        assert_eq!(CalcursType::from(FALSE), (TRUE & FALSE).eval());
+        assert_eq!(CalcursType::from(FALSE), (TRUE & FALSE).simplify());
     }
 
     #[test]
@@ -284,10 +356,14 @@ mod test {
         assert!(FALSE.base.is_negative.unwrap());
         assert!(TRUE.base.is_atom);
         assert!(FALSE.base.is_atom);
+
         assert!(And::new_base().is_function);
         assert!(!And::new_base().is_number);
         assert!(And::new_base().is_boolean);
         assert!(!(TRUE & FALSE).base.is_negative.unwrap());
-        assert!((FALSE & FALSE).base.is_negative.unwrap());
+
+        assert!(Symbol::new("test").base().is_atom);
+        assert!(Symbol::new("test").base().is_scalar);
+        assert!(Symbol::new("test").base().is_symbol);
     }
 }

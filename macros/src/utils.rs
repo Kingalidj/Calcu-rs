@@ -5,27 +5,36 @@ use syn::{Attribute, Error, Field, Fields, FieldsNamed, Ident, ItemStruct};
 
 macro_rules! cast_item {
     ($item: ident as $type: path $([$($ref_mut: ident)+])?) => {
+        cast_item!($item as $type $([$($ref_mut)+])?, format!("Expected {}, found something else", stringify!($type)))
+    };
+
+    ($item: ident as $type: path $([$($ref_mut: ident)+])?, $err_msg: expr) => {
         if let $type($($($ref_mut)*)? x) = $item {
             x
         } else {
             return Err(Error::new_spanned(
                 $item.into_token_stream(),
-                format!("Expected {}, found something else", stringify!($type)),
+                $err_msg
             ));
         }
     };
-
 }
 
 pub(crate) use cast_item;
 
-/// Returns the index of the first [Attribute] with a given name if found
-pub fn find_attribute(attrs: &[Attribute], name: &str) -> Option<usize> {
+/// Returns the index of the first [Attribute] that contains a given name if found
+pub fn find_attribute(attrs: &[Attribute], name: &str) -> Option<(usize, String)> {
     for (index, struct_attrib) in attrs.iter().enumerate() {
         let path = struct_attrib.path();
 
-        if path.is_ident(name) {
-            return Some(index);
+        match path.get_ident() {
+            Some(ident) => {
+                let ident = ident.to_string();
+                if ident.contains(name) {
+                    return Some((index, ident));
+                }
+            }
+            None => (),
         }
     }
 
@@ -50,14 +59,15 @@ pub fn import_crate(name: &str) -> TokenStream {
 /// # Errors
 ///
 /// This function will return an error if the struct has no named fields
-pub fn append_field(mut strct: ItemStruct, field: Field) -> syn::Result<ItemStruct> {
+pub fn append_struct_field(strct: &mut ItemStruct, field: Field) -> syn::Result<()> {
     match strct.fields {
         Fields::Named(FieldsNamed { ref mut named, .. }) => {
             named.push(field);
-            Ok(strct)
+            Ok(())
+            // Ok(strct)
         }
         _ => Err(Error::new_spanned(
-            strct.fields,
+            strct.fields.clone(),
             "Only named fields are supported for adding the base field.",
         )),
     }

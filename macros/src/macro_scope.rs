@@ -1,10 +1,10 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use syn::{parse::Parse, Attribute, Item, ItemMod, ItemStruct, ItemTrait};
 
 use crate::utils::*;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub struct MarkedItem<T> {
     pub mark: Attribute,
     pub item: T,
@@ -18,15 +18,16 @@ impl<T> MarkedItem<T> {
     }
 }
 
-/// Return all Items with the given mark, also removes the mark from the item
+/// Return all Items that contain the given mark, also removes the mark from the item and return it
+/// as a [MarkedItem]
 ///
 /// We use a attribute macro as a way to mark items, so that we can further process them in the
 /// proc_macros
-pub fn get_items_by_mark<'a>(
+pub fn get_items_by_mark_prefix<'a>(
     items: &[Rc<RefCell<Item>>],
     mark: &'a str,
-) -> Vec<MarkedItem<Rc<RefCell<Item>>>> {
-    let mut marked_items: Vec<MarkedItem<Rc<RefCell<Item>>>> = vec![];
+) -> HashMap<String, Vec<SharedMarkedItem<Item>>> {
+    let mut marked_items: HashMap<String, Vec<SharedMarkedItem<Item>>> = HashMap::new();
 
     use Item as I;
 
@@ -41,9 +42,15 @@ pub fn get_items_by_mark<'a>(
             _ => continue,
         };
 
-        if let Some(indx) = find_attribute(attrs, mark) {
+        if let Some((indx, attr_ident)) = find_attribute(attrs, mark) {
             let a = attrs.remove(indx);
-            marked_items.push(MarkedItem::new(a, item.clone()));
+            let marked_item = MarkedItem::new(a, item.clone());
+            match marked_items.get_mut(&attr_ident) {
+                Some(marked) => marked.push(marked_item),
+                None => {
+                    marked_items.insert(attr_ident, vec![marked_item]);
+                }
+            };
         }
     }
 
