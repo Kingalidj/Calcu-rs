@@ -86,7 +86,7 @@ pub trait Atom: Basic {}
 pub trait Expr: Basic {}
 
 pub trait Boolean: Basic {
-    fn value(&self) -> Option<bool>;
+    fn bool_val(&self) -> Option<bool>;
 }
 pub trait Application: Basic {}
 
@@ -106,13 +106,13 @@ impl Atom for Symbol {}
 impl Expr for Symbol {}
 impl AtomicExpr for Symbol {}
 impl Boolean for Symbol {
-    fn value(&self) -> Option<bool> {
+    fn bool_val(&self) -> Option<bool> {
         None
     }
 }
 
 impl Symbol {
-    pub fn new(name: &'static str) -> Self {
+    pub const fn new(name: &'static str) -> Self {
         Self { name }
     }
 }
@@ -124,19 +124,13 @@ impl From<Symbol> for CalcursType {
 }
 
 #[derive(Debug, Clone, Default, Copy, PartialEq)]
-pub struct BooleanTrue {}
+pub struct BooleanTrue;
 
 impl Basic for BooleanTrue {}
 impl Atom for BooleanTrue {}
 impl Boolean for BooleanTrue {
-    fn value(&self) -> Option<bool> {
+    fn bool_val(&self) -> Option<bool> {
         Some(true)
-    }
-}
-
-impl BooleanTrue {
-    pub const fn new() -> Self {
-        BooleanTrue {}
     }
 }
 
@@ -153,19 +147,13 @@ impl From<BooleanTrue> for bool {
 }
 
 #[derive(Debug, Clone, Default, Copy, PartialEq)]
-pub struct BooleanFalse {}
+pub struct BooleanFalse;
 
 impl Basic for BooleanFalse {}
 impl Atom for BooleanFalse {}
 impl Boolean for BooleanFalse {
-    fn value(&self) -> Option<bool> {
+    fn bool_val(&self) -> Option<bool> {
         Some(false)
-    }
-}
-
-impl BooleanFalse {
-    pub const fn new() -> Self {
-        BooleanFalse {}
     }
 }
 
@@ -184,10 +172,8 @@ impl From<BooleanFalse> for bool {
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct AndValue(Option<bool>);
 
-impl ops::BitAnd<AndValue> for AndValue {
-    type Output = AndValue;
-
-    fn bitand(self, rhs: AndValue) -> Self::Output {
+impl AndValue {
+    fn and(self, rhs: AndValue) -> Self {
         let val = match (self.0, rhs.0) {
             (Some(v1), Some(v2)) => Some(v1 && v2),
             _ => None,
@@ -198,8 +184,8 @@ impl ops::BitAnd<AndValue> for AndValue {
 
 #[derive(Debug, Clone)]
 pub struct And {
-    left: CalcursType,
-    right: CalcursType,
+    lhs: CalcursType,
+    rhs: CalcursType,
     value: AndValue,
 }
 
@@ -207,7 +193,7 @@ impl Basic for And {}
 impl Application for And {}
 impl BooleanFunc for And {}
 impl Boolean for And {
-    fn value(&self) -> Option<bool> {
+    fn bool_val(&self) -> Option<bool> {
         self.value.0
     }
 }
@@ -220,11 +206,19 @@ impl PartialEq for And {
 
 impl And {
     pub fn new<S: Boolean, T: Boolean>(lhs: S, rhs: T) -> And {
-        let value = AndValue(lhs.value()) & AndValue(rhs.value());
+        let value = AndValue(lhs.bool_val()).and(AndValue(rhs.bool_val()));
         And {
-            left: lhs.into(),
-            right: rhs.into(),
+            lhs: lhs.into(),
+            rhs: rhs.into(),
             value,
+        }
+    }
+
+    pub const fn const_new(lhs: CalcursType, rhs: CalcursType, value: Option<bool>) -> And {
+        And {
+            lhs,
+            rhs,
+            value: AndValue(value),
         }
     }
 }
@@ -267,8 +261,8 @@ impl<T: Boolean> ops::BitAnd<T> for Symbol {
     }
 }
 
-pub const FALSE: BooleanFalse = BooleanFalse::new();
-pub const TRUE: BooleanTrue = BooleanTrue::new();
+pub const FALSE: BooleanFalse = BooleanFalse;
+pub const TRUE: BooleanTrue = BooleanTrue;
 
 #[cfg(test)]
 mod test {
@@ -280,79 +274,64 @@ mod test {
         assert_eq!(And::new(TRUE, FALSE), TRUE & FALSE);
     }
 
+    const TRUE_TYP: CalcursType = CalcursType::BooleanTrue(TRUE);
+    const FALSE_TYP: CalcursType = CalcursType::BooleanFalse(FALSE);
+
+    const X: Symbol = Symbol::new("x");
+    const X_TYP: CalcursType = CalcursType::Symbol(Symbol::new("x"));
+
+    const TRUE_AND_TRUE: And = And::const_new(TRUE_TYP, TRUE_TYP, Some(true));
+    const TRUE_AND_FALSE: And = And::const_new(TRUE_TYP, FALSE_TYP, Some(false));
+    const TRUE_AND_X: And = And::const_new(TRUE_TYP, X_TYP, None);
+
     #[test]
     fn is_atom() {
-        let x = Symbol::new("x");
-        let true_and_true = (TRUE & TRUE).typ();
-        let true_and_false = (TRUE & FALSE).typ();
-        let true_and_x = (TRUE & x.clone()).typ();
-
         assert!(TRUE.typ().is_atom());
         assert!(FALSE.typ().is_atom());
-        assert!(x.typ().is_atom());
-        assert!(!true_and_true.is_atom());
-        assert!(!true_and_false.is_atom());
-        assert!(!true_and_x.is_atom());
+        assert!(X.typ().is_atom());
+        assert!(!TRUE_AND_TRUE.typ().is_atom());
+        assert!(!TRUE_AND_FALSE.typ().is_atom());
+        assert!(!TRUE_AND_X.typ().is_atom());
     }
 
     #[test]
     fn is_boolean() {
-        let x = Symbol::new("x");
-        let true_and_true = (TRUE & TRUE).typ();
-        let true_and_false = (TRUE & FALSE).typ();
-        let true_and_x = (TRUE & x.clone()).typ();
-
         assert!(TRUE.typ().is_boolean());
         assert!(FALSE.typ().is_boolean());
-        assert!(x.typ().is_boolean());
-        assert!(true_and_true.is_boolean());
-        assert!(true_and_false.is_boolean());
-        assert!(true_and_x.is_boolean());
+        assert!(X.typ().is_boolean());
+        assert!(TRUE_AND_TRUE.typ().is_boolean());
+        assert!(TRUE_AND_FALSE.typ().is_boolean());
+        assert!(TRUE_AND_X.typ().is_boolean());
     }
 
     #[test]
     fn is_function() {
-        let x = Symbol::new("x");
-        let true_and_true = (TRUE & TRUE).typ();
-        let true_and_false = (TRUE & FALSE).typ();
-        let true_and_x = (TRUE & x.clone()).typ();
-
         assert!(!TRUE.typ().is_function());
         assert!(!FALSE.typ().is_function());
-        assert!(!x.typ().is_function());
-        assert!(true_and_true.is_function());
-        assert!(true_and_false.is_function());
-        assert!(true_and_x.is_function());
+        assert!(!X.typ().is_function());
+        assert!(TRUE_AND_TRUE.typ().is_function());
+        assert!(TRUE_AND_FALSE.typ().is_function());
+        assert!(TRUE_AND_X.typ().is_function());
     }
 
     #[test]
     fn is_scalar() {
-        let x = Symbol::new("x");
-        let true_and_true = (TRUE & TRUE).typ();
-        let true_and_false = (TRUE & FALSE).typ();
-        let true_and_x = (TRUE & x.clone()).typ();
-
         assert!(!TRUE.typ().is_scalar());
         assert!(!FALSE.typ().is_scalar());
-        assert!(x.typ().is_scalar());
-        assert!(!true_and_true.is_scalar());
-        assert!(!true_and_false.is_scalar());
-        assert!(!true_and_x.is_scalar());
+        assert!(X.typ().is_scalar());
+        assert!(!TRUE_AND_TRUE.typ().is_scalar());
+        assert!(!TRUE_AND_FALSE.typ().is_scalar());
+        assert!(!TRUE_AND_X.typ().is_scalar());
     }
 
     #[test]
     fn bool_logic() {
-        let x = Symbol::new("x");
-        assert!((TRUE & TRUE).value().unwrap());
-        assert!(!(TRUE & FALSE).value().unwrap());
-        assert!(!(FALSE & TRUE).value().unwrap());
-        assert!(!(FALSE & FALSE).value().unwrap());
-        assert!((FALSE & x).value().is_none());
-        assert!((x & TRUE).value().is_none());
-        assert!((x & x).value().is_none());
-
-        assert!(((TRUE & TRUE) & TRUE).value().unwrap());
-        assert!(!((TRUE & TRUE) & FALSE).value().unwrap());
+        assert!(TRUE.bool_val().unwrap());
+        assert!(!FALSE.bool_val().unwrap());
+        assert!(X.bool_val().is_none());
+        assert!(TRUE_AND_TRUE.bool_val().unwrap());
+        assert!(!TRUE_AND_FALSE.bool_val().unwrap());
+        assert!(TRUE_AND_X.bool_val().is_none());
     }
 }
 
