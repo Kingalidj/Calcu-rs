@@ -10,3 +10,4 @@ nalgebra = "0.32.3"
 calcurs_macros = {package= "macros", path="macros"}
 calcurs_internals = {package= "internals", path="internals"}
 const-default = {version = "1.0.0", features = ["derive"]}
+paste = "1.0.14"

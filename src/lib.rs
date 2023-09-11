@@ -1,337 +1,268 @@
 //! simple symbolic algebra system in rust
 
-use calcurs_internals::Inherited;
-use const_default::ConstDefault;
 use core::fmt::Debug;
+use paste::paste;
 use std::ops;
-
-use calcurs_macros::*;
-
-impl Base {
-    pub const fn new() -> Self {
-        <Self as ConstDefault>::DEFAULT
-    }
-}
-
-impl Debug for Base {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.diff_debug(f)
-    }
-}
-
-macro_rules! base {
-    ($($field:ident $(= $value:expr)?),* $(,)?) => {
-        Base {
-            $(
-                $field $(: $value)?,
-            )*
-        ..Self::new_base()
-    }
-}
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CalcursType {
     BooleanTrue(BooleanTrue),
     BooleanFalse(BooleanFalse),
-    And(And),
+    And(Box<And>),
     Symbol(Symbol),
 }
 
-#[init_calcurs_macro_scope]
-mod scope {
-    use std::any::Any;
-
-    #[calcurs_base(const Base::new)]
-    #[derive(ConstDefault, Default, Clone, Copy, PartialEq)]
-    pub struct Base {
-        pub is_number: bool,
-        pub is_atom: bool,
-        pub is_symbol: bool,
-        pub is_function: bool,
-        pub is_add: bool,
-        pub is_mul: bool,
-        pub is_pow: bool,
-        pub is_float: bool,
-        pub is_rational: bool,
-        pub is_integer: bool,
-        pub is_numbersymbol: bool,
-        pub is_order: bool,
-        pub is_derivative: bool,
-        pub is_piecewise: bool,
-        pub is_poly: bool,
-        pub is_algebraicnumber: bool,
-        pub is_relational: bool,
-        pub is_equality: bool,
-        pub is_boolean: bool,
-        pub is_not: bool,
-        pub is_matrix: bool,
-        pub is_vector: bool,
-        pub is_point: bool,
-        pub is_matadd: bool,
-        pub is_matmul: Option<bool>,
-        pub is_real: Option<bool>,
-        pub is_zero: Option<bool>,
-        pub is_negative: Option<bool>,
-        pub is_commutative: Option<bool>,
-        pub is_scalar: bool,
-    }
-
-    pub trait IsCalcursType {
-        fn to_calcurs_type(&self) -> CalcursType;
-    }
-
-    impl<T> IsCalcursType for T
-    where
-        T: Basic + Clone + Into<CalcursType> + PartialEq + 'static,
-    {
-        fn to_calcurs_type(&self) -> CalcursType {
-            self.clone().into()
-        }
-    }
-
-    pub trait Simplify {
-        fn simplify_obj(&self) -> Box<dyn Basic>;
-
-        fn simplify(&self) -> CalcursType {
-            self.simplify_obj().to_calcurs_type()
-        }
-    }
-
-    trait DefaultSimplify {}
-    impl<T: Basic + DefaultSimplify> Simplify for T {
-        fn simplify_obj(&self) -> Box<dyn Basic> {
-            self.to_basic()
-        }
-    }
-
-    pub trait Substitute {
-        fn subs(&self, name: &'static str, val: Box<dyn Basic>) -> Box<dyn Basic>;
-    }
-
-    trait DefaultSubstitute {}
-    impl<T: Basic + DefaultSubstitute> Substitute for T {
-        fn subs(&self, _: &'static str, _: Box<dyn Basic>) -> Box<dyn Basic> {
-            self.to_basic()
-        }
-    }
-
-    #[dyn_trait]
-    #[calcurs_trait()]
-    pub trait Basic: Debug + IsCalcursType + Inherited<Base> + Simplify + Substitute {
-        fn to_basic(&self) -> Box<dyn Basic> {
-            self.box_clone()
-        }
-    }
-
-    #[dyn_trait]
-    #[calcurs_trait(is_atom = true)]
-    pub trait Atom: Basic {}
-
-    #[dyn_trait]
-    #[calcurs_trait()]
-    pub trait Boolean: Basic {}
-
-    #[dyn_trait]
-    #[calcurs_trait(is_scalar = true)]
-    pub trait Expr: Basic {}
-
-    #[dyn_trait]
-    #[calcurs_trait()]
-    pub trait AtomicExpr: Atom + Expr {}
-
-    #[dyn_trait]
-    #[calcurs_trait(is_boolean = true)]
-    pub trait BooleanAtom: Atom + Boolean {}
-
-    #[dyn_trait]
-    #[calcurs_trait(is_function = true)]
-    pub trait Application: Basic {}
-
-    #[dyn_trait]
-    #[calcurs_trait(is_boolean = true)]
-    pub trait BooleanFunc: Boolean + Application {}
-
-    #[calcurs_type(AtomicExpr + Boolean)]
-    #[derive(Debug, Clone, Default, Copy, PartialEq)]
-    pub struct Symbol {
-        name: &'static str,
-    }
-
-    impl DefaultSimplify for Symbol {}
-
-    impl Substitute for Symbol {
-        fn subs(&self, name: &'static str, val: Box<dyn Basic>) -> Box<dyn Basic> {
-            if self.name == name {
-                val
-            } else {
-                self.to_basic()
+macro_rules! for_each_type {
+    ($e: ident: $v: ident => $func: tt) => {{
+        use CalcursType::*;
+        match $e {
+            BooleanTrue($v) => $func,
+            BooleanFalse($v) => $func,
+            And($v) => {
+                let $v = $v.as_ref();
+                $func
             }
+            Symbol($v) => $func,
+        }
+    }};
+}
+
+macro_rules! auto_ref {
+    ($expr: expr) => {
+        (&$expr)
+    };
+}
+
+macro_rules! impl_getter {
+    ($fn_name: ident: $impl_fn: ident -> $ty: ty) => {
+        pub fn $fn_name(&self) -> $ty {
+            for_each_type!(self: v => { auto_ref!(*v).$impl_fn() })
         }
     }
+}
 
-    impl Symbol {
-        pub fn new(name: &'static str) -> Self {
-            let base = base!(is_symbol = true);
-            Self { name, base }
-        }
-    }
+impl CalcursType {
+    impl_getter!(is_atom: _is_atom -> bool);
+    impl_getter!(is_boolean: _is_boolean -> bool);
+    impl_getter!(is_function: _is_function -> bool);
+    impl_getter!(is_scalar: _is_scalar -> bool);
+}
 
-    impl From<Symbol> for CalcursType {
-        fn from(value: Symbol) -> CalcursType {
-            CalcursType::Symbol(value)
-        }
-    }
-
-    #[calcurs_type(BooleanAtom)]
-    #[derive(Debug, Clone, Default, Copy, PartialEq)]
-    pub struct BooleanTrue {}
-
-    impl DefaultSubstitute for BooleanTrue {}
-    impl DefaultSimplify for BooleanTrue {}
-
-    impl BooleanTrue {
-        pub const fn new() -> Self {
-            let base = base!(is_negative = Some(false));
-            BooleanTrue { base }
-        }
-    }
-
-    impl From<BooleanTrue> for CalcursType {
-        fn from(value: BooleanTrue) -> Self {
-            CalcursType::BooleanTrue(value)
-        }
-    }
-
-    impl From<BooleanTrue> for bool {
-        fn from(_: BooleanTrue) -> bool {
-            true
-        }
-    }
-
-    #[calcurs_type(BooleanAtom)]
-    #[derive(Debug, Clone, Default, Copy, PartialEq)]
-    pub struct BooleanFalse {}
-
-    impl DefaultSubstitute for BooleanFalse {}
-    impl DefaultSimplify for BooleanFalse {}
-
-    impl BooleanFalse {
-        pub const fn new() -> Self {
-            let base = base!(is_negative = Some(true));
-            BooleanFalse { base }
-        }
-    }
-
-    impl From<BooleanFalse> for CalcursType {
-        fn from(value: BooleanFalse) -> Self {
-            CalcursType::BooleanFalse(value)
-        }
-    }
-
-    impl From<BooleanFalse> for bool {
-        fn from(_: BooleanFalse) -> bool {
-            false
-        }
-    }
-
-    // logical And: e.g: A && B
-    #[calcurs_type(BooleanFunc)]
-    #[derive(Debug, Clone)]
-    pub struct And {
-        left: Box<dyn Basic>,
-        right: Box<dyn Basic>,
-    }
-
-    impl Substitute for And {
-        fn subs(&self, name: &'static str, val: Box<dyn Basic>) -> Box<dyn Basic> {
-            let mut res = self.clone();
-            res.left = self.left.subs(name, val.clone());
-            res.right = self.right.subs(name, val.clone());
-            res.to_basic()
-        }
-    }
-
-    impl Simplify for And {
-        fn simplify_obj(&self) -> Box<dyn Basic> {
-            self.simplify_impl().to_basic()
-        }
-    }
-
-    impl PartialEq for And {
-        fn eq(&self, other: &And) -> bool {
-            let lhs1 = self.left.base().is_negative;
-            let rhs1 = self.right.base().is_negative;
-            let lhs2 = other.left.base().is_negative;
-            let rhs2 = other.right.base().is_negative;
-
-            match ((lhs1, rhs1), (lhs2, rhs2)) {
-                ((Some(l1), Some(r1)), (Some(l2), Some(r2))) => l1 == l2 && r1 == r2,
-                _ => false,
+macro_rules! specialized_trait {
+    ([$basic: ident]: $fn_name: ident -> $ret_ty: ty { $special: ident: $spec_ret: expr }) => {
+        paste! {
+            pub trait [<__Default $fn_name:camel>] {
+                #[inline]
+                fn $fn_name(&self) -> $ret_ty {
+                    Default::default()
+                }
             }
+
+            pub trait [<__ $fn_name:camel>] {
+                #[inline]
+                fn $fn_name(&self) -> $ret_ty {
+                    $spec_ret
+                }
+            }
+
+            impl<T: $basic> [<__Default $fn_name:camel>] for &T {}
+            impl<T: $special> [<__ $fn_name:camel >] for T {}
         }
+    };
+}
+
+specialized_trait!([Basic]: _is_atom -> bool { Atom: true });
+specialized_trait!([Basic]: _is_boolean -> bool { Boolean: true });
+specialized_trait!([Basic]: _is_function -> bool { Application: true });
+specialized_trait!([Basic]: _is_scalar -> bool { Expr: true });
+
+pub trait Basic: Debug + Into<CalcursType> + Clone + PartialEq {
+    fn typ(self) -> CalcursType {
+        self.into()
     }
+}
 
-    impl And {
-        pub fn new(lhs: impl Boolean, rhs: impl Boolean) -> Self {
-            let is_negative = match (lhs.base().is_negative, rhs.base().is_negative) {
-                (Some(l), Some(r)) => Some(l && r),
-                (_, _) => None,
-            };
+pub trait Atom: Basic {}
+pub trait Expr: Basic {}
 
-            And {
-                base: base!(is_negative),
-                left: rhs.to_basic(),
-                right: lhs.to_basic(),
-            }
-        }
+pub trait Boolean: Basic {
+    fn value(&self) -> Option<bool>;
+}
+pub trait Application: Basic {}
 
-        fn simplify_impl(&self) -> &'static dyn Boolean {
-            let lhs = self.left.simplify_obj();
-            let rhs = self.right.simplify_obj();
+pub trait AtomicExpr: Atom + Expr {}
 
-            match (lhs.base().is_negative, rhs.base().is_negative) {
-                (Some(false), Some(false)) | (Some(true), Some(true)) => &TRUE,
-                _ => &FALSE,
-            }
+pub trait BooleanAtom: Atom + Boolean {}
+
+pub trait BooleanFunc: Boolean + Application {}
+
+#[derive(Debug, Clone, Default, Copy, PartialEq)]
+pub struct Symbol {
+    name: &'static str,
+}
+
+impl Basic for Symbol {}
+impl Atom for Symbol {}
+impl Expr for Symbol {}
+impl AtomicExpr for Symbol {}
+impl Boolean for Symbol {
+    fn value(&self) -> Option<bool> {
+        None
+    }
+}
+
+impl Symbol {
+    pub fn new(name: &'static str) -> Self {
+        Self { name }
+    }
+}
+
+impl From<Symbol> for CalcursType {
+    fn from(value: Symbol) -> CalcursType {
+        CalcursType::Symbol(value)
+    }
+}
+
+#[derive(Debug, Clone, Default, Copy, PartialEq)]
+pub struct BooleanTrue {}
+
+impl Basic for BooleanTrue {}
+impl Atom for BooleanTrue {}
+impl Boolean for BooleanTrue {
+    fn value(&self) -> Option<bool> {
+        Some(true)
+    }
+}
+
+impl BooleanTrue {
+    pub const fn new() -> Self {
+        BooleanTrue {}
+    }
+}
+
+impl From<BooleanTrue> for CalcursType {
+    fn from(value: BooleanTrue) -> Self {
+        CalcursType::BooleanTrue(value)
+    }
+}
+
+impl From<BooleanTrue> for bool {
+    fn from(_: BooleanTrue) -> bool {
+        true
+    }
+}
+
+#[derive(Debug, Clone, Default, Copy, PartialEq)]
+pub struct BooleanFalse {}
+
+impl Basic for BooleanFalse {}
+impl Atom for BooleanFalse {}
+impl Boolean for BooleanFalse {
+    fn value(&self) -> Option<bool> {
+        Some(false)
+    }
+}
+
+impl BooleanFalse {
+    pub const fn new() -> Self {
+        BooleanFalse {}
+    }
+}
+
+impl From<BooleanFalse> for CalcursType {
+    fn from(value: BooleanFalse) -> Self {
+        CalcursType::BooleanFalse(value)
+    }
+}
+
+impl From<BooleanFalse> for bool {
+    fn from(_: BooleanFalse) -> bool {
+        false
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct AndValue(Option<bool>);
+
+impl ops::BitAnd<AndValue> for AndValue {
+    type Output = AndValue;
+
+    fn bitand(self, rhs: AndValue) -> Self::Output {
+        let val = match (self.0, rhs.0) {
+            (Some(v1), Some(v2)) => Some(v1 && v2),
+            _ => None,
+        };
+        Self(val)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct And {
+    left: CalcursType,
+    right: CalcursType,
+    value: AndValue,
+}
+
+impl Basic for And {}
+impl Application for And {}
+impl BooleanFunc for And {}
+impl Boolean for And {
+    fn value(&self) -> Option<bool> {
+        self.value.0
+    }
+}
+
+impl PartialEq for And {
+    fn eq(&self, other: &And) -> bool {
+        self.value == other.value
+    }
+}
+
+impl And {
+    pub fn new<S: Boolean, T: Boolean>(lhs: S, rhs: T) -> And {
+        let value = AndValue(lhs.value()) & AndValue(rhs.value());
+        And {
+            left: lhs.into(),
+            right: rhs.into(),
+            value,
         }
     }
 }
 
 impl From<And> for CalcursType {
     fn from(value: And) -> Self {
-        CalcursType::And(value)
+        CalcursType::And(value.into())
     }
 }
 
-impl<U: Boolean> ops::BitAnd<U> for Symbol {
+impl<T: Boolean> ops::BitAnd<T> for BooleanTrue {
     type Output = And;
 
-    fn bitand(self, rhs: U) -> Self::Output {
+    fn bitand(self, rhs: T) -> Self::Output {
         And::new(self, rhs)
     }
 }
 
-impl<U: Boolean> ops::BitAnd<U> for BooleanTrue {
+impl<T: Boolean> ops::BitAnd<T> for BooleanFalse {
     type Output = And;
 
-    fn bitand(self, rhs: U) -> Self::Output {
+    fn bitand(self, rhs: T) -> Self::Output {
         And::new(self, rhs)
     }
 }
 
-impl<U: Boolean> ops::BitAnd<U> for BooleanFalse {
+impl<T: Boolean> ops::BitAnd<T> for And {
     type Output = And;
 
-    fn bitand(self, rhs: U) -> Self::Output {
+    fn bitand(self, rhs: T) -> Self::Output {
         And::new(self, rhs)
     }
 }
 
-impl<U: Boolean> ops::BitAnd<U> for And {
+impl<T: Boolean> ops::BitAnd<T> for Symbol {
     type Output = And;
 
-    fn bitand(self, rhs: U) -> Self::Output {
+    fn bitand(self, rhs: T) -> Self::Output {
         And::new(self, rhs)
     }
 }
@@ -347,23 +278,111 @@ mod test {
     #[test]
     fn boolean() {
         assert_eq!(And::new(TRUE, FALSE), TRUE & FALSE);
-        assert_eq!(CalcursType::from(FALSE), (TRUE & FALSE).simplify());
     }
 
     #[test]
-    fn calcurs_traits() {
-        assert!(!TRUE.base.is_negative.unwrap());
-        assert!(FALSE.base.is_negative.unwrap());
-        assert!(TRUE.base.is_atom);
-        assert!(FALSE.base.is_atom);
+    fn is_atom() {
+        let x = Symbol::new("x");
+        let true_and_true = (TRUE & TRUE).typ();
+        let true_and_false = (TRUE & FALSE).typ();
+        let true_and_x = (TRUE & x.clone()).typ();
 
-        assert!(And::new_base().is_function);
-        assert!(!And::new_base().is_number);
-        assert!(And::new_base().is_boolean);
-        assert!(!(TRUE & FALSE).base.is_negative.unwrap());
+        assert!(TRUE.typ().is_atom());
+        assert!(FALSE.typ().is_atom());
+        assert!(x.typ().is_atom());
+        assert!(!true_and_true.is_atom());
+        assert!(!true_and_false.is_atom());
+        assert!(!true_and_x.is_atom());
+    }
 
-        assert!(Symbol::new("test").base().is_atom);
-        assert!(Symbol::new("test").base().is_scalar);
-        assert!(Symbol::new("test").base().is_symbol);
+    #[test]
+    fn is_boolean() {
+        let x = Symbol::new("x");
+        let true_and_true = (TRUE & TRUE).typ();
+        let true_and_false = (TRUE & FALSE).typ();
+        let true_and_x = (TRUE & x.clone()).typ();
+
+        assert!(TRUE.typ().is_boolean());
+        assert!(FALSE.typ().is_boolean());
+        assert!(x.typ().is_boolean());
+        assert!(true_and_true.is_boolean());
+        assert!(true_and_false.is_boolean());
+        assert!(true_and_x.is_boolean());
+    }
+
+    #[test]
+    fn is_function() {
+        let x = Symbol::new("x");
+        let true_and_true = (TRUE & TRUE).typ();
+        let true_and_false = (TRUE & FALSE).typ();
+        let true_and_x = (TRUE & x.clone()).typ();
+
+        assert!(!TRUE.typ().is_function());
+        assert!(!FALSE.typ().is_function());
+        assert!(!x.typ().is_function());
+        assert!(true_and_true.is_function());
+        assert!(true_and_false.is_function());
+        assert!(true_and_x.is_function());
+    }
+
+    #[test]
+    fn is_scalar() {
+        let x = Symbol::new("x");
+        let true_and_true = (TRUE & TRUE).typ();
+        let true_and_false = (TRUE & FALSE).typ();
+        let true_and_x = (TRUE & x.clone()).typ();
+
+        assert!(!TRUE.typ().is_scalar());
+        assert!(!FALSE.typ().is_scalar());
+        assert!(x.typ().is_scalar());
+        assert!(!true_and_true.is_scalar());
+        assert!(!true_and_false.is_scalar());
+        assert!(!true_and_x.is_scalar());
+    }
+
+    #[test]
+    fn bool_logic() {
+        let x = Symbol::new("x");
+        assert!((TRUE & TRUE).value().unwrap());
+        assert!(!(TRUE & FALSE).value().unwrap());
+        assert!(!(FALSE & TRUE).value().unwrap());
+        assert!(!(FALSE & FALSE).value().unwrap());
+        assert!((FALSE & x).value().is_none());
+        assert!((x & TRUE).value().is_none());
+        assert!((x & x).value().is_none());
+
+        assert!(((TRUE & TRUE) & TRUE).value().unwrap());
+        assert!(!((TRUE & TRUE) & FALSE).value().unwrap());
     }
 }
+
+// is_number: bool,
+// is_atom: bool,
+// is_symbol: bool,
+// is_function: bool,
+// is_add: bool,
+// is_mul: bool,
+// is_pow: bool,
+// is_float: bool,
+// is_rational: bool,
+// is_integer: bool,
+// is_numbersymbol: bool,
+// is_order: bool,
+// is_derivative: bool,
+// is_piecewise: bool,
+// is_poly: bool,
+// is_algebraicnumber: bool,
+// is_relational: bool,
+// is_equality: bool,
+// is_boolean: bool,
+// is_not: bool,
+// is_matrix: bool,
+// is_vector: bool,
+// is_point: bool,
+// is_matadd: bool,
+// is_scalar: bool,
+// is_matmul: Option<bool>,
+// is_real: Option<bool>,
+// is_zero: Option<bool>,
+// is_negative: Option<bool>,
+// is_commutative: Option<bool>,

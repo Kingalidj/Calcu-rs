@@ -9,7 +9,7 @@ use quote::{quote, ToTokens};
 use syn::{
     parse::{Parse, Parser},
     punctuated::Punctuated,
-    Error, ExprLit, Field, Ident, Item, ItemStruct, ItemTrait, Token,
+    Error, ExprLit, Ident, Item, ItemStruct, ItemTrait, Token,
 };
 
 use crate::{
@@ -287,11 +287,11 @@ fn impl_calcurs_items(
         }
     };
 
-    let base_field = Field::parse_named
-        .parse2(quote! {base: #base_type})
-        .expect("impl_calcurs_items: could not implemnt base field");
+    // let base_field = Field::parse_named
+    //     .parse2(quote! {base: #base_type})
+    //     .expect("impl_calcurs_items: could not implemnt base field");
 
-    let internals = import_crate("internals");
+    // let internals = import_crate("internals");
 
     let mut stream = TokenStream::new();
 
@@ -304,7 +304,7 @@ fn impl_calcurs_items(
         let type_mark = &typ.mark;
         let calcurs_struct = MarkedItem::new(type_mark.clone(), strct.clone());
 
-        append_struct_field(strct, base_field.clone())?;
+        // append_struct_field(strct, base_field.clone())?;
 
         let s = impl_trait_dependencies(&calcurs_struct, &dep_tree.relations);
         stream.extend(s);
@@ -318,18 +318,18 @@ fn impl_calcurs_items(
 
         stream.extend(s);
 
-        let generics = &strct.generics;
-        let name = &strct.ident;
+        // let generics = &strct.generics;
+        // let name = &strct.ident;
 
-        let impl_code = quote! {
-            impl #generics #internals::Inherited<#base_type> for #name #generics {
-                fn base(&self) -> &#base_type {
-                    &self.base
-                }
-            }
-        };
+        // let impl_code = quote! {
+        //     impl #generics #internals::Inherited<#base_type> for #name #generics {
+        //         fn base(&self) -> &#base_type {
+        //             &self.base
+        //         }
+        //     }
+        // };
 
-        stream.extend(impl_code);
+        // stream.extend(impl_code);
     }
 
     Ok(stream)
