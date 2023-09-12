@@ -3,59 +3,9 @@
 use calcurs_macros::dyn_trait;
 use core::fmt::Debug;
 use paste::paste;
-use std::ops;
+use std::{fmt::Display, ops};
 
-#[derive(Debug, Clone)]
-pub enum CalcursType {
-    BooleanTrue(BooleanTrue),
-    BooleanFalse(BooleanFalse),
-    And(And),
-    Symbol(Symbol),
-}
-
-macro_rules! for_each_type {
-    ($e: ident: $v: ident => $func: tt) => {{
-        use CalcursType::*;
-        match $e {
-            BooleanTrue($v) => $func,
-            BooleanFalse($v) => $func,
-            And($v) => $func,
-            Symbol($v) => $func,
-        }
-    }};
-}
-
-macro_rules! impl_getter {
-    ($fn_name: ident: $impl_fn: ident -> $ty: ty) => {
-        pub fn $fn_name(&self) -> $ty {
-            for_each_type!(self: v => { auto_ref!(*v).$impl_fn() })
-        }
-    }
-}
-
-macro_rules! auto_ref {
-    ($expr: expr) => {
-        (&$expr)
-    };
-}
-
-impl CalcursType {
-    impl_getter!(get_atom: get_atom_impl -> Option<Box<dyn Atom>>);
-    pub fn is_atom(&self) -> bool {
-        self.get_atom().is_some()
-    }
-
-    impl_getter!(get_boolean: get_boolean_impl -> Option<Box<dyn Boolean>>);
-    pub fn is_boolean(&self) -> bool {
-        self.get_boolean().is_some()
-    }
-
-    impl_getter!(is_function: is_function_impl -> bool);
-
-    impl_getter!(is_scalar: is_scalar_impl -> bool);
-}
-
-macro_rules! specialized_trait {
+macro_rules! _specialized_trait {
     ([$basic: ident => $special: ident]: $fn_name: ident (&$self: ident) -> $ret_ty: ty { $spec_ret: expr }) => {
         paste! {
             pub trait [<__Default $fn_name:camel>] {
@@ -80,28 +30,95 @@ macro_rules! specialized_trait {
     };
 }
 
-specialized_trait!([Basic => Atom]: get_atom_impl(&self) -> Option<Box<dyn Atom>> { Some(DynAtom::box_clone(self)) });
+#[derive(Clone)]
+pub enum CalcursType {
+    BooleanTrue(BooleanTrue),
+    BooleanFalse(BooleanFalse),
+    And(And),
+    Symbol(Symbol),
+}
 
-specialized_trait!([Basic => Boolean]: get_boolean_impl(&self) -> Option<Box<dyn Boolean>> {  Some(DynBoolean::box_clone(self))  });
+macro_rules! wrap {
+    ($type: ident: $val: expr) => {
+        paste! {
+            CalcursType::$type($val)
+        }
+    };
+}
 
-specialized_trait!([Basic => Application]: is_function_impl(&self) -> bool { true });
+macro_rules! for_each_type {
+    (match $e: ident |$v: ident| $func: tt) => {{
+        use CalcursType::*;
+        match $e {
+            BooleanTrue($v) => $func,
+            BooleanFalse($v) => $func,
+            And($v) => $func,
+            Symbol($v) => $func,
+        }
+    }};
+}
 
-specialized_trait!([Basic => Expr]: is_scalar_impl(&self) -> bool { true });
+impl Debug for CalcursType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for_each_type!(match self |v| { write!(f, "{:?}", v)})
+    }
+}
+
+impl Display for CalcursType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for_each_type!(match self |v| { write!(f, "{}", v)})
+    }
+}
+
+impl CalcursType {
+    pub fn get_boolean(&self) -> Option<&dyn Boolean> {
+        use CalcursType::*;
+        match self {
+            BooleanTrue(v) => Some(v),
+            BooleanFalse(v) => Some(v),
+            And(v) => Some(v),
+            Symbol(v) => Some(v),
+        }
+    }
+
+    pub fn is_boolean(&self) -> bool {
+        self.get_boolean().is_some()
+    }
+
+    pub fn subs<SYM: Into<Symbol>>(&self, sym: SYM, value: CalcursType) -> CalcursType {
+        for_each_type!(match self |v| { v.subs(sym.into(), value).unwrap_or(self.clone()) })
+    }
+}
+
+impl<'a> From<&'a CalcursType> for Option<&'a dyn Boolean> {
+    fn from(value: &'a CalcursType) -> Self {
+        value.get_boolean()
+    }
+}
 
 impl PartialEq for CalcursType {
     fn eq(&self, other: &Self) -> bool {
-        match (self.get_boolean(), other.get_boolean()) {
-            (Some(b1), Some(b2)) => match (b1.bool_val(), b2.bool_val()) {
-                (Some(v1), Some(v2)) => return v1 == v2,
-                _ => return false,
-            },
-            _ => false,
+        if let (Some(b1), Some(b2)) = (self.get_boolean(), other.get_boolean()) {
+            if let (Some(v1), Some(v2)) = (b1.bool_val(), b2.bool_val()) {
+                return v1 == v2;
+            }
         }
+
+        false
     }
 }
 
 #[dyn_trait]
-pub trait Basic: Debug {}
+pub trait Substitude {
+    fn subs(&self, _: Symbol, _: CalcursType) -> Option<CalcursType> {
+        None
+    }
+}
+
+#[dyn_trait]
+pub trait Basic: Display + Debug + Substitude {
+    fn as_type(&self) -> CalcursType;
+}
 
 #[dyn_trait]
 pub trait Atom: Basic {}
@@ -128,10 +145,14 @@ pub trait BooleanFunc: Boolean + Application {}
 
 #[derive(Debug, Clone, Default, Copy, PartialEq)]
 pub struct Symbol {
-    name: &'static str,
+    ident: &'static str,
 }
 
-impl Basic for Symbol {}
+impl Basic for Symbol {
+    fn as_type(&self) -> CalcursType {
+        (*self).into()
+    }
+}
 impl Atom for Symbol {}
 impl Expr for Symbol {}
 impl AtomicExpr for Symbol {}
@@ -141,15 +162,40 @@ impl Boolean for Symbol {
     }
 }
 
+impl Display for Symbol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.ident)
+    }
+}
+
+impl Substitude for Symbol {
+    fn subs(&self, sym: Symbol, value: CalcursType) -> Option<CalcursType> {
+        match sym == *self {
+            true => Some(value),
+            false => None,
+        }
+    }
+}
+
 impl Symbol {
-    pub const fn new(name: &'static str) -> CalcursType {
-        CalcursType::Symbol(Self { name })
+    pub const fn new(name: &'static str) -> Self {
+        Self { ident: name }
+    }
+
+    pub const fn typ(name: &'static str) -> CalcursType {
+        wrap!(Symbol: Self::new(name))
+    }
+}
+
+impl From<&'static str> for Symbol {
+    fn from(value: &'static str) -> Self {
+        Symbol::new(value)
     }
 }
 
 impl From<Symbol> for CalcursType {
     fn from(value: Symbol) -> CalcursType {
-        CalcursType::Symbol(value)
+        wrap!(Symbol: value)
     }
 }
 
@@ -157,12 +203,21 @@ impl From<Symbol> for CalcursType {
 pub struct BooleanTrue;
 
 impl BooleanTrue {
-    pub const fn new() -> CalcursType {
-        CalcursType::BooleanTrue(Self {})
+    pub const fn to_typ(self) -> CalcursType {
+        wrap!(BooleanTrue: self)
+    }
+
+    pub const fn typ() -> CalcursType {
+        Self {}.to_typ()
     }
 }
 
-impl Basic for BooleanTrue {}
+impl Basic for BooleanTrue {
+    fn as_type(&self) -> CalcursType {
+        (*self).into()
+    }
+}
+
 impl Atom for BooleanTrue {}
 impl Boolean for BooleanTrue {
     fn bool_val(&self) -> Option<bool> {
@@ -170,15 +225,17 @@ impl Boolean for BooleanTrue {
     }
 }
 
-impl From<BooleanTrue> for CalcursType {
-    fn from(value: BooleanTrue) -> Self {
-        CalcursType::BooleanTrue(value)
+impl Substitude for BooleanTrue {}
+
+impl Display for BooleanTrue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "true")
     }
 }
 
-impl From<BooleanTrue> for bool {
-    fn from(_: BooleanTrue) -> bool {
-        true
+impl From<BooleanTrue> for CalcursType {
+    fn from(value: BooleanTrue) -> Self {
+        value.to_typ()
     }
 }
 
@@ -186,12 +243,17 @@ impl From<BooleanTrue> for bool {
 pub struct BooleanFalse;
 
 impl BooleanFalse {
-    pub const fn new() -> CalcursType {
-        CalcursType::BooleanFalse(Self {})
+    pub const fn typ() -> CalcursType {
+        wrap!(BooleanFalse: Self {})
     }
 }
 
-impl Basic for BooleanFalse {}
+impl Basic for BooleanFalse {
+    fn as_type(&self) -> CalcursType {
+        (*self).into()
+    }
+}
+
 impl Atom for BooleanFalse {}
 impl Boolean for BooleanFalse {
     fn bool_val(&self) -> Option<bool> {
@@ -199,15 +261,17 @@ impl Boolean for BooleanFalse {
     }
 }
 
-impl From<BooleanFalse> for CalcursType {
-    fn from(value: BooleanFalse) -> Self {
-        CalcursType::BooleanFalse(value)
+impl Substitude for BooleanFalse {}
+
+impl Display for BooleanFalse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "false")
     }
 }
 
-impl From<BooleanFalse> for bool {
-    fn from(_: BooleanFalse) -> bool {
-        false
+impl From<BooleanFalse> for CalcursType {
+    fn from(value: BooleanFalse) -> Self {
+        wrap!(BooleanFalse: value)
     }
 }
 
@@ -231,12 +295,62 @@ pub struct And {
     value: AndValue,
 }
 
-impl Basic for And {}
+impl And {
+    pub fn new(lhs: Box<dyn Boolean>, rhs: Box<dyn Boolean>) -> Self {
+        let v1 = AndValue(lhs.bool_val());
+        let v2 = AndValue(rhs.bool_val());
+        let value = v1.and(v2);
+        And { lhs, rhs, value }
+    }
+
+    pub fn typ(lhs: Box<dyn Boolean>, rhs: Box<dyn Boolean>) -> CalcursType {
+        wrap!(And: Self::new(lhs, rhs))
+    }
+}
+
+impl Basic for And {
+    fn as_type(&self) -> CalcursType {
+        (*self).clone().into()
+    }
+}
 impl Application for And {}
 impl BooleanFunc for And {}
 impl Boolean for And {
     fn bool_val(&self) -> Option<bool> {
         self.value.0
+    }
+}
+
+impl Substitude for And {
+    fn subs(&self, sym: Symbol, value: CalcursType) -> Option<CalcursType> {
+        if !value.is_boolean() {
+            return None;
+        }
+
+        let lhs = self.lhs.subs(sym, value.clone());
+        let rhs = self.rhs.subs(sym, value.clone());
+
+        match (&lhs, &rhs) {
+            (None, None) => return None,
+            _ => (),
+        }
+
+        let binding = lhs.unwrap_or(self.lhs.as_type());
+        let lhs = binding.get_boolean().expect("should be unreachable");
+
+        let binding = rhs.unwrap_or(self.rhs.as_type());
+        let rhs = binding.get_boolean().expect("should be unreachable");
+
+        Some(And::typ(
+            DynBoolean::box_clone(lhs),
+            DynBoolean::box_clone(rhs),
+        ))
+    }
+}
+
+impl Display for And {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({} & {})", self.lhs, self.rhs)
     }
 }
 
@@ -246,16 +360,9 @@ impl PartialEq for And {
     }
 }
 
-impl And {
-    pub fn new(lhs: Box<dyn Boolean>, rhs: Box<dyn Boolean>) -> CalcursType {
-        let value = AndValue(lhs.bool_val()).and(AndValue(rhs.bool_val()));
-        CalcursType::And(And { lhs, rhs, value })
-    }
-}
-
 impl From<And> for CalcursType {
     fn from(value: And) -> Self {
-        CalcursType::And(value.into())
+        wrap!(And: value)
     }
 }
 
@@ -264,125 +371,66 @@ impl ops::BitAnd<CalcursType> for CalcursType {
 
     fn bitand(self, rhs: CalcursType) -> Self::Output {
         match (self.get_boolean(), rhs.get_boolean()) {
-            (Some(b1), Some(b2)) => And::new(b1, b2),
+            (Some(b1), Some(b2)) => And::typ(DynBoolean::box_clone(b1), DynBoolean::box_clone(b2)),
             _ => todo!(),
         }
     }
 }
 
-pub const FALSE: CalcursType = BooleanFalse::new();
-pub const TRUE: CalcursType = BooleanTrue::new();
+pub const FALSE: CalcursType = BooleanFalse::typ();
+pub const TRUE: CalcursType = BooleanTrue::typ();
 
 #[cfg(test)]
 mod test {
 
     use crate::*;
 
-    #[test]
-    fn boolean() {
-        // assert_eq!(And::new(TRUE, FALSE), TRUE & FALSE);
-    }
+    macro_rules! parse {
+        (true) => {
+            TRUE
+        };
 
-    const X: CalcursType = Symbol::new("x");
+        (false) => {
+            FALSE
+        };
 
-    #[test]
-    fn is_atom() {
-        let true_and_true = TRUE & TRUE;
-        let true_and_false = TRUE & FALSE;
-        let true_and_x = TRUE & X;
+        ($e: ident) => {
+            Symbol::typ(stringify!($e))
+        };
 
-        assert!(TRUE.is_atom());
-        assert!(FALSE.is_atom());
-        assert!(X.is_atom());
-        assert!(!true_and_true.is_atom());
-        assert!(!true_and_false.is_atom());
-        assert!(!true_and_x.is_atom());
+        ($e1: ident $(& $e2: ident)+) => {
+            parse!($e1) $(& parse!($e2))+
+        };
     }
 
     #[test]
     fn is_boolean() {
-        let true_and_true = TRUE & TRUE;
-        let true_and_false = TRUE & FALSE;
-        let true_and_x = TRUE & X;
-
-        assert!(TRUE.is_boolean());
-        assert!(FALSE.is_boolean());
-        assert!(X.is_boolean());
-        assert!(true_and_true.is_boolean());
-        assert!(true_and_false.is_boolean());
-        assert!(true_and_x.is_boolean());
-    }
-
-    #[test]
-    fn is_function() {
-        let true_and_true = TRUE & TRUE;
-        let true_and_false = TRUE & FALSE;
-        let true_and_x = TRUE & X;
-
-        assert!(!TRUE.is_function());
-        assert!(!FALSE.is_function());
-        assert!(!X.is_function());
-        assert!(true_and_true.is_function());
-        assert!(true_and_false.is_function());
-        assert!(true_and_x.is_function());
-    }
-
-    #[test]
-    fn is_scalar() {
-        let true_and_true = TRUE & TRUE;
-        let true_and_false = TRUE & FALSE;
-        let true_and_x = TRUE & X;
-
-        assert!(!TRUE.is_scalar());
-        assert!(!FALSE.is_scalar());
-        assert!(X.is_scalar());
-        assert!(!true_and_true.is_scalar());
-        assert!(!true_and_false.is_scalar());
-        assert!(!true_and_x.is_scalar());
+        assert!(parse!(true).is_boolean());
+        assert!(parse!(false).is_boolean());
+        assert!(parse!(x).is_boolean());
+        assert!(parse!(x & y).is_boolean());
     }
 
     #[test]
     fn bool_logic() {
-        let true_and_true = TRUE & TRUE;
-        let true_and_false = TRUE & FALSE;
-        let false_and_false = FALSE & FALSE;
-        let true_and_x = TRUE & X;
+        assert_eq!(parse!(true & true), TRUE);
+        assert_eq!(parse!(true & false), FALSE);
+        assert_eq!(parse!(false & false), parse!(false & true));
+        assert_ne!(parse!(true & x), TRUE);
+        assert_ne!(parse!(x & true), FALSE);
+        assert!(parse!(x & y & z)
+            .get_boolean()
+            .unwrap()
+            .bool_val()
+            .is_none());
+    }
 
-        assert_eq!(true_and_true, TRUE);
-        assert_eq!(true_and_false, FALSE);
-        assert_eq!(false_and_false, FALSE);
-        assert_ne!(true_and_x, TRUE);
-        assert_ne!(true_and_x, FALSE);
+    #[test]
+    fn substitude() {
+        let expr = parse!(x & y);
+
+        assert_eq!(expr.subs("x", TRUE).subs("y", TRUE), TRUE);
+        assert_eq!(expr.subs("x", FALSE).subs("y", TRUE), FALSE);
+        assert_eq!(expr.subs("x", TRUE).subs("y", FALSE), FALSE);
     }
 }
-
-// is_number: bool,
-// is_atom: bool,
-// is_symbol: bool,
-// is_function: bool,
-// is_add: bool,
-// is_mul: bool,
-// is_pow: bool,
-// is_float: bool,
-// is_rational: bool,
-// is_integer: bool,
-// is_numbersymbol: bool,
-// is_order: bool,
-// is_derivative: bool,
-// is_piecewise: bool,
-// is_poly: bool,
-// is_algebraicnumber: bool,
-// is_relational: bool,
-// is_equality: bool,
-// is_boolean: bool,
-// is_not: bool,
-// is_matrix: bool,
-// is_vector: bool,
-// is_point: bool,
-// is_matadd: bool,
-// is_scalar: bool,
-// is_matmul: Option<bool>,
-// is_real: Option<bool>,
-// is_zero: Option<bool>,
-// is_negative: Option<bool>,
-// is_commutative: Option<bool>,
