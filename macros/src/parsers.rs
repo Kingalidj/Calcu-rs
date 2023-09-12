@@ -1,7 +1,7 @@
 use proc_macro2::{Ident, TokenStream};
 use quote::{quote, ToTokens};
 use syn::parse::{Parse, ParseStream};
-use syn::{Path, Token};
+use syn::Token;
 
 pub struct FuncMacroArg {
     pub is_const: bool,
