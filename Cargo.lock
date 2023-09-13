@@ -193,6 +193,7 @@ name = "macros"
 version = "0.1.0"
 dependencies = [
  "internals",
+ "paste",
  "prettyplease",
  "proc-macro-crate",
  "proc-macro2",

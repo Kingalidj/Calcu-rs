@@ -15,3 +15,4 @@ quote = "1.0.33"
 calcurs_internals = {package="internals", path = "../internals"}
 syn = {version = "2.0.29", features = ["full", "derive", "parsing", "printing", "extra-traits"]}
 prettyplease = "0.2.12"
+paste = "1.0.14"

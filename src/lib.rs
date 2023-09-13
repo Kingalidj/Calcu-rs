@@ -1,6 +1,6 @@
 //! simple symbolic algebra system in rust
 
-use calcurs_macros::dyn_trait;
+use calcurs_macros::{dyn_trait, Basic};
 use core::fmt::Debug;
 use paste::paste;
 use std::{fmt::Display, ops};
@@ -128,7 +128,9 @@ pub trait Expr: Basic {}
 
 #[dyn_trait]
 pub trait Boolean: Basic {
-    fn bool_val(&self) -> Option<bool>;
+    fn bool_val(&self) -> Option<bool> {
+        None
+    }
 }
 
 #[dyn_trait]
@@ -143,22 +145,27 @@ pub trait BooleanAtom: Atom + Boolean {}
 #[dyn_trait]
 pub trait BooleanFunc: Boolean + Application {}
 
-#[derive(Debug, Clone, Default, Copy, PartialEq)]
+#[derive(Basic, Debug, Clone, Default, Copy, PartialEq)]
 pub struct Symbol {
     ident: &'static str,
 }
 
-impl Basic for Symbol {
-    fn as_type(&self) -> CalcursType {
-        (*self).into()
-    }
-}
 impl Atom for Symbol {}
 impl Expr for Symbol {}
 impl AtomicExpr for Symbol {}
 impl Boolean for Symbol {
     fn bool_val(&self) -> Option<bool> {
         None
+    }
+}
+
+impl Symbol {
+    pub const fn new(name: &'static str) -> Self {
+        Self { ident: name }
+    }
+
+    pub const fn typ(name: &'static str) -> CalcursType {
+        wrap!(Symbol: Self::new(name))
     }
 }
 
@@ -177,16 +184,6 @@ impl Substitude for Symbol {
     }
 }
 
-impl Symbol {
-    pub const fn new(name: &'static str) -> Self {
-        Self { ident: name }
-    }
-
-    pub const fn typ(name: &'static str) -> CalcursType {
-        wrap!(Symbol: Self::new(name))
-    }
-}
-
 impl From<&'static str> for Symbol {
     fn from(value: &'static str) -> Self {
         Symbol::new(value)
@@ -199,8 +196,16 @@ impl From<Symbol> for CalcursType {
     }
 }
 
-#[derive(Debug, Clone, Default, Copy, PartialEq)]
+#[derive(Basic, Debug, Clone, Default, Copy, PartialEq)]
 pub struct BooleanTrue;
+
+impl Substitude for BooleanTrue {}
+impl Atom for BooleanTrue {}
+impl Boolean for BooleanTrue {
+    fn bool_val(&self) -> Option<bool> {
+        Some(true)
+    }
+}
 
 impl BooleanTrue {
     pub const fn to_typ(self) -> CalcursType {
@@ -211,21 +216,6 @@ impl BooleanTrue {
         Self {}.to_typ()
     }
 }
-
-impl Basic for BooleanTrue {
-    fn as_type(&self) -> CalcursType {
-        (*self).into()
-    }
-}
-
-impl Atom for BooleanTrue {}
-impl Boolean for BooleanTrue {
-    fn bool_val(&self) -> Option<bool> {
-        Some(true)
-    }
-}
-
-impl Substitude for BooleanTrue {}
 
 impl Display for BooleanTrue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -239,21 +229,10 @@ impl From<BooleanTrue> for CalcursType {
     }
 }
 
-#[derive(Debug, Clone, Default, Copy, PartialEq)]
+#[derive(Basic, Debug, Clone, Default, Copy, PartialEq)]
 pub struct BooleanFalse;
 
-impl BooleanFalse {
-    pub const fn typ() -> CalcursType {
-        wrap!(BooleanFalse: Self {})
-    }
-}
-
-impl Basic for BooleanFalse {
-    fn as_type(&self) -> CalcursType {
-        (*self).into()
-    }
-}
-
+impl Substitude for BooleanFalse {}
 impl Atom for BooleanFalse {}
 impl Boolean for BooleanFalse {
     fn bool_val(&self) -> Option<bool> {
@@ -261,7 +240,11 @@ impl Boolean for BooleanFalse {
     }
 }
 
-impl Substitude for BooleanFalse {}
+impl BooleanFalse {
+    pub const fn typ() -> CalcursType {
+        wrap!(BooleanFalse: Self {})
+    }
+}
 
 impl Display for BooleanFalse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -288,11 +271,19 @@ impl AndValue {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Basic, Debug, Clone)]
 pub struct And {
     lhs: Box<dyn Boolean>,
     rhs: Box<dyn Boolean>,
     value: AndValue,
+}
+
+impl Application for And {}
+impl BooleanFunc for And {}
+impl Boolean for And {
+    fn bool_val(&self) -> Option<bool> {
+        self.value.0
+    }
 }
 
 impl And {
@@ -305,19 +296,6 @@ impl And {
 
     pub fn typ(lhs: Box<dyn Boolean>, rhs: Box<dyn Boolean>) -> CalcursType {
         wrap!(And: Self::new(lhs, rhs))
-    }
-}
-
-impl Basic for And {
-    fn as_type(&self) -> CalcursType {
-        (*self).clone().into()
-    }
-}
-impl Application for And {}
-impl BooleanFunc for And {}
-impl Boolean for And {
-    fn bool_val(&self) -> Option<bool> {
-        self.value.0
     }
 }
 
