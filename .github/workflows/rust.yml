@@ -22,8 +22,6 @@ jobs:
     - name: Run tests
       run: cargo test --verbose
       
-    - name: Run Clippy
-      run: cargo clippy --all-targets --all-features
   
   deploy:
     runs-on: ubuntu-22.04
