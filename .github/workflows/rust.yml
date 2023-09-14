@@ -34,7 +34,7 @@ jobs:
 
     - name: Build docs
       run: 
-        cargo doc --no-deps -p calcu-rs -p internals -p macros --document-private-items
+        cargo doc --no-deps -p calcu-rs --document-private-items
         
         echo '
         <!DOCTYPE html>
