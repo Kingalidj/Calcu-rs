@@ -35,6 +35,7 @@ jobs:
     - name: Build docs
       run: 
         cargo clean --doc
+        
         cargo doc --no-deps -p calcu-rs --document-private-items
         
         echo '
