@@ -1,13 +1,10 @@
 extern crate calcu_rs;
-use calcu_rs::*;
+use calcu_rs::prelude::*;
 
 fn main() {
     std::env::set_var("RUST_BACKTRACE", "1");
 
-    let x = Symbol::typ("x");
-    let y = Symbol::typ("y");
-    let expr = y & x;
-    let expr = expr.subs("x", FALSE);
-    println!("{}", expr);
-    println!("{}", expr.subs("y", TRUE));
+    let expr = TRUE | FALSE & TRUE & FALSE;
+    let res = true || false && true && false;
+    println!("{} == {}", expr.simplify(), res);
 }
