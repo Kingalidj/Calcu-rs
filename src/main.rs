@@ -4,7 +4,9 @@ use calcu_rs::prelude::*;
 fn main() {
     std::env::set_var("RUST_BACKTRACE", "1");
 
-    let expr = TRUE | FALSE & TRUE & FALSE;
-    let res = true || false && true && false;
-    println!("{} == {}", expr.simplify(), res);
+    let from = DistributivityRule::<And, Or>::FROM;
+    let into = DistributivityRule::<And, Or>::INTO;
+
+    println!("from: {}", from);
+    println!("into: {}", into);
 }
