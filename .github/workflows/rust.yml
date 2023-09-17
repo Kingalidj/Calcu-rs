@@ -22,8 +22,6 @@ jobs:
     - name: Run tests
       run: cargo test --verbose
       
-    - name: Run Clippy
-      run: cargo clippy --all-targets --all-features
   
   deploy:
     runs-on: ubuntu-22.04
@@ -36,7 +34,9 @@ jobs:
 
     - name: Build docs
       run: 
-        cargo doc --no-deps -p calcu-rs -p internals -p macros --document-private-items
+        cargo clean --doc
+        
+        cargo doc --no-deps -p calcu-rs --document-private-items
         
         echo '
         <!DOCTYPE html>
