@@ -3,5 +3,5 @@ extern crate calcu_rs;
 use calcu_rs::*;
 
 fn main() {
-    println!("Hello World!");
+    println!("{:?}", std::mem::size_of::<Basic>());
 }
