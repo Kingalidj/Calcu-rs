@@ -1,345 +1,193 @@
-use derive_more::{Display, From};
-use std::any::TypeId;
-use std::fmt;
-use std::fmt::Formatter;
-use std::marker::PhantomData;
-use std::ops::Deref;
-use std::rc::Rc;
-use visitor::{DownCastVisitor, IsVisitor};
 
-mod visitor;
-
-/*
-    precedence order:
-
-    Not
-    And
-    Or
-*/
-
-pub fn can_cast<T: 'static, U: 'static>() -> bool {
-    TypeId::of::<T>() == TypeId::of::<U>()
+pub const fn is_same<T: CalcursType, U: CalcursType>() -> bool {
+    T::ID as u32 == U::ID as u32
 }
 
-pub fn dyn_cast<T: 'static, U: 'static>(t: T) -> Result<U, T> {
-    if can_cast::<T, U>() {
-        let ptr = std::mem::ManuallyDrop::new(t).deref() as *const T as *const U;
-        Ok(unsafe { std::ptr::read(ptr) })
+pub const fn cast_ref<T: CalcursType, U: CalcursType>(r#ref: &T) -> Option<&U> {
+    if is_same::<T, U>() {
+        let ptr = r#ref as *const T as *const U;
+        let cast = unsafe { &*ptr };
+        Some(cast)
     } else {
-        Err(t)
+        None
     }
 }
 
-pub trait CloneByVal: Clone {
-    fn clone_val(&self) -> Self;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[repr(u32)]
+pub enum TypeID {
+    Basic,
+    Symbol,
+
+    Boolean,
+    BooleanAtom,
+    And,
+    Or,
+    Not,
+
+    #[default]
+    Dummy,
 }
 
-#[derive(Debug, Clone, Display, PartialEq, Eq)]
-pub struct RCP<T> {
-    ptr: Rc<T>,
+pub trait CalcursType: Clone {
+    const ID: TypeID;
 }
 
-impl<T: CloneByVal> CloneByVal for RCP<T> {
-    fn clone_val(&self) -> Self {
-        Self {
-            ptr: Rc::new(self.ptr.clone_val()),
+macro_rules! early_ret {
+    ($e: expr) => {
+        if let Some(ret) = $e {
+            return Some(ret)
         }
     }
 }
 
-impl<T: CloneByVal> CloneByVal for Vec<T> {
-    fn clone_val(&self) -> Self {
-        self.iter().map(|x| x.clone_val()).collect()
-    }
-}
-
-impl<T> AsRef<T> for RCP<T> {
-    fn as_ref(&self) -> &T {
-        self.ptr.as_ref()
-    }
-}
-
-impl<T> Deref for RCP<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        self.ptr.as_ref()
-    }
-}
-
-impl<T> RCP<T> {
-    pub fn new(val: T) -> Self {
-        Self { ptr: val.into() }
-    }
-}
-
-pub enum MaybeRef<T: CloneByVal> {
-    Owned(T),
-    Ref(RCP<T>),
-}
-
-impl<T: CloneByVal> MaybeRef<T> {
-    pub fn borrow(val: RCP<T>) -> Self {
-        MaybeRef::Ref(val)
-    }
-
-    pub fn take(val: T) -> Self {
-        MaybeRef::Owned(val)
-    }
-
-    pub fn to_owned(self) -> T {
-        match self {
-            MaybeRef::Owned(v) => v,
-            MaybeRef::Ref(v) => v.as_ref().clone_val(),
+macro_rules! get_ref_impl {
+    () => {
+        pub const fn get_ref<T: CalcursType>(&self) -> Option<&T> {
+            cast_ref::<Self, T>(self)
         }
-    }
+    };
 
-    pub fn to_ref(self) -> RCP<T> {
-        match self {
-            MaybeRef::Owned(v) => RCP::new(v),
-            MaybeRef::Ref(v) => v,
+    ($($x: ident)+) => {
+        pub const fn get_ref<T: CalcursType>(&self) -> Option<&T> {
+            early_ret!(cast_ref::<Self, T>(self));
+            $( early_ret!(self.$x.get_ref::<T>()); )+
+            None
         }
-    }
-}
-
-#[derive(Debug, Clone, From, Display)]
-pub enum Basic {
-    Boolean(Boolean),
-    Symbol(Symbol),
-}
-
-impl CloneByVal for Basic {
-    fn clone_val(&self) -> Self {
-        use Basic as B;
-        match self {
-            B::Boolean(b) => b.clone_val().into(),
-            B::Symbol(s) => s.clone_val().into(),
-        }
-    }
-}
-
-impl Basic {
-    pub fn is<T: 'static>(&self) -> bool {
-        IsVisitor::<T>::is(self)
-    }
-
-    pub fn downcast<T: 'static>(&self) -> Option<T> {
-        DownCastVisitor::downcast(self)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Symbol {
-    name: RCP<String>,
-}
-
-impl CloneByVal for Symbol {
-    fn clone_val(&self) -> Self {
-        self.clone()
-    }
-}
-
-impl fmt::Display for Symbol {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.name)
-    }
-}
-
-impl Symbol {
-    pub fn new(name: RCP<String>) -> Self {
-        Self { name }
-    }
-}
-
-#[derive(Debug, Clone, From, Display)]
-pub enum Boolean {
-    And(And),
-    Or(Or),
-    Not(Not),
-    BooleanAtom(BooleanAtom),
-}
-
-impl CloneByVal for Boolean {
-    fn clone_val(&self) -> Self {
-        use Boolean as B;
-        match self {
-            B::And(b) => b.clone_val().into(),
-            B::Or(b) => b.clone_val().into(),
-            B::Not(b) => b.clone_val().into(),
-            B::BooleanAtom(b) => b.clone_val().into(),
-        }
-    }
-}
-
-impl From<bool> for Boolean {
-    fn from(value: bool) -> Self {
-        Boolean::BooleanAtom(value.into())
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct AssociativeSet<OP: BinaryOperator> {
-    set: Vec<Boolean>,
-    tag: PhantomData<OP>,
-}
-
-impl<OP: BinaryOperator> fmt::Display for AssociativeSet<OP> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let args = &self.set;
-
-        if args.is_empty() {
-            return Ok(());
-        }
-
-        let mut iter = args.iter();
-
-        write!(f, "(")?;
-
-        if let Some(b) = iter.next() {
-            write!(f, "{b}")?;
-        }
-
-        while let Some(b) = iter.next() {
-            write!(f, " {} {b}", OP::REPR)?;
-        }
-
-        write!(f, ")")
-    }
-}
-
-impl<OP: BinaryOperator> AssociativeSet<OP> {
-    pub fn push(&mut self, b: Boolean) {
-        self.set.push(b)
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default, Display)]
-pub struct BooleanAtom {
-    val: bool,
-}
-
-impl CloneByVal for BooleanAtom {
-    fn clone_val(&self) -> Self {
-        self.clone()
-    }
-}
-
-impl From<bool> for BooleanAtom {
-    fn from(val: bool) -> Self {
-        Self { val }
-    }
-}
-
-impl From<BooleanAtom> for Basic {
-    fn from(b: BooleanAtom) -> Self {
-        Basic::Boolean(b.into())
-    }
-}
-
-pub trait BinaryOperator {
-    const REPR: &'static str;
-}
-
-/// Canonical [And] is implemented with a [Boolean] coeff and a set of [CanonicalOr] of the form [{c1, v1}, {c2, v2}, ...] \
-/// Example: \
-/// coeff ∧ (c1 ∨ v1) ∧ (c2 ∨ v2) ∧ ... \
-/// where the c's are all booleans and the v's can be any symbolic expression
-#[derive(Debug, Clone, Display)]
-#[display(fmt = "AND")]
-pub struct And {
-    /// extract all booleans to coeff
-    coeff: RCP<Boolean>,
-    /// create sum of product form
-    args: RCP<Vec<Or>>,
-}
-
-impl CloneByVal for And {
-    fn clone_val(&self) -> Self {
-        Self {
-            coeff: self.coeff.clone_val(),
-            args: self.args.clone_val(),
-        }
-    }
-}
-
-pub fn and(lhs: RCP<Basic>, rhs: RCP<Basic>) -> And {
-    if lhs.is::<And>() && rhs.is::<And>() {
-        let lhs = lhs.downcast::<And>().unwrap();
-        let rhs = rhs.downcast::<And>().unwrap();
-    }
-
-    todo!()
-}
-
-// pub struct And {
-//     args: Vec<Basic>,
-// }
-
-impl BinaryOperator for And {
-    const REPR: &'static str = "∧";
-}
-
-impl From<And> for Basic {
-    fn from(b: And) -> Self {
-        Basic::Boolean(b.into())
-    }
-}
-
-/// Canonical [Or] is implemented with a [Boolean] coeff and a [Basic] value \
-/// Example: \
-/// coeff ∨ b
-#[derive(Debug, Clone, Display)]
-#[display(fmt = "OR")]
-pub struct Or {
-    /// extract all booleans to coeff
-    coeff: RCP<Boolean>,
-    /// rest
-    value: RCP<Basic>,
-}
-
-impl CloneByVal for Or {
-    fn clone_val(&self) -> Self {
-        Self {
-            coeff: self.coeff.clone_val(),
-            value: self.value.clone_val(),
-        }
-    }
-}
-
-impl BinaryOperator for Or {
-    const REPR: &'static str = "∨";
-}
-
-impl From<Or> for Basic {
-    fn from(b: Or) -> Self {
-        Basic::Boolean(b.into())
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct Not {
-    val: RCP<Basic>,
+pub struct Basic {
+    pub kind: BasicKind,
 }
 
-impl CloneByVal for Not {
-    fn clone_val(&self) -> Self {
-        Self {
-            val: self.val.clone_val(),
+impl Basic {
+    get_ref_impl!(kind);
+
+    pub const fn is<T: CalcursType>(&self) -> bool {
+        self.get_ref::<T>().is_some()
+    }
+}
+
+impl CalcursType for Basic {
+    const ID: TypeID = TypeID::Basic;
+}
+
+#[derive(Debug, Clone)]
+pub enum BasicKind {
+    Symbol(Symbol),
+    Boolean(Boolean),
+
+    Dummy,
+}
+
+impl BasicKind {
+    pub const fn get_ref<T: CalcursType>(&self) -> Option<&T> {
+        use BasicKind as BK;
+        match self {
+            BK::Symbol(b) => b.get_ref::<T>(),
+            BK::Boolean(b) => b.get_ref::<T>(),
+            BK::Dummy => None
         }
     }
 }
 
-impl fmt::Display for Not {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "¬{}", self.val)
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Symbol {
+    pub name: String,
+}
+
+impl CalcursType for Symbol {
+    const ID: TypeID = TypeID::Symbol;
+}
+
+impl Symbol {
+    get_ref_impl!();
+}
+
+#[derive(Debug, Clone)]
+pub struct Boolean {
+    pub kind: BooleanKind,
+}
+
+impl CalcursType for Boolean {
+    const ID: TypeID = TypeID::Boolean;
+}
+
+impl Boolean {
+    get_ref_impl!(kind);
+}
+
+#[derive(Debug, Clone)]
+pub enum BooleanKind {
+    Atom(BooleanAtom),
+
+    And(And),
+    Or(Or),
+    Not(Not),
+}
+
+impl BooleanKind {
+    pub const fn get_ref<T: CalcursType>(&self) -> Option<&T> {
+        use BooleanKind as BK;
+        match self {
+            BK::Atom(b) => b.get_ref::<T>(),
+            BK::And(b) => b.get_ref::<T>(),
+            BK::Or(b) => b.get_ref::<T>(),
+            BK::Not(b) => b.get_ref::<T>(),
+        }
     }
 }
 
-impl From<Not> for Basic {
-    fn from(b: Not) -> Self {
-        Basic::Boolean(b.into())
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct BooleanAtom {
+    pub val: bool,
 }
+
+impl BooleanAtom {
+    get_ref_impl!();
+}
+
+impl CalcursType for BooleanAtom {
+    const ID: TypeID = TypeID::BooleanAtom;
+}
+
+#[derive(Debug, Clone)]
+pub struct And {}
+
+impl And {
+    get_ref_impl!();
+}
+
+impl CalcursType for And {
+    const ID: TypeID = TypeID::And;
+}
+
+#[derive(Debug, Clone)]
+pub struct Or {}
+
+impl Or {
+    get_ref_impl!();
+}
+
+impl CalcursType for Or {
+    const ID: TypeID = TypeID::Or;
+}
+
+#[derive(Debug, Clone)]
+pub struct Not {}
+
+impl Not {
+    get_ref_impl!();
+}
+
+impl CalcursType for Not {
+    const ID: TypeID = TypeID::Not;
+}
+
+pub const FALSE: Basic = Basic { kind: BasicKind::Boolean( Boolean { kind: BooleanKind::Atom(BooleanAtom { val: false }) }) };
+pub const TRUE: Basic = Basic { kind: BasicKind::Boolean( Boolean { kind: BooleanKind::Atom(BooleanAtom { val: true }) }) };
 
 #[cfg(test)]
 mod test {
@@ -347,15 +195,18 @@ mod test {
     use crate::*;
 
     #[test]
-    fn is() {
-        let b: Basic = BooleanAtom::from(false).into();
+    fn ast_getter() {
+        assert!(TRUE.is::<Basic>());
+        assert!(TRUE.is::<Boolean>());
+        assert!(TRUE.is::<BooleanAtom>());
 
-        assert!(b.is::<BooleanAtom>());
-        assert!(b.is::<Boolean>());
-        assert!(b.is::<Basic>());
+        assert!(!FALSE.is::<Symbol>());
+        assert!(!FALSE.is::<And>());
+        assert!(!FALSE.is::<Not>());
+        assert!(!FALSE.is::<Or>());
 
-        assert!(!b.is::<Not>());
-        assert!(!b.is::<And>());
-        assert!(!b.is::<Or>());
+        assert!(TRUE.get_ref::<BooleanAtom>().unwrap().val);
+        assert!(!FALSE.get_ref::<BooleanAtom>().unwrap().val);
     }
+
 }
