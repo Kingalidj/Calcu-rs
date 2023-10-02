@@ -1,9 +1,11 @@
 
+#[inline(always)]
 pub const fn is_same<T: CalcursType, U: CalcursType>() -> bool {
     T::ID as u32 == U::ID as u32
 }
 
-pub const fn cast_ref<T: CalcursType, U: CalcursType>(r#ref: &T) -> Option<&U> {
+#[inline(always)]
+pub const fn cast_ref<'a, T: CalcursType, U: CalcursType>(r#ref: &'a T) -> Option<&'a U> {
     if is_same::<T, U>() {
         let ptr = r#ref as *const T as *const U;
         let cast = unsafe { &*ptr };
@@ -41,14 +43,17 @@ macro_rules! early_ret {
     }
 }
 
+// should be completely optimized away => becomes same as just pattern matching
 macro_rules! get_ref_impl {
     () => {
+        #[inline(always)]
         pub const fn get_ref<T: CalcursType>(&self) -> Option<&T> {
             cast_ref::<Self, T>(self)
         }
     };
 
     ($($x: ident)+) => {
+        #[inline(always)]
         pub const fn get_ref<T: CalcursType>(&self) -> Option<&T> {
             early_ret!(cast_ref::<Self, T>(self));
             $( early_ret!(self.$x.get_ref::<T>()); )+
@@ -83,6 +88,7 @@ pub enum BasicKind {
 }
 
 impl BasicKind {
+    #[inline(always)]
     pub const fn get_ref<T: CalcursType>(&self) -> Option<&T> {
         use BasicKind as BK;
         match self {
@@ -129,6 +135,7 @@ pub enum BooleanKind {
 }
 
 impl BooleanKind {
+    #[inline(always)]
     pub const fn get_ref<T: CalcursType>(&self) -> Option<&T> {
         use BooleanKind as BK;
         match self {
@@ -196,6 +203,7 @@ mod test {
 
     #[test]
     fn ast_getter() {
+        const _: bool = TRUE.is::<Basic>();
         assert!(TRUE.is::<Basic>());
         assert!(TRUE.is::<Boolean>());
         assert!(TRUE.is::<BooleanAtom>());
