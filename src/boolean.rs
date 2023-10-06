@@ -126,6 +126,7 @@ impl BooleanKind {
             BasicKind::Var(v) => BooleanKind::Var(v),
             BasicKind::Boolean(b) => b.kind,
             BasicKind::Dummy => BooleanKind::Unknown(PTR::new(b)),
+            _ => todo!(),
         }
     }
 
@@ -224,15 +225,15 @@ impl And {
         }
 
         if set.is_empty() {
-            return true.into();
+            true.into()
         } else if set.len() == 1 {
             let mut iter = set.into_iter();
-            return iter.next().unwrap().into();
+            iter.next().unwrap().into()
+        } else {
+            BooleanKind::And(Self {
+                args: set.into_iter().collect(),
+            })
         }
-
-        BooleanKind::And(Self {
-            args: set.into_iter().collect(),
-        })
     }
 
     pub fn subs(self, dict: SubsDict) -> BooleanKind {

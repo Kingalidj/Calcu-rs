@@ -2,12 +2,14 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use boolean::Boolean;
 use derive_more::Display;
+use numbers::Number;
 
 mod boolean;
 mod numbers;
 
 pub mod prelude {
     pub use crate::boolean::*;
+    pub use crate::numbers::*;
     pub use crate::*;
 }
 
@@ -124,8 +126,10 @@ impl From<BasicKind> for Basic {
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Display)]
 pub enum BasicKind {
     Var(Variable),
+
     Boolean(Boolean),
-    // Number(Number),
+
+    Number(Number),
 
     Dummy,
 }
@@ -138,7 +142,7 @@ impl BasicKind {
             BK::Var(b) => b.get_ref::<T>(),
             BK::Boolean(b) => b.get_ref::<T>(),
             BK::Dummy => None,
-            // BK::Number(_) => todo!(),
+            _ => todo!(), // BK::Number(_) => todo!(),
         }
     }
 
@@ -154,7 +158,7 @@ impl BasicKind {
             }
             BasicKind::Boolean(b) => BasicKind::Boolean(b.kind.subs(dict).into()),
             BasicKind::Dummy => self,
-            // BasicKind::Number(_) => todo!(),
+            _ => todo!(), // BK::Number(_) => todo!(),
         }
     }
 
@@ -162,7 +166,7 @@ impl BasicKind {
         match self {
             BasicKind::Boolean(b) => BasicKind::Boolean(b.kind.simplify().into()),
             BasicKind::Dummy | BasicKind::Var(_) => self,
-            // BasicKind::Number(_) => todo!(),
+            _ => todo!(), // BK::Number(_) => todo!(),
         }
     }
 }
