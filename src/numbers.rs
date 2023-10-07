@@ -1,19 +1,18 @@
 #![allow(dead_code)]
 
+use calcurs_macros::Procagate;
 use derive_more::Display;
-
-use num::bigint::BigInt;
-use num::rational::BigRational;
+use num::{BigInt, BigRational};
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq, Display)]
 pub struct Number {
     kind: NumberKind,
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Display)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Display, Procagate)]
 pub enum NumberKind {
-    Integer(BigInt),
-    Rational(BigRational),
+    Integer(Integer),
+    Rational(Rational),
 
     Infinity(Infinity),
     NaN(NaN),
@@ -21,12 +20,7 @@ pub enum NumberKind {
 
 impl NumberKind {
     pub fn add(self, other: &Self) -> Self {
-        use NumberKind as N;
-        match self {
-            N::Infinity(i) => i.add(other),
-            N::NaN(n) => n.add(other),
-            _ => todo!(),
-        }
+        procagate_number_kind!(self, v => {v.add(other)})
     }
 }
 
@@ -39,31 +33,40 @@ impl NaN {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Display, Copy)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Display, Copy, Default)]
 pub enum Direction {
     #[display(fmt = "+")]
     Positive,
     #[display(fmt = "-")]
     Negitive,
     #[display(fmt = "")]
+    #[default]
     UnSigned,
 }
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Display)]
+impl Direction {
+    pub fn from_num<I: num::Signed>(int: &I) -> Self {
+        if int.is_negative() {
+            Direction::Negitive
+        } else if int.is_positive() {
+            Direction::Positive
+        } else {
+            Direction::UnSigned
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Display, Default)]
 #[display(fmt = "{dir}oo")]
 pub struct Infinity {
     dir: Direction,
 }
 
-impl Default for Infinity {
-    fn default() -> Self {
-        Self {
-            dir: Direction::UnSigned,
-        }
-    }
-}
-
 impl Infinity {
+    pub fn new(dir: Direction) -> Self {
+        Self { dir }
+    }
+
     pub fn pos() -> Self {
         Self {
             dir: Direction::Positive,
@@ -80,9 +83,49 @@ impl Infinity {
         use NumberKind as N;
         match other {
             N::Infinity(_) if self.dir == Direction::UnSigned => N::NaN(NaN),
-            N::Infinity(Infinity { dir }) if self.dir != *dir => N::NaN(NaN),
+            N::Infinity(inf) if self.dir != inf.dir => N::NaN(NaN),
             N::NaN(_) => N::NaN(NaN),
-            _ => return N::Infinity(self),
+            _ => N::Infinity(self),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Display, Default)]
+pub struct Integer(BigInt);
+
+impl From<Integer> for NumberKind {
+    fn from(value: Integer) -> Self {
+        NumberKind::Integer(value)
+    }
+}
+
+impl Integer {
+    pub fn add(self, other: &NumberKind) -> NumberKind {
+        use NumberKind as N;
+        match other {
+            N::Infinity(_) | N::NaN(_) => other.clone(),
+            N::Integer(i) => Integer(self.0 + &i.0).into(),
+            N::Rational(r) => Rational(BigRational::from_integer(self.0) + &r.0).into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Display, Default)]
+pub struct Rational(BigRational);
+
+impl From<Rational> for NumberKind {
+    fn from(value: Rational) -> Self {
+        NumberKind::Rational(value)
+    }
+}
+
+impl Rational {
+    pub fn add(self, other: &NumberKind) -> NumberKind {
+        use NumberKind as N;
+        match other {
+            N::Integer(i) => Rational(self.0 + BigRational::from_integer(i.0.clone())).into(),
+            N::Rational(r) => Rational(self.0 + &r.0).into(),
+            N::Infinity(_) | N::NaN(_) => other.clone(),
         }
     }
 }

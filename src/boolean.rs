@@ -1,5 +1,6 @@
 use std::{collections::HashSet, fmt, ops};
 
+use calcurs_macros::Procagate;
 use derive_more::Display;
 
 use crate::{
@@ -40,7 +41,7 @@ impl Boolean {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Display)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Display, Procagate)]
 pub enum BooleanKind {
     True(True),
     False(False),
@@ -55,12 +56,13 @@ pub enum BooleanKind {
 
 impl BooleanKind {
     pub fn simplify(self) -> Self {
+        use BooleanKind as BK;
         match self {
-            BooleanKind::And(a) => a.simplify(),
-            BooleanKind::Or(o) => o.simplify(),
-            BooleanKind::Not(n) => n.simplify(),
-            BooleanKind::Unknown(b) => BooleanKind::Unknown(b.simplify().into()),
-            BooleanKind::True(_) | BooleanKind::False(_) | BooleanKind::Var(_) => self,
+            BK::And(a) => a.simplify(),
+            BK::Or(o) => o.simplify(),
+            BK::Not(n) => n.simplify(),
+            BK::Unknown(b) => BK::Unknown(b.simplify().into()),
+            BK::True(_) | BK::False(_) | BK::Var(_) => self,
         }
     }
 }
@@ -109,16 +111,7 @@ impl CalcursType for False {
 impl BooleanKind {
     #[inline(always)]
     pub const fn get_ref<T: CalcursType>(&self) -> Option<&T> {
-        use BooleanKind as BK;
-        match self {
-            BK::True(b) => b.get_ref::<T>(),
-            BK::False(b) => b.get_ref::<T>(),
-            BK::Var(b) => b.get_ref::<T>(),
-            BK::And(b) => b.get_ref::<T>(),
-            BK::Or(b) => b.get_ref::<T>(),
-            BK::Not(b) => b.get_ref::<T>(),
-            BK::Unknown(b) => b.get_ref::<T>(),
-        }
+        procagate_boolean_kind!(self, b => {b.get_ref::<T>()})
     }
 
     pub fn from_basic(b: Basic) -> Self {

@@ -126,9 +126,7 @@ impl From<BasicKind> for Basic {
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Display)]
 pub enum BasicKind {
     Var(Variable),
-
     Boolean(Boolean),
-
     Number(Number),
 
     Dummy,
@@ -171,6 +169,10 @@ impl BasicKind {
     }
 }
 
+pub trait SimplifyAs<T> {
+    fn simplify(self) -> T;
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Display)]
 pub struct Variable {
     pub name: String,
@@ -185,6 +187,10 @@ impl<T: Into<String>> From<T> for Variable {
 impl Variable {
     pub fn new<I: Into<String>>(name: I) -> Self {
         Self { name: name.into() }
+    }
+
+    pub fn simplify(self) -> Self {
+        self
     }
 }
 
