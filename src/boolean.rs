@@ -1,12 +1,8 @@
 use std::{collections::HashSet, fmt, ops};
 
-use calcurs_macros::Procagate;
 use derive_more::Display;
 
-use crate::{
-    cast_ref, early_ret, get_ref_impl, ArgSet, Basic, BasicKind, CalcursType, SubsDict, TypeID,
-    Variable, PTR,
-};
+use crate::{ArgSet, Basic, BasicKind, CalcursType, SubsDict, Variable, PTR};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Display)]
 pub struct Boolean {
@@ -26,22 +22,18 @@ impl From<BooleanKind> for Boolean {
 }
 
 impl CalcursType for Boolean {
-    const ID: TypeID = TypeID::Boolean;
-
     fn to_basic(self) -> Basic {
         BasicKind::Boolean(self).into()
     }
 }
 
 impl Boolean {
-    get_ref_impl!(kind);
-
     pub fn to_basic(self) -> Basic {
         BasicKind::Boolean(self).into()
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Display, Procagate)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Display)]
 pub enum BooleanKind {
     True(True),
     False(False),
@@ -80,13 +72,7 @@ impl From<bool> for BooleanKind {
 #[display(fmt = "1")]
 pub struct True;
 
-impl True {
-    get_ref_impl!();
-}
-
 impl CalcursType for True {
-    const ID: TypeID = TypeID::True;
-
     fn to_basic(self) -> Basic {
         BooleanKind::True(self).to_basic()
     }
@@ -96,24 +82,13 @@ impl CalcursType for True {
 #[display(fmt = "0")]
 pub struct False;
 
-impl False {
-    get_ref_impl!();
-}
-
 impl CalcursType for False {
-    const ID: TypeID = TypeID::False;
-
     fn to_basic(self) -> Basic {
         BooleanKind::False(self).to_basic()
     }
 }
 
 impl BooleanKind {
-    #[inline(always)]
-    pub const fn get_ref<T: CalcursType>(&self) -> Option<&T> {
-        procagate_boolean_kind!(self, b => {b.get_ref::<T>()})
-    }
-
     pub fn from_basic(b: Basic) -> Self {
         match b.kind {
             BasicKind::Var(v) => BooleanKind::Var(v),
@@ -185,8 +160,6 @@ impl std::hash::Hash for And {
 }
 
 impl And {
-    get_ref_impl!();
-
     pub fn and<S: CalcursType, T: CalcursType>(b1: S, b2: T) -> Boolean {
         let mut or = Self {
             args: ArgSet::new(),
@@ -240,8 +213,6 @@ impl And {
 }
 
 impl CalcursType for And {
-    const ID: TypeID = TypeID::And;
-
     fn to_basic(self) -> Basic {
         self.simplify().to_basic()
     }
@@ -286,8 +257,6 @@ impl fmt::Display for Or {
 }
 
 impl Or {
-    get_ref_impl!();
-
     pub fn subs(self, dict: SubsDict) -> BooleanKind {
         let args = self
             .args
@@ -340,8 +309,6 @@ impl Or {
 }
 
 impl CalcursType for Or {
-    const ID: TypeID = TypeID::Or;
-
     fn to_basic(self) -> Basic {
         BooleanKind::Or(self).to_basic()
     }
@@ -364,8 +331,6 @@ impl fmt::Display for Not {
 }
 
 impl Not {
-    get_ref_impl!();
-
     pub fn subs(self, dict: SubsDict) -> BooleanKind {
         let val = self.val.subs(dict);
         BooleanKind::Not(Not { val: val.into() })
@@ -419,8 +384,6 @@ impl ops::Not for Basic {
 }
 
 impl CalcursType for Not {
-    const ID: TypeID = TypeID::Not;
-
     fn to_basic(self) -> Basic {
         BooleanKind::Not(self).to_basic()
     }
@@ -444,35 +407,21 @@ mod boolean_types {
     use boolean::*;
 
     #[test]
-    fn ast_getter() {
-        const _: bool = TRUE.is::<Basic>();
-        assert!(TRUE.is::<Basic>());
-        assert!(TRUE.is::<Boolean>());
-        assert!(TRUE.is::<True>());
-
-        assert!(!FALSE.is::<Variable>());
-        assert!(!FALSE.is::<And>());
-        assert!(!FALSE.is::<Not>());
-        assert!(!FALSE.is::<Or>());
-        assert!(!FALSE.is::<True>());
-    }
-
-    #[test]
     fn and() {
         let and = And::and(And::and(TRUE, Variable::new("x")), FALSE).to_basic();
-        assert!(and.is::<False>());
+        assert_eq!(and, FALSE);
 
         let and = And::and(And::and(TRUE, Variable::new("x")), Variable::new("x")).to_basic();
-        assert!(and.is::<Variable>())
+        assert_eq!(and, BooleanKind::Var(Variable::new("x")).to_basic())
     }
 
     #[test]
     fn or() {
         let or = Or::or(Or::or(FALSE, Variable::new("x")), TRUE).to_basic();
-        assert!(or.is::<True>());
+        assert_eq!(or, TRUE);
 
         let or = Or::or(Or::or(False, Variable::new("x")), Variable::new("x")).to_basic();
-        assert!(or.is::<Variable>())
+        assert_eq!(or, BooleanKind::Var(Variable::new("x")).to_basic())
     }
 
     #[test]
@@ -483,10 +432,10 @@ mod boolean_types {
 
         let expr = (x.clone() & y.clone()) | z.clone();
         let eval = expr.subs("x", y.clone()).subs("y", True).subs("z", False);
-        assert!(eval.simplify().is::<True>());
+        assert_eq!(eval.simplify(), TRUE);
 
         let expr = !((x.clone() & y.clone()) | z.clone());
         let eval = expr.subs("x", y.clone()).subs("y", True).subs("z", False);
-        assert!(eval.simplify().is::<False>());
+        assert_eq!(eval.simplify(), FALSE);
     }
 }

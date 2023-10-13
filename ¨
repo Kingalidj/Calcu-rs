@@ -305,10 +305,8 @@ impl From<Rational> for NumberKind {
 }
 
 impl Rational {
-    pub fn new(val: i32, denom: i32) -> Number {
+    pub fn new(val: i32, denom: i32) -> Self {
         Self(BigRational::new(val.into(), denom.into()))
-            .simplify()
-            .into()
     }
 
     pub fn num_kind(val: i32, denom: i32) -> NumberKind {
@@ -372,21 +370,13 @@ pub struct Add {
 
 impl fmt::Display for Add {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut iter = self.arg_map.iter();
+        write!(f, "({}", self.coeff)?;
 
-        if let Some((k, v)) = iter.next() {
-            write!(f, "{v}{k}")?;
+        for (term, coeff) in &self.arg_map {
+            write!(f, " + {} * {}", coeff, term)?;
         }
 
-        for (k, v) in iter {
-            write!(f, " + {v}{k}")?;
-        }
-
-        if !self.coeff.is_zero() {
-            write!(f, " + {}", self.coeff)?;
-        }
-
-        Ok(())
+        write!(f, ")")
     }
 }
 
@@ -476,57 +466,6 @@ impl ops::Add for Basic {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Mul {
-    coeff: NumberKind,
-    arg_map: HashMap<BasicKind, BasicKind>,
-}
-
-impl Mul {
-    fn add_term(&mut self, exp: BasicKind, t: BasicKind) {
-        if self.arg_map.contains_key(&t) {
-        } else {
-            self.arg_map.insert(t, exp);
-        }
-    }
-}
-
-impl fmt::Display for Mul {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut iter = self.arg_map.iter();
-
-        if let Some((k, v)) = iter.next() {
-            write!(f, "{v}^{k}")?;
-        }
-
-        for (k, v) in iter {
-            write!(f, " * {v}^{k}")?;
-        }
-
-        if !self.coeff.is_zero() {
-            write!(f, " * {}", self.coeff)?;
-        }
-
-        Ok(())
-    }
-}
-
-impl std::hash::Hash for Mul {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        "Mul".hash(state);
-        self.coeff.hash(state);
-        for a in &self.arg_map {
-            a.hash(state);
-        }
-    }
-}
-
-impl CalcursType for Mul {
-    fn to_basic(self) -> Basic {
-        BasicKind::Mul(self).into()
-    }
-}
-
 #[cfg(test)]
 mod test_numbers {
 
@@ -584,8 +523,8 @@ mod test_numbers {
             Rational::new($val, $denom)
         };
 
-        (v($var: tt)) => {
-            Variable::new(stringify!($var))
+        (v($var: literal)) => {
+            Variable::new($var)
         };
     }
 
@@ -598,7 +537,7 @@ mod test_numbers {
     #[test]
     fn add_binop() {
         assert_eq!(c!(2) + c!(3), c!(5));
-        assert_eq!(c!(v(x)) + c!(v(x)) + c!(3), c!(3) + c!(v(x)) + c!(v(x)));
+        assert_eq!(c!(v("x")) + c!("x") + c!(3), c!(3) + c!("x") + c!("x"));
         assert_eq!(c!(-1) + c!(3), c!(2));
         assert_eq!(c!(-3) + c!(1 / 2), c!(-5 / 2));
         assert_eq!(c!(1 / 2) + c!(1 / 2), c!(1));
