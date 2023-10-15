@@ -9,6 +9,7 @@ edition = "2021"
 calcurs_macros = {package = "macros", path = "./macros"}
 derive_more = "0.99.17"
 num = "0.4.1"
+num-traits = "0.2.17"
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"

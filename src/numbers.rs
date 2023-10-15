@@ -2,13 +2,28 @@ use std::{collections::HashMap, fmt, ops};
 
 use calcurs_macros::Procagate;
 use derive_more::Display;
-use num::{BigInt, BigRational, Zero};
+use num::{bigint, BigInt, BigRational, Zero};
+use num_traits::One;
 
 use crate::{Basic, BasicKind, CalcursType};
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq, Display)]
 pub struct Number {
     kind: NumberKind,
+}
+
+impl Numberic for Number {
+    fn is_zero(&self) -> bool {
+        self.kind.is_zero()
+    }
+
+    fn is_one(&self) -> bool {
+        self.kind.is_one()
+    }
+
+    fn sign(&self) -> Sign {
+        self.kind.sign()
+    }
 }
 
 impl CalcursType for Number {
@@ -26,9 +41,37 @@ pub enum NumberKind {
     NaN(NaN),
 }
 
+impl Numberic for NumberKind {
+    fn is_zero(&self) -> bool {
+        procagate_number_kind!(self, v => { v.is_zero() })
+    }
+
+    fn is_one(&self) -> bool {
+        procagate_number_kind!(self, v => { v.is_zero() })
+    }
+
+    fn sign(&self) -> Sign {
+        procagate_number_kind!(self, v => { v.sign() })
+    }
+}
+
 impl From<NumberKind> for Number {
     fn from(value: NumberKind) -> Self {
         Number { kind: value }
+    }
+}
+
+pub trait Numberic {
+    fn is_zero(&self) -> bool;
+    fn is_one(&self) -> bool;
+    fn sign(&self) -> Sign;
+
+    fn is_pos(&self) -> bool {
+        self.sign().is_pos()
+    }
+
+    fn is_neg(&self) -> bool {
+        self.sign().is_neg()
     }
 }
 
@@ -46,7 +89,7 @@ impl NumberKind {
     }
 
     pub fn sub(self, mut other: NumberKind) -> NumberKind {
-        other = other.mul(Integer::num_kind(-1));
+        other = other.mul(Integer::num(-1));
         self.add(other)
     }
 
@@ -82,7 +125,7 @@ impl NumberKind {
 
     fn self_div_inf(&self) -> NumberKind {
         match self {
-            NumberKind::Rational(_) | NumberKind::Integer(_) => Integer::num_kind(0),
+            NumberKind::Rational(_) | NumberKind::Integer(_) => Integer::num(0),
             NumberKind::Infinity(_) => NaN.into(),
             NumberKind::NaN(_) => NaN.into(),
         }
@@ -91,6 +134,20 @@ impl NumberKind {
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Display, Copy)]
 pub struct NaN;
+
+impl Numberic for NaN {
+    fn is_zero(&self) -> bool {
+        false
+    }
+
+    fn is_one(&self) -> bool {
+        false
+    }
+
+    fn sign(&self) -> Sign {
+        Sign::UnSigned
+    }
+}
 
 impl CalcursType for NaN {
     fn to_basic(self) -> Basic {
@@ -111,7 +168,7 @@ impl From<NaN> for NumberKind {
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Display, Copy, Default)]
-pub enum Direction {
+pub enum Sign {
     #[display(fmt = "+")]
     Positive,
     #[display(fmt = "-")]
@@ -121,19 +178,19 @@ pub enum Direction {
     UnSigned,
 }
 
-impl Direction {
+impl Sign {
     pub fn from_sign<I: num::Signed>(int: &I) -> Self {
         if int.is_negative() {
-            Direction::Negitive
+            Sign::Negitive
         } else if int.is_positive() {
-            Direction::Positive
+            Sign::Positive
         } else {
-            Direction::UnSigned
+            Sign::UnSigned
         }
     }
 
     pub fn neg(&self) -> Self {
-        use Direction as D;
+        use Sign as D;
         match self {
             D::Positive => D::Negitive,
             D::Negitive => D::Positive,
@@ -142,20 +199,20 @@ impl Direction {
     }
 
     pub fn is_pos(&self) -> bool {
-        matches!(self, Direction::Positive)
+        matches!(self, Sign::Positive)
     }
 
     pub fn is_neg(&self) -> bool {
-        matches!(self, Direction::Negitive)
+        matches!(self, Sign::Negitive)
     }
 
     pub fn is_unsign(&self) -> bool {
-        matches!(self, Direction::UnSigned)
+        matches!(self, Sign::UnSigned)
     }
 }
 
-impl ops::Mul for Direction {
-    type Output = Direction;
+impl ops::Mul for Sign {
+    type Output = Sign;
 
     fn mul(self, rhs: Self) -> Self::Output {
         if rhs.is_neg() {
@@ -169,7 +226,21 @@ impl ops::Mul for Direction {
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Display, Default)]
 #[display(fmt = "{dir}oo")]
 pub struct Infinity {
-    dir: Direction,
+    dir: Sign,
+}
+
+impl Numberic for Infinity {
+    fn is_zero(&self) -> bool {
+        false
+    }
+
+    fn is_one(&self) -> bool {
+        false
+    }
+
+    fn sign(&self) -> Sign {
+        self.dir
+    }
 }
 
 impl CalcursType for Infinity {
@@ -185,7 +256,7 @@ impl From<Infinity> for NumberKind {
 }
 
 impl Infinity {
-    pub fn new(dir: Direction) -> Self {
+    pub fn new(dir: Sign) -> Self {
         Self { dir }
     }
 
@@ -195,20 +266,20 @@ impl Infinity {
 
     pub fn pos() -> Self {
         Self {
-            dir: Direction::Positive,
+            dir: Sign::Positive,
         }
     }
 
     pub fn neg() -> Self {
         Self {
-            dir: Direction::Negitive,
+            dir: Sign::Negitive,
         }
     }
 
     pub fn add_inf(self, other: NumberKind) -> NumberKind {
         use NumberKind as N;
         match other {
-            N::Infinity(_) if self.dir == Direction::UnSigned => N::NaN(NaN),
+            N::Infinity(_) if self.dir == Sign::UnSigned => N::NaN(NaN),
             N::Infinity(inf) if self.dir != inf.dir => N::NaN(NaN),
             N::NaN(_) => N::NaN(NaN),
             _ => N::Infinity(self),
@@ -218,8 +289,8 @@ impl Infinity {
     pub fn mul_inf(self, other: NumberKind) -> NumberKind {
         use NumberKind as N;
         match other {
-            N::Rational(r) => Infinity::new(self.dir * Direction::from_sign(&r.0)).into(),
-            N::Integer(i) => Infinity::new(self.dir * Direction::from_sign(&i.0)).into(),
+            N::Rational(r) => Infinity::new(self.dir * r.sign()).into(),
+            N::Integer(i) => Infinity::new(self.dir * i.sign()).into(),
             N::Infinity(i) => Infinity::new(self.dir * i.dir).into(),
             N::NaN(_) => N::NaN(NaN),
         }
@@ -236,6 +307,24 @@ impl Infinity {
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Display, Default)]
 pub struct Integer(BigInt);
+
+impl Numberic for Integer {
+    fn is_zero(&self) -> bool {
+        self.0.is_zero()
+    }
+
+    fn is_one(&self) -> bool {
+        self.0.is_one()
+    }
+
+    fn sign(&self) -> Sign {
+        match self.0.sign() {
+            bigint::Sign::Minus => Sign::Negitive,
+            bigint::Sign::NoSign => Sign::UnSigned,
+            bigint::Sign::Plus => Sign::Positive,
+        }
+    }
+}
 
 impl CalcursType for Integer {
     fn to_basic(self) -> Basic {
@@ -256,11 +345,11 @@ impl From<Integer> for NumberKind {
 }
 
 impl Integer {
-    pub fn new(val: i32) -> Self {
-        Self(val.into())
+    pub fn new(val: i32) -> Number {
+        NumberKind::Integer(Self(val.into())).into()
     }
 
-    pub fn num_kind(val: i32) -> NumberKind {
+    pub fn num(val: i32) -> NumberKind {
         Self(val.into()).into()
     }
 
@@ -280,17 +369,35 @@ impl Integer {
         Integer(self.0 * other.0).into()
     }
 
-    pub fn div_int(self, other: Integer) -> NumberKind {
-        if other.0.is_zero() {
-            Infinity::new(Direction::from_sign(&self.0)).into()
-        } else {
-            Integer(self.0 / other.0).into()
-        }
-    }
+    // pub fn div_int(self, other: Integer) -> NumberKind {
+    //     if other.0.is_zero() {
+    //         Infinity::new(Sign::from_sign(&self.0)).into()
+    //     } else {
+    //         Integer(self.0 / other.0).into()
+    //     }
+    // }
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Display, Default)]
 pub struct Rational(BigRational);
+
+impl Numberic for Rational {
+    fn is_zero(&self) -> bool {
+        self.0.is_zero()
+    }
+
+    fn is_one(&self) -> bool {
+        self.0.is_one()
+    }
+
+    fn sign(&self) -> Sign {
+        match self.0.numer().sign() {
+            bigint::Sign::Minus => Sign::Negitive,
+            bigint::Sign::NoSign => Sign::UnSigned,
+            bigint::Sign::Plus => Sign::Positive,
+        }
+    }
+}
 
 impl CalcursType for Rational {
     fn to_basic(self) -> Basic {
@@ -306,12 +413,14 @@ impl From<Rational> for NumberKind {
 
 impl Rational {
     pub fn new(val: i32, denom: i32) -> Number {
-        Self(BigRational::new(val.into(), denom.into()))
-            .simplify()
-            .into()
+        Self::num(val, denom).into()
     }
 
-    pub fn num_kind(val: i32, denom: i32) -> NumberKind {
+    pub fn num(mut val: i32, mut denom: i32) -> NumberKind {
+        if denom.is_negative() {
+            val *= -1;
+            denom *= -1;
+        }
         Self(BigRational::new(val.into(), denom.into())).simplify()
     }
 
@@ -357,13 +466,17 @@ impl Rational {
 
     pub fn div_rat(self, r: Rational) -> NumberKind {
         if r.0.is_zero() {
-            Infinity::new(Direction::from_sign(&self.0)).into()
+            Infinity::new(r.sign()).into()
         } else {
             Rational(self.0 / r.0).simplify().into()
         }
     }
 }
 
+/// Represents addition in symbolic expressions
+///
+/// Implemented with a coefficient and a hashmap: \
+/// coeff + key1*value1 + key2*value2 + ...
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Add {
     coeff: NumberKind,
@@ -410,15 +523,19 @@ impl Add {
     pub fn add<S: CalcursType, T: CalcursType>(b1: S, b2: T) -> Basic {
         let b1 = b1.to_basic();
         let b2 = b2.to_basic();
+        Self::add_kind(b1.kind, b2.kind)
+    }
 
+    pub fn add_kind(b1: BasicKind, b2: BasicKind) -> Basic {
         let add = Self {
-            coeff: Integer::num_kind(0),
+            coeff: Integer::num(0),
             arg_map: Default::default(),
         };
-        add.add_basic(b1.kind).add_basic(b2.kind).simplify()
+        add.append_basic(b1).append_basic(b2).simplify()
     }
 
     fn simplify(self) -> Basic {
+        //TODO remvoe zero
         if self.arg_map.is_empty() {
             Number::from(self.coeff).to_basic()
         } else {
@@ -426,7 +543,7 @@ impl Add {
         }
     }
 
-    fn add_basic(mut self, b: BasicKind) -> Self {
+    fn append_basic(mut self, b: BasicKind) -> Self {
         use BasicKind as B;
 
         match b {
@@ -434,35 +551,40 @@ impl Add {
 
             B::Number(num) => {
                 self.coeff = self.coeff.add(num.kind);
-                self
             }
+            B::Mul(mut mul) => {
+                let mut coeff = Integer::num(1);
+                (mul.coeff, coeff) = (coeff, mul.coeff);
+                self.append_term(coeff, BasicKind::Mul(mul));
+            }
+
             B::Add(add) => {
                 add.arg_map.into_iter().for_each(|(term, coeff)| {
-                    self.add_term(coeff, term);
+                    self.append_term(coeff, term);
                 });
 
                 self.coeff = self.coeff.add(add.coeff);
-                self
             }
-            _ => {
-                let term = Integer::num_kind(1);
-                self.add_term(term, b);
-                self
+            B::Var(_) | B::Dummy => {
+                let term = Integer::num(1);
+                self.append_term(term, b);
             }
         }
+
+        self
     }
 
-    fn add_term(&mut self, coeff: NumberKind, t: BasicKind) {
-        if self.arg_map.contains_key(&t) {
-            let key = self.arg_map.get_mut(&t).unwrap();
-            *key = key.clone().add(coeff);
+    /// adds the term: coeff*b
+    fn append_term(&mut self, coeff: NumberKind, b: BasicKind) {
+        if let Some(mut key) = self.arg_map.remove(&b) {
+            key = key.add(coeff);
 
-            if key.is_zero() {
-                self.arg_map.remove(&t);
+            if !key.is_zero() {
+                self.arg_map.insert(b, key);
             }
         } else {
             if !coeff.is_zero() {
-                self.arg_map.insert(t, coeff);
+                self.arg_map.insert(b, coeff);
             }
         }
     }
@@ -476,6 +598,10 @@ impl ops::Add for Basic {
     }
 }
 
+/// Represents multiplication in symbolic expressions
+///
+/// Implemented with a coefficient and a hashmap: \
+/// coeff * key1^value1 * key2^value2 * ...
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Mul {
     coeff: NumberKind,
@@ -483,10 +609,60 @@ pub struct Mul {
 }
 
 impl Mul {
-    fn add_term(&mut self, exp: BasicKind, t: BasicKind) {
-        if self.arg_map.contains_key(&t) {
+    pub fn mul<S: CalcursType, T: CalcursType>(b1: S, b2: T) -> Basic {
+        let b1 = b1.to_basic();
+        let b2 = b2.to_basic();
+
+        Self {
+            coeff: Integer::num(1),
+            arg_map: Default::default(),
+        }
+        .append_basic(b1.kind)
+        .append_basic(b2.kind)
+        .simplify()
+    }
+
+    fn append_basic(mut self, b: BasicKind) -> Self {
+        use BasicKind as B;
+
+        match b {
+            B::Number(n) => {
+                todo!("is_zero")
+            }
+            B::Mul(mul) => {
+                self.coeff = self.coeff.mul(mul.coeff);
+                mul.arg_map
+                    .into_iter()
+                    .for_each(|(key, val)| self.append_term(key, val))
+            }
+            _ => {
+                let exp = BasicKind::Number(Integer::num(1).into());
+                self.append_term(b, exp);
+            }
+        }
+        self
+    }
+
+    /// adds the term: b^exp
+    fn append_term(&mut self, b: BasicKind, exp: BasicKind) {
+        if let Some(key) = self.arg_map.remove(&b) {
+            let exp = Add::add_kind(key, exp);
+            match exp.kind {
+                BasicKind::Number(ref num) if num.is_zero() => (),
+                _ => {
+                    self.arg_map.insert(b, exp.kind);
+                }
+            }
         } else {
-            self.arg_map.insert(t, exp);
+            self.arg_map.insert(b, exp);
+        }
+    }
+
+    fn simplify(self) -> Basic {
+        if self.coeff.is_zero() || self.arg_map.is_empty() {
+            Number::from(self.coeff).to_basic()
+        } else {
+            self.to_basic()
         }
     }
 }
@@ -503,7 +679,7 @@ impl fmt::Display for Mul {
             write!(f, " * {v}^{k}")?;
         }
 
-        if !self.coeff.is_zero() {
+        if !self.coeff.is_one() {
             write!(f, " * {}", self.coeff)?;
         }
 
@@ -551,11 +727,11 @@ mod test_numbers {
         };
 
         ($int: literal) => {
-            Integer::num_kind($int)
+            Integer::num($int)
         };
 
         ($val: literal / $denom: literal) => {
-            Rational::num_kind($val, $denom)
+            Rational::num($val, $denom)
         };
     }
 
@@ -593,6 +769,14 @@ mod test_numbers {
         ($($tt: tt)+) => {
             c_impl!($($tt)+).to_basic()
         };
+    }
+
+    #[test]
+    fn rational() {
+        assert!(Rational::new(1, 2).is_pos());
+        assert!(Rational::new(1, -2).is_neg());
+        assert!(Rational::new(-1, -2).is_pos());
+        assert!(Rational::new(-1, 2).is_neg());
     }
 
     #[test]
