@@ -466,7 +466,7 @@ impl Rational {
 
     pub fn div_rat(self, r: Rational) -> NumberKind {
         if r.0.is_zero() {
-            Infinity::new(r.sign()).into()
+            Infinity::new(self.sign()).into()
         } else {
             Rational(self.0 / r.0).simplify().into()
         }
