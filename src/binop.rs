@@ -1,8 +1,8 @@
 use std::{collections::HashMap, fmt};
 
 use crate::{
-    base::{Base, BasicKind},
-    numbers::{Integer, Number, NumberKind, ONE, ZERO},
+    base::{Base, BaseKind},
+    numeric::{Integer, Number, NumberKind, ONE, ZERO},
     traits::{CalcursType, Numeric},
 };
 
@@ -13,7 +13,7 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Add {
     coeff: NumberKind,
-    arg_map: HashMap<BasicKind, NumberKind>,
+    arg_map: HashMap<BaseKind, NumberKind>,
 }
 
 impl fmt::Display for Add {
@@ -48,7 +48,7 @@ impl std::hash::Hash for Add {
 
 impl CalcursType for Add {
     fn base(self) -> Base {
-        BasicKind::Add(self).into()
+        BaseKind::Add(self).into()
     }
 }
 
@@ -59,7 +59,7 @@ impl Add {
         Self::add_kind(b1.kind, b2.kind)
     }
 
-    pub fn add_kind(b1: BasicKind, b2: BasicKind) -> Base {
+    pub fn add_kind(b1: BaseKind, b2: BaseKind) -> Base {
         let add = Self {
             coeff: Integer::num(0),
             arg_map: Default::default(),
@@ -75,8 +75,8 @@ impl Add {
         }
     }
 
-    fn append_basic(mut self, b: BasicKind) -> Self {
-        use BasicKind as B;
+    fn append_basic(mut self, b: BaseKind) -> Self {
+        use BaseKind as B;
 
         match b {
             B::Boolean(_) => todo!(),
@@ -89,7 +89,7 @@ impl Add {
             B::Mul(mut mul) => {
                 let mut coeff = Integer::num(1);
                 (mul.coeff, coeff) = (coeff, mul.coeff);
-                self.append_term(coeff, BasicKind::Mul(mul));
+                self.append_term(coeff, BaseKind::Mul(mul));
             }
 
             B::Add(add) => {
@@ -109,17 +109,15 @@ impl Add {
     }
 
     /// adds the term: coeff*b
-    fn append_term(&mut self, coeff: NumberKind, b: BasicKind) {
+    fn append_term(&mut self, coeff: NumberKind, b: BaseKind) {
         if let Some(mut key) = self.arg_map.remove(&b) {
             key = key.add_kind(coeff);
 
             if !key.is_zero() {
                 self.arg_map.insert(b, key);
             }
-        } else {
-            if !coeff.is_zero() {
-                self.arg_map.insert(b, coeff);
-            }
+        } else if !coeff.is_zero() {
+            self.arg_map.insert(b, coeff);
         }
     }
 }
@@ -131,7 +129,7 @@ impl Add {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Mul {
     coeff: NumberKind,
-    arg_map: HashMap<BasicKind, BasicKind>,
+    arg_map: HashMap<BaseKind, BaseKind>,
 }
 
 impl Mul {
@@ -148,8 +146,8 @@ impl Mul {
         .cleanup()
     }
 
-    fn append_basic(mut self, b: BasicKind) -> Self {
-        use BasicKind as B;
+    fn append_basic(mut self, b: BaseKind) -> Self {
+        use BaseKind as B;
 
         match b {
             B::Number(n) => {
@@ -167,7 +165,7 @@ impl Mul {
                     .for_each(|(key, val)| self.append_term(key, val))
             }
             B::Var(_) | B::Boolean(_) | B::Add(_) | B::Dummy => {
-                let exp = BasicKind::Number(ONE.clone());
+                let exp = BaseKind::Number(ONE.clone());
                 self.append_term(b, exp);
             }
         }
@@ -175,7 +173,7 @@ impl Mul {
     }
 
     /// adds the term: b^exp
-    fn append_term(&mut self, b: BasicKind, exp: BasicKind) {
+    fn append_term(&mut self, b: BaseKind, exp: BaseKind) {
         if let Some(key) = self.arg_map.remove(&b) {
             let exp = Add::add_kind(key, exp);
             self.arg_map.insert(b, exp.kind);
@@ -225,6 +223,6 @@ impl std::hash::Hash for Mul {
 
 impl CalcursType for Mul {
     fn base(self) -> Base {
-        BasicKind::Mul(self).into()
+        BaseKind::Mul(self).into()
     }
 }

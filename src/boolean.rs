@@ -3,38 +3,17 @@ use std::{collections::HashSet, fmt, ops};
 use derive_more::Display;
 
 use crate::{
-    base::{Base, BasicKind, SubsDict, Variable, PTR},
+    base::{Base, BaseKind, SubsDict, Variable, PTR},
     traits::CalcursType,
 };
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Display)]
-pub struct Boolean {
-    pub kind: BooleanKind,
-}
+pub const FALSE: Boolean = Boolean {
+    kind: BooleanKind::False(False),
+};
 
-impl From<bool> for Boolean {
-    fn from(value: bool) -> Self {
-        BooleanKind::from(value).into()
-    }
-}
-
-impl From<BooleanKind> for Boolean {
-    fn from(value: BooleanKind) -> Self {
-        Boolean { kind: value }
-    }
-}
-
-impl CalcursType for Boolean {
-    fn base(self) -> Base {
-        BasicKind::Boolean(self).into()
-    }
-}
-
-impl Boolean {
-    pub fn to_basic(self) -> Base {
-        BasicKind::Boolean(self).into()
-    }
-}
+pub const TRUE: Boolean = Boolean {
+    kind: BooleanKind::True(True),
+};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Display)]
 pub enum BooleanKind {
@@ -49,6 +28,38 @@ pub enum BooleanKind {
     Unknown(PTR<Base>),
 }
 
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Display)]
+pub struct Boolean {
+    pub kind: BooleanKind,
+}
+
+impl From<bool> for Boolean {
+    fn from(value: bool) -> Self {
+        match value {
+            true => TRUE,
+            false => FALSE,
+        }
+    }
+}
+
+impl From<BooleanKind> for Boolean {
+    fn from(value: BooleanKind) -> Self {
+        Boolean { kind: value }
+    }
+}
+
+impl CalcursType for Boolean {
+    fn base(self) -> Base {
+        BaseKind::Boolean(self).into()
+    }
+}
+
+impl Boolean {
+    pub fn to_basic(self) -> Base {
+        BaseKind::Boolean(self).into()
+    }
+}
+
 impl BooleanKind {
     pub fn simplify(self) -> Self {
         use BooleanKind as BK;
@@ -60,14 +71,9 @@ impl BooleanKind {
             BK::True(_) | BK::False(_) | BK::Var(_) => self,
         }
     }
-}
 
-impl From<bool> for BooleanKind {
-    fn from(value: bool) -> Self {
-        match value {
-            true => BooleanKind::True(True),
-            false => BooleanKind::False(False),
-        }
+    pub fn base(self) -> Base {
+        BaseKind::Boolean(self.into()).into()
     }
 }
 
@@ -94,9 +100,9 @@ impl CalcursType for False {
 impl BooleanKind {
     pub fn from_basic(b: Base) -> Self {
         match b.kind {
-            BasicKind::Var(v) => BooleanKind::Var(v),
-            BasicKind::Boolean(b) => b.kind,
-            BasicKind::Dummy => BooleanKind::Unknown(PTR::new(b)),
+            BaseKind::Var(v) => BooleanKind::Var(v),
+            BaseKind::Boolean(b) => b.kind,
+            BaseKind::Dummy => BooleanKind::Unknown(PTR::new(b)),
             _ => todo!(),
         }
     }
@@ -120,7 +126,7 @@ impl BooleanKind {
     }
 
     pub fn to_basic(self) -> Base {
-        BasicKind::Boolean(self.into()).into()
+        BaseKind::Boolean(self.into()).into()
     }
 }
 
@@ -145,7 +151,7 @@ impl fmt::Display for And {
             write!(f, "({}", first)?;
         }
 
-        while let Some(e) = iter.next() {
+        for e in iter {
             write!(f, " ∧ {}", e)?;
         }
 
@@ -183,7 +189,7 @@ impl And {
             let e = e.simplify();
 
             if let BooleanKind::False(_) = e {
-                return false.into();
+                return FALSE.kind;
             } else if let BooleanKind::True(_) = e {
                 continue;
             }
@@ -192,10 +198,10 @@ impl And {
         }
 
         if set.is_empty() {
-            true.into()
+            TRUE.kind
         } else if set.len() == 1 {
             let mut iter = set.into_iter();
-            iter.next().unwrap().into()
+            iter.next().unwrap()
         } else {
             BooleanKind::And(Self {
                 args: set.into_iter().collect(),
@@ -249,7 +255,7 @@ impl fmt::Display for Or {
             write!(f, "({}", first)?;
         }
 
-        while let Some(e) = iter.next() {
+        for e in iter {
             write!(f, " ∨ {}", e)?;
         }
 
@@ -286,7 +292,7 @@ impl Or {
         for e in self.args {
             let e = e.simplify();
             if let BooleanKind::True(_) = e {
-                return true.into();
+                return TRUE.kind;
             } else if let BooleanKind::False(_) = e {
                 continue;
             }
@@ -295,10 +301,10 @@ impl Or {
         }
 
         if set.is_empty() {
-            return false.into();
+            return FALSE.kind;
         } else if set.len() == 1 {
             let mut iter = set.into_iter();
-            return iter.next().unwrap().into();
+            return iter.next().unwrap();
         }
 
         BooleanKind::Or(Self {
@@ -347,8 +353,8 @@ impl Not {
         let val = self.val.simplify();
 
         match val {
-            BooleanKind::True(_) => false.into(),
-            BooleanKind::False(_) => true.into(),
+            BooleanKind::True(_) => FALSE.kind,
+            BooleanKind::False(_) => TRUE.kind,
             BooleanKind::Not(not) => *not.val,
             BooleanKind::Var(_)
             | BooleanKind::And(_)
@@ -388,17 +394,6 @@ impl CalcursType for Not {
     }
 }
 
-pub const FALSE: Base = Base {
-    kind: BasicKind::Boolean(Boolean {
-        kind: BooleanKind::False(False),
-    }),
-};
-pub const TRUE: Base = Base {
-    kind: BasicKind::Boolean(Boolean {
-        kind: BooleanKind::True(True),
-    }),
-};
-
 #[cfg(test)]
 mod boolean_types {
 
@@ -408,7 +403,7 @@ mod boolean_types {
     #[test]
     fn and() {
         let and = And::and(And::and(TRUE, Variable::new("x")), FALSE).to_basic();
-        assert_eq!(and, FALSE);
+        assert_eq!(and, FALSE.base());
 
         let and = And::and(And::and(TRUE, Variable::new("x")), Variable::new("x")).to_basic();
         assert_eq!(and, BooleanKind::Var(Variable::new("x")).to_basic())
@@ -417,7 +412,7 @@ mod boolean_types {
     #[test]
     fn or() {
         let or = Or::or(Or::or(FALSE, Variable::new("x")), TRUE).to_basic();
-        assert_eq!(or, TRUE);
+        assert_eq!(or, TRUE.base());
 
         let or = Or::or(Or::or(False, Variable::new("x")), Variable::new("x")).to_basic();
         assert_eq!(or, BooleanKind::Var(Variable::new("x")).to_basic())
@@ -431,10 +426,10 @@ mod boolean_types {
 
         let expr = (x.clone() & y.clone()) | z.clone();
         let eval = expr.subs("x", y.clone()).subs("y", True).subs("z", False);
-        assert_eq!(eval.simplify(), TRUE);
+        assert_eq!(eval.simplify(), TRUE.base());
 
         let expr = !((x.clone() & y.clone()) | z.clone());
         let eval = expr.subs("x", y.clone()).subs("y", True).subs("z", False);
-        assert_eq!(eval.simplify(), FALSE);
+        assert_eq!(eval.simplify(), FALSE.base());
     }
 }

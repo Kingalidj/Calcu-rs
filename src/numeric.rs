@@ -8,8 +8,7 @@ use num_traits::One;
 
 use crate::{
     base::Base,
-    base::BasicKind,
-    binop::{Add, Mul},
+    base::BaseKind,
     traits::{CalcursType, Numeric},
 };
 
@@ -39,7 +38,7 @@ impl Numeric for Number {
 
 impl CalcursType for Number {
     fn base(self) -> Base {
-        BasicKind::Number(self).into()
+        BaseKind::Number(self).into()
     }
 }
 
@@ -129,7 +128,7 @@ impl NumberKind {
     }
 
     pub fn base(self) -> Base {
-        BasicKind::Number(self.into()).into()
+        BaseKind::Number(self.into()).into()
     }
 }
 
@@ -351,14 +350,6 @@ impl Integer {
     pub fn mul_int(self, other: Integer) -> NumberKind {
         Integer(self.0 * other.0).into()
     }
-
-    // pub fn div_int(self, other: Integer) -> NumberKind {
-    //     if other.0.is_zero() {
-    //         Infinity::new(Sign::from_sign(&self.0)).into()
-    //     } else {
-    //         Integer(self.0 / other.0).into()
-    //     }
-    // }
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Display, Default)]
@@ -450,30 +441,6 @@ impl Rational {
     }
 }
 
-impl ops::Add for Base {
-    type Output = Base;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Add::add(self, rhs)
-    }
-}
-
-impl ops::Mul for Base {
-    type Output = Base;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        Mul::mul(self, rhs)
-    }
-}
-
-impl ops::Sub for Base {
-    type Output = Base;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        Add::add(self, Mul::mul(Integer::new(-1), rhs))
-    }
-}
-
 #[cfg(test)]
 mod test_numbers {
 
@@ -507,39 +474,33 @@ mod test_numbers {
         };
     }
 
-    macro_rules! c_impl {
+    macro_rules! c {
         (+inf) => {
-            Infinity::pos()
+            Infinity::pos().base()
         };
 
         (-inf) => {
-            Infinity::neg()
+            Infinity::neg().base()
         };
 
         (inf) => {
-            Infinity::default()
+            Infinity::default().base()
         };
 
         (nan) => {
-            NaN
+            NaN.base()
         };
 
         ($int: literal) => {
-            Integer::num($int)
+            Integer::num($int).base()
         };
 
         ($val: literal / $denom: literal) => {
-            Rational::num($val, $denom)
+            Rational::num($val, $denom).base()
         };
 
         (v($var: tt)) => {
-            Variable::new(stringify!($var))
-        };
-    }
-
-    macro_rules! c {
-        ($($tt: tt)+) => {
-            c_impl!($($tt)+).base()
+            Variable::new(stringify!($var)).base()
         };
     }
 

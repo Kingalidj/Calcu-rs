@@ -1,4 +1,4 @@
-use crate::{base::Base, numbers::Sign};
+use crate::{base::Base, numeric::Sign};
 
 pub trait CalcursType: Clone {
     fn base(self) -> Base;
