@@ -3,9 +3,9 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use derive_more::Display;
 
-use crate::binop::{Add, Mul};
 use crate::boolean::Boolean;
 use crate::numeric::{Integer, Number};
+use crate::operator::{Add, Mul};
 use crate::traits::CalcursType;
 
 pub type PTR<T> = Box<T>;
