@@ -1,18 +1,29 @@
-use std::{collections::HashMap, fmt, ops};
+use std::ops;
 
 use calcurs_macros::Procagate;
 use derive_more::Display;
+use lazy_static::lazy_static;
 use num::{bigint, BigInt, BigRational, Zero};
 use num_traits::One;
 
-use crate::{Basic, BasicKind, CalcursType};
+use crate::{
+    base::Base,
+    base::BasicKind,
+    binop::{Add, Mul},
+    traits::{CalcursType, Numeric},
+};
+
+lazy_static! {
+    pub static ref ZERO: Number = Integer::num(0).into();
+    pub static ref ONE: Number = Integer::num(1).into();
+}
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq, Display)]
 pub struct Number {
-    kind: NumberKind,
+    pub kind: NumberKind,
 }
 
-impl Numberic for Number {
+impl Numeric for Number {
     fn is_zero(&self) -> bool {
         self.kind.is_zero()
     }
@@ -27,7 +38,7 @@ impl Numberic for Number {
 }
 
 impl CalcursType for Number {
-    fn to_basic(self) -> Basic {
+    fn base(self) -> Base {
         BasicKind::Number(self).into()
     }
 }
@@ -41,7 +52,7 @@ pub enum NumberKind {
     NaN(NaN),
 }
 
-impl Numberic for NumberKind {
+impl Numeric for NumberKind {
     fn is_zero(&self) -> bool {
         procagate_number_kind!(self, v => { v.is_zero() })
     }
@@ -61,22 +72,8 @@ impl From<NumberKind> for Number {
     }
 }
 
-pub trait Numberic {
-    fn is_zero(&self) -> bool;
-    fn is_one(&self) -> bool;
-    fn sign(&self) -> Sign;
-
-    fn is_pos(&self) -> bool {
-        self.sign().is_pos()
-    }
-
-    fn is_neg(&self) -> bool {
-        self.sign().is_neg()
-    }
-}
-
 impl NumberKind {
-    pub fn add<T: Into<NumberKind>>(self, other: T) -> NumberKind {
+    pub fn add_kind<T: Into<NumberKind>>(self, other: T) -> NumberKind {
         let other = other.into();
         use NumberKind as N;
         match (self, other) {
@@ -88,12 +85,12 @@ impl NumberKind {
         }
     }
 
-    pub fn sub(self, mut other: NumberKind) -> NumberKind {
-        other = other.mul(Integer::num(-1));
-        self.add(other)
+    pub fn sub_kind(self, mut other: NumberKind) -> NumberKind {
+        other = other.mul_kind(Integer::num(-1));
+        self.add_kind(other)
     }
 
-    pub fn mul(self, other: NumberKind) -> NumberKind {
+    pub fn mul_kind(self, other: NumberKind) -> NumberKind {
         use NumberKind as N;
         match (self, other) {
             (N::NaN(_), _) | (_, N::NaN(_)) => N::NaN(NaN),
@@ -104,7 +101,7 @@ impl NumberKind {
         }
     }
 
-    pub fn div(self, other: NumberKind) -> NumberKind {
+    pub fn div_kind(self, other: NumberKind) -> NumberKind {
         use NumberKind as N;
         match (self, other) {
             (N::NaN(_), _) | (_, N::NaN(_)) => N::NaN(NaN),
@@ -130,12 +127,16 @@ impl NumberKind {
             NumberKind::NaN(_) => NaN.into(),
         }
     }
+
+    pub fn base(self) -> Base {
+        BasicKind::Number(self.into()).into()
+    }
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Display, Copy)]
 pub struct NaN;
 
-impl Numberic for NaN {
+impl Numeric for NaN {
     fn is_zero(&self) -> bool {
         false
     }
@@ -150,20 +151,14 @@ impl Numberic for NaN {
 }
 
 impl CalcursType for NaN {
-    fn to_basic(self) -> Basic {
-        Number::from(NumberKind::NaN(self)).to_basic()
+    fn base(self) -> Base {
+        Number::from(NumberKind::NaN(self)).base()
     }
 }
 
 impl NaN {
     pub fn is_zero(&self) -> bool {
         false
-    }
-}
-
-impl From<NaN> for NumberKind {
-    fn from(value: NaN) -> Self {
-        NumberKind::NaN(value)
     }
 }
 
@@ -229,7 +224,7 @@ pub struct Infinity {
     dir: Sign,
 }
 
-impl Numberic for Infinity {
+impl Numeric for Infinity {
     fn is_zero(&self) -> bool {
         false
     }
@@ -244,14 +239,8 @@ impl Numberic for Infinity {
 }
 
 impl CalcursType for Infinity {
-    fn to_basic(self) -> Basic {
-        Number::from(NumberKind::Infinity(self)).to_basic()
-    }
-}
-
-impl From<Infinity> for NumberKind {
-    fn from(value: Infinity) -> Self {
-        NumberKind::Infinity(value)
+    fn base(self) -> Base {
+        Number::from(NumberKind::Infinity(self)).base()
     }
 }
 
@@ -308,7 +297,7 @@ impl Infinity {
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Display, Default)]
 pub struct Integer(BigInt);
 
-impl Numberic for Integer {
+impl Numeric for Integer {
     fn is_zero(&self) -> bool {
         self.0.is_zero()
     }
@@ -327,8 +316,8 @@ impl Numberic for Integer {
 }
 
 impl CalcursType for Integer {
-    fn to_basic(self) -> Basic {
-        Number::from(NumberKind::Integer(self)).to_basic()
+    fn base(self) -> Base {
+        Number::from(NumberKind::Integer(self)).base()
     }
 }
 
@@ -338,15 +327,9 @@ impl From<Integer> for Rational {
     }
 }
 
-impl From<Integer> for NumberKind {
-    fn from(value: Integer) -> Self {
-        NumberKind::Integer(value)
-    }
-}
-
 impl Integer {
-    pub fn new(val: i32) -> Number {
-        NumberKind::Integer(Self(val.into())).into()
+    pub fn new(val: i32) -> Self {
+        Self(val.into())
     }
 
     pub fn num(val: i32) -> NumberKind {
@@ -381,7 +364,7 @@ impl Integer {
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Display, Default)]
 pub struct Rational(BigRational);
 
-impl Numberic for Rational {
+impl Numeric for Rational {
     fn is_zero(&self) -> bool {
         self.0.is_zero()
     }
@@ -400,35 +383,29 @@ impl Numberic for Rational {
 }
 
 impl CalcursType for Rational {
-    fn to_basic(self) -> Basic {
-        Number::from(NumberKind::Rational(self)).to_basic()
-    }
-}
-
-impl From<Rational> for NumberKind {
-    fn from(value: Rational) -> Self {
-        NumberKind::Rational(value)
+    fn base(self) -> Base {
+        Number::from(NumberKind::Rational(self)).base()
     }
 }
 
 impl Rational {
-    pub fn new(val: i32, denom: i32) -> Number {
-        Self::num(val, denom).into()
-    }
-
-    pub fn num(mut val: i32, mut denom: i32) -> NumberKind {
+    pub fn new(mut val: i32, mut denom: i32) -> Self {
         if denom.is_negative() {
             val *= -1;
             denom *= -1;
         }
-        Self(BigRational::new(val.into(), denom.into())).simplify()
+        Self(BigRational::new(val.into(), denom.into()))
+    }
+
+    pub fn num(val: i32, denom: i32) -> NumberKind {
+        Self::new(val, denom).cleanup()
     }
 
     pub fn is_zero(&self) -> bool {
         self.0.is_zero()
     }
 
-    pub fn simplify(self) -> NumberKind {
+    pub fn cleanup(self) -> NumberKind {
         if self.0.is_integer() {
             Integer(self.0.to_integer()).into()
         } else {
@@ -453,253 +430,47 @@ impl Rational {
     }
 
     pub fn add_rat(self, r: Rational) -> NumberKind {
-        Rational(self.0 + r.0).simplify().into()
+        Rational(self.0 + r.0).cleanup()
     }
 
     pub fn sub_rat(self, r: Rational) -> NumberKind {
-        Rational(self.0 - r.0).simplify().into()
+        Rational(self.0 - r.0).cleanup()
     }
 
     pub fn mul_rat(self, r: Rational) -> NumberKind {
-        Rational(self.0 * r.0).simplify().into()
+        Rational(self.0 * r.0).cleanup()
     }
 
     pub fn div_rat(self, r: Rational) -> NumberKind {
         if r.0.is_zero() {
             Infinity::new(self.sign()).into()
         } else {
-            Rational(self.0 / r.0).simplify().into()
+            Rational(self.0 / r.0).cleanup()
         }
     }
 }
 
-/// Represents addition in symbolic expressions
-///
-/// Implemented with a coefficient and a hashmap: \
-/// coeff + key1*value1 + key2*value2 + ...
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Add {
-    coeff: NumberKind,
-    arg_map: HashMap<BasicKind, NumberKind>,
-}
-
-impl fmt::Display for Add {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut iter = self.arg_map.iter();
-
-        if let Some((k, v)) = iter.next() {
-            write!(f, "{v}{k}")?;
-        }
-
-        for (k, v) in iter {
-            write!(f, " + {v}{k}")?;
-        }
-
-        if !self.coeff.is_zero() {
-            write!(f, " + {}", self.coeff)?;
-        }
-
-        Ok(())
-    }
-}
-
-impl std::hash::Hash for Add {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        "Add".hash(state);
-        self.coeff.hash(state);
-        for a in &self.arg_map {
-            a.hash(state);
-        }
-    }
-}
-
-impl CalcursType for Add {
-    fn to_basic(self) -> Basic {
-        BasicKind::Add(self).into()
-    }
-}
-
-impl Add {
-    pub fn add<S: CalcursType, T: CalcursType>(b1: S, b2: T) -> Basic {
-        let b1 = b1.to_basic();
-        let b2 = b2.to_basic();
-        Self::add_kind(b1.kind, b2.kind)
-    }
-
-    pub fn add_kind(b1: BasicKind, b2: BasicKind) -> Basic {
-        let add = Self {
-            coeff: Integer::num(0),
-            arg_map: Default::default(),
-        };
-        add.append_basic(b1).append_basic(b2).simplify()
-    }
-
-    fn simplify(self) -> Basic {
-        //TODO remvoe zero
-        if self.arg_map.is_empty() {
-            Number::from(self.coeff).to_basic()
-        } else {
-            self.to_basic()
-        }
-    }
-
-    fn append_basic(mut self, b: BasicKind) -> Self {
-        use BasicKind as B;
-
-        match b {
-            B::Boolean(_) => todo!(),
-
-            B::Number(num) => {
-                self.coeff = self.coeff.add(num.kind);
-            }
-            B::Mul(mut mul) => {
-                let mut coeff = Integer::num(1);
-                (mul.coeff, coeff) = (coeff, mul.coeff);
-                self.append_term(coeff, BasicKind::Mul(mul));
-            }
-
-            B::Add(add) => {
-                add.arg_map.into_iter().for_each(|(term, coeff)| {
-                    self.append_term(coeff, term);
-                });
-
-                self.coeff = self.coeff.add(add.coeff);
-            }
-            B::Var(_) | B::Dummy => {
-                let term = Integer::num(1);
-                self.append_term(term, b);
-            }
-        }
-
-        self
-    }
-
-    /// adds the term: coeff*b
-    fn append_term(&mut self, coeff: NumberKind, b: BasicKind) {
-        if let Some(mut key) = self.arg_map.remove(&b) {
-            key = key.add(coeff);
-
-            if !key.is_zero() {
-                self.arg_map.insert(b, key);
-            }
-        } else {
-            if !coeff.is_zero() {
-                self.arg_map.insert(b, coeff);
-            }
-        }
-    }
-}
-
-impl ops::Add for Basic {
-    type Output = Basic;
+impl ops::Add for Base {
+    type Output = Base;
 
     fn add(self, rhs: Self) -> Self::Output {
         Add::add(self, rhs)
     }
 }
 
-/// Represents multiplication in symbolic expressions
-///
-/// Implemented with a coefficient and a hashmap: \
-/// coeff * key1^value1 * key2^value2 * ...
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Mul {
-    coeff: NumberKind,
-    arg_map: HashMap<BasicKind, BasicKind>,
-}
+impl ops::Mul for Base {
+    type Output = Base;
 
-impl Mul {
-    pub fn mul<S: CalcursType, T: CalcursType>(b1: S, b2: T) -> Basic {
-        let b1 = b1.to_basic();
-        let b2 = b2.to_basic();
-
-        Self {
-            coeff: Integer::num(1),
-            arg_map: Default::default(),
-        }
-        .append_basic(b1.kind)
-        .append_basic(b2.kind)
-        .simplify()
-    }
-
-    fn append_basic(mut self, b: BasicKind) -> Self {
-        use BasicKind as B;
-
-        match b {
-            B::Number(n) => {
-                todo!("is_zero")
-            }
-            B::Mul(mul) => {
-                self.coeff = self.coeff.mul(mul.coeff);
-                mul.arg_map
-                    .into_iter()
-                    .for_each(|(key, val)| self.append_term(key, val))
-            }
-            _ => {
-                let exp = BasicKind::Number(Integer::num(1).into());
-                self.append_term(b, exp);
-            }
-        }
-        self
-    }
-
-    /// adds the term: b^exp
-    fn append_term(&mut self, b: BasicKind, exp: BasicKind) {
-        if let Some(key) = self.arg_map.remove(&b) {
-            let exp = Add::add_kind(key, exp);
-            match exp.kind {
-                BasicKind::Number(ref num) if num.is_zero() => (),
-                _ => {
-                    self.arg_map.insert(b, exp.kind);
-                }
-            }
-        } else {
-            self.arg_map.insert(b, exp);
-        }
-    }
-
-    fn simplify(self) -> Basic {
-        if self.coeff.is_zero() || self.arg_map.is_empty() {
-            Number::from(self.coeff).to_basic()
-        } else {
-            self.to_basic()
-        }
+    fn mul(self, rhs: Self) -> Self::Output {
+        Mul::mul(self, rhs)
     }
 }
 
-impl fmt::Display for Mul {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut iter = self.arg_map.iter();
+impl ops::Sub for Base {
+    type Output = Base;
 
-        if let Some((k, v)) = iter.next() {
-            write!(f, "{v}^{k}")?;
-        }
-
-        for (k, v) in iter {
-            write!(f, " * {v}^{k}")?;
-        }
-
-        if !self.coeff.is_one() {
-            write!(f, " * {}", self.coeff)?;
-        }
-
-        Ok(())
-    }
-}
-
-impl std::hash::Hash for Mul {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        "Mul".hash(state);
-        self.coeff.hash(state);
-        for a in &self.arg_map {
-            a.hash(state);
-        }
-    }
-}
-
-impl CalcursType for Mul {
-    fn to_basic(self) -> Basic {
-        BasicKind::Mul(self).into()
+    fn sub(self, rhs: Self) -> Self::Output {
+        Add::add(self, Mul::mul(Integer::new(-1), rhs))
     }
 }
 
@@ -707,6 +478,7 @@ impl CalcursType for Mul {
 mod test_numbers {
 
     use crate::prelude::*;
+
     use pretty_assertions::assert_eq;
 
     macro_rules! nk {
@@ -749,15 +521,15 @@ mod test_numbers {
         };
 
         (nan) => {
-            NaN.to_basic()
+            NaN
         };
 
         ($int: literal) => {
-            Integer::new($int)
+            Integer::num($int)
         };
 
         ($val: literal / $denom: literal) => {
-            Rational::new($val, $denom)
+            Rational::num($val, $denom)
         };
 
         (v($var: tt)) => {
@@ -767,7 +539,7 @@ mod test_numbers {
 
     macro_rules! c {
         ($($tt: tt)+) => {
-            c_impl!($($tt)+).to_basic()
+            c_impl!($($tt)+).base()
         };
     }
 
@@ -795,59 +567,45 @@ mod test_numbers {
     }
 
     #[test]
-    fn add_num() {
-        assert_eq!(nk!(-1).add(nk!(3)), nk!(2));
-        assert_eq!(nk!(-3).add(nk!(1 / 2)), nk!(-5 / 2));
-        assert_eq!(nk!(1 / 2).add(nk!(1 / 2)), nk!(1));
-        assert_eq!(nk!(inf).add(nk!(4)), nk!(inf));
-        assert_eq!(nk!(-inf).add(nk!(4 / 2)), nk!(-inf));
-        assert_eq!(nk!(+inf).add(nk!(4)), nk!(+inf));
-        assert_eq!(nk!(+inf).add(nk!(+inf)), nk!(+inf));
-        assert_eq!(nk!(-inf).add(nk!(+inf)), nk!(nan));
-        assert_eq!(nk!(nan).add(nk!(inf)), nk!(nan));
-        assert_eq!(nk!(4 / 2), nk!(2));
+    fn mul_binop() {
+        assert_eq!(c!(-1) * c!(3), c!(-3));
+        assert_eq!(c!(-1) * c!(0), c!(0));
+        assert_eq!(c!(-3) * c!(1 / 2), c!(-3 / 2));
+        assert_eq!(c!(1 / 2) * c!(1 / 2), c!(1 / 4));
+        assert_eq!(c!(inf) * c!(4), c!(inf));
+        assert_eq!(c!(-inf) * c!(4 / 2), c!(-inf));
+        assert_eq!(c!(+inf) * c!(4), c!(+inf));
+        assert_eq!(c!(+inf) * c!(-1), c!(-inf));
+        assert_eq!(c!(+inf) * c!(+inf), c!(+inf));
+        assert_eq!(c!(-inf) * c!(+inf), c!(-inf));
+        assert_eq!(c!(nan) * c!(inf), c!(nan));
     }
 
     #[test]
-    fn sub_num() {
-        assert_eq!(nk!(-1).sub(nk!(3)), nk!(-4));
-        assert_eq!(nk!(-3).sub(nk!(1 / 2)), nk!(-7 / 2));
-        assert_eq!(nk!(1 / 2).sub(nk!(1 / 2)), nk!(0));
-        assert_eq!(nk!(inf).sub(nk!(4)), nk!(inf));
-        assert_eq!(nk!(-inf).sub(nk!(4 / 2)), nk!(-inf));
-        assert_eq!(nk!(+inf).sub(nk!(4)), nk!(+inf));
-        assert_eq!(nk!(+inf).sub(nk!(+inf)), nk!(nan));
-        assert_eq!(nk!(-inf).sub(nk!(+inf)), nk!(-inf));
-        assert_eq!(nk!(nan).sub(nk!(inf)), nk!(nan));
-    }
-
-    #[test]
-    fn mul_num() {
-        assert_eq!(nk!(-1).mul(nk!(3)), nk!(-3));
-        assert_eq!(nk!(-1).mul(nk!(0)), nk!(0));
-        assert_eq!(nk!(-3).mul(nk!(1 / 2)), nk!(-3 / 2));
-        assert_eq!(nk!(1 / 2).mul(nk!(1 / 2)), nk!(1 / 4));
-        assert_eq!(nk!(inf).mul(nk!(4)), nk!(inf));
-        assert_eq!(nk!(-inf).mul(nk!(4 / 2)), nk!(-inf));
-        assert_eq!(nk!(+inf).mul(nk!(4)), nk!(+inf));
-        assert_eq!(nk!(+inf).mul(nk!(-1)), nk!(-inf));
-        assert_eq!(nk!(+inf).mul(nk!(+inf)), nk!(+inf));
-        assert_eq!(nk!(-inf).mul(nk!(+inf)), nk!(-inf));
-        assert_eq!(nk!(nan).mul(nk!(inf)), nk!(nan));
+    fn sub_binop() {
+        assert_eq!(c!(-1) - c!(3), c!(-4));
+        assert_eq!(c!(-3) - c!(1 / 2), c!(-7 / 2));
+        assert_eq!(c!(1 / 2) - c!(1 / 2), c!(0));
+        assert_eq!(c!(inf) - c!(4), c!(inf));
+        assert_eq!(c!(-inf) - c!(4 / 2), c!(-inf));
+        assert_eq!(c!(+inf) - c!(4), c!(+inf));
+        assert_eq!(c!(+inf) - c!(+inf), c!(nan));
+        assert_eq!(c!(-inf) - c!(+inf), c!(-inf));
+        assert_eq!(c!(nan) - c!(inf), c!(nan));
     }
 
     #[test]
     fn div_num() {
-        assert_eq!(nk!(-1).div(nk!(3)), nk!(-1 / 3));
-        assert_eq!(nk!(-1).div(nk!(0)), nk!(-inf));
-        assert_eq!(nk!(-3).div(nk!(1 / 2)), nk!(-6));
-        assert_eq!(nk!(1 / 2).div(nk!(1 / 2)), nk!(1));
-        assert_eq!(nk!(inf).div(nk!(4)), nk!(inf));
-        assert_eq!(nk!(-inf).div(nk!(4 / 2)), nk!(-inf));
-        assert_eq!(nk!(+inf).div(nk!(4)), nk!(+inf));
-        assert_eq!(nk!(+inf).div(nk!(-1)), nk!(-inf));
-        assert_eq!(nk!(+inf).div(nk!(+inf)), nk!(+inf));
-        assert_eq!(nk!(-inf).div(nk!(+inf)), nk!(-inf));
-        assert_eq!(nk!(nan).div(nk!(inf)), nk!(nan));
+        assert_eq!(nk!(-1).div_kind(nk!(3)), nk!(-1 / 3));
+        assert_eq!(nk!(-1).div_kind(nk!(0)), nk!(-inf));
+        assert_eq!(nk!(-3).div_kind(nk!(1 / 2)), nk!(-6));
+        assert_eq!(nk!(1 / 2).div_kind(nk!(1 / 2)), nk!(1));
+        assert_eq!(nk!(inf).div_kind(nk!(4)), nk!(inf));
+        assert_eq!(nk!(-inf).div_kind(nk!(4 / 2)), nk!(-inf));
+        assert_eq!(nk!(+inf).div_kind(nk!(4)), nk!(+inf));
+        assert_eq!(nk!(+inf).div_kind(nk!(-1)), nk!(-inf));
+        assert_eq!(nk!(+inf).div_kind(nk!(+inf)), nk!(+inf));
+        assert_eq!(nk!(-inf).div_kind(nk!(+inf)), nk!(-inf));
+        assert_eq!(nk!(nan).div_kind(nk!(inf)), nk!(nan));
     }
 }

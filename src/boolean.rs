@@ -2,7 +2,10 @@ use std::{collections::HashSet, fmt, ops};
 
 use derive_more::Display;
 
-use crate::{ArgSet, Basic, BasicKind, CalcursType, SubsDict, Variable, PTR};
+use crate::{
+    base::{Base, BasicKind, SubsDict, Variable, PTR},
+    traits::CalcursType,
+};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Display)]
 pub struct Boolean {
@@ -22,13 +25,13 @@ impl From<BooleanKind> for Boolean {
 }
 
 impl CalcursType for Boolean {
-    fn to_basic(self) -> Basic {
+    fn base(self) -> Base {
         BasicKind::Boolean(self).into()
     }
 }
 
 impl Boolean {
-    pub fn to_basic(self) -> Basic {
+    pub fn to_basic(self) -> Base {
         BasicKind::Boolean(self).into()
     }
 }
@@ -43,7 +46,7 @@ pub enum BooleanKind {
     Or(Or),
     Not(Not),
 
-    Unknown(PTR<Basic>),
+    Unknown(PTR<Base>),
 }
 
 impl BooleanKind {
@@ -73,7 +76,7 @@ impl From<bool> for BooleanKind {
 pub struct True;
 
 impl CalcursType for True {
-    fn to_basic(self) -> Basic {
+    fn base(self) -> Base {
         BooleanKind::True(self).to_basic()
     }
 }
@@ -83,13 +86,13 @@ impl CalcursType for True {
 pub struct False;
 
 impl CalcursType for False {
-    fn to_basic(self) -> Basic {
+    fn base(self) -> Base {
         BooleanKind::False(self).to_basic()
     }
 }
 
 impl BooleanKind {
-    pub fn from_basic(b: Basic) -> Self {
+    pub fn from_basic(b: Base) -> Self {
         match b.kind {
             BasicKind::Var(v) => BooleanKind::Var(v),
             BasicKind::Boolean(b) => b.kind,
@@ -116,7 +119,7 @@ impl BooleanKind {
         }
     }
 
-    pub fn to_basic(self) -> Basic {
+    pub fn to_basic(self) -> Base {
         BasicKind::Boolean(self.into()).into()
     }
 }
@@ -131,7 +134,7 @@ impl BooleanKind {
 ///
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct And {
-    args: ArgSet<BooleanKind>,
+    args: Vec<BooleanKind>,
 }
 
 impl fmt::Display for And {
@@ -161,16 +164,14 @@ impl std::hash::Hash for And {
 
 impl And {
     pub fn and<S: CalcursType, T: CalcursType>(b1: S, b2: T) -> Boolean {
-        let mut or = Self {
-            args: ArgSet::new(),
-        };
+        let mut or = Self { args: Vec::new() };
 
-        or.insert_arg(b1.to_basic());
-        or.insert_arg(b2.to_basic());
+        or.insert_arg(b1.base());
+        or.insert_arg(b2.base());
         or.simplify().into()
     }
 
-    fn insert_arg(&mut self, b: Basic) {
+    fn insert_arg(&mut self, b: Base) {
         self.args.push(BooleanKind::from_basic(b));
     }
 
@@ -213,7 +214,7 @@ impl And {
 }
 
 impl CalcursType for And {
-    fn to_basic(self) -> Basic {
+    fn base(self) -> Base {
         self.simplify().to_basic()
     }
 }
@@ -228,7 +229,7 @@ impl CalcursType for And {
 ///
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Or {
-    args: ArgSet<BooleanKind>,
+    args: Vec<BooleanKind>,
 }
 
 impl std::hash::Hash for Or {
@@ -267,16 +268,14 @@ impl Or {
     }
 
     pub fn or<S: CalcursType, T: CalcursType>(b1: S, b2: T) -> Boolean {
-        let mut or = Self {
-            args: ArgSet::new(),
-        };
+        let mut or = Self { args: Vec::new() };
 
-        or.insert_arg(b1.to_basic());
-        or.insert_arg(b2.to_basic());
+        or.insert_arg(b1.base());
+        or.insert_arg(b2.base());
         or.simplify().into()
     }
 
-    fn insert_arg(&mut self, b: Basic) {
+    fn insert_arg(&mut self, b: Base) {
         self.args.push(BooleanKind::from_basic(b));
     }
 
@@ -309,7 +308,7 @@ impl Or {
 }
 
 impl CalcursType for Or {
-    fn to_basic(self) -> Basic {
+    fn base(self) -> Base {
         BooleanKind::Or(self).to_basic()
     }
 }
@@ -338,7 +337,7 @@ impl Not {
 
     pub fn not<T: CalcursType>(b: T) -> Boolean {
         let not = Self {
-            val: PTR::new(BooleanKind::from_basic(b.to_basic())),
+            val: PTR::new(BooleanKind::from_basic(b.base())),
         };
 
         not.simplify().into()
@@ -359,24 +358,24 @@ impl Not {
     }
 }
 
-impl<T: CalcursType> ops::BitAnd<T> for Basic {
-    type Output = Basic;
+impl<T: CalcursType> ops::BitAnd<T> for Base {
+    type Output = Base;
 
     fn bitand(self, rhs: T) -> Self::Output {
-        And::and(self, rhs.to_basic()).to_basic()
+        And::and(self, rhs.base()).to_basic()
     }
 }
 
-impl<T: CalcursType> ops::BitOr<T> for Basic {
-    type Output = Basic;
+impl<T: CalcursType> ops::BitOr<T> for Base {
+    type Output = Base;
 
     fn bitor(self, rhs: T) -> Self::Output {
-        Or::or(self, rhs.to_basic()).to_basic()
+        Or::or(self, rhs.base()).to_basic()
     }
 }
 
-impl ops::Not for Basic {
-    type Output = Basic;
+impl ops::Not for Base {
+    type Output = Base;
 
     fn not(self) -> Self::Output {
         Not::not(self).to_basic()
@@ -384,17 +383,17 @@ impl ops::Not for Basic {
 }
 
 impl CalcursType for Not {
-    fn to_basic(self) -> Basic {
+    fn base(self) -> Base {
         BooleanKind::Not(self).to_basic()
     }
 }
 
-pub const FALSE: Basic = Basic {
+pub const FALSE: Base = Base {
     kind: BasicKind::Boolean(Boolean {
         kind: BooleanKind::False(False),
     }),
 };
-pub const TRUE: Basic = Basic {
+pub const TRUE: Base = Base {
     kind: BasicKind::Boolean(Boolean {
         kind: BooleanKind::True(True),
     }),
@@ -426,9 +425,9 @@ mod boolean_types {
 
     #[test]
     fn subs() {
-        let x = Variable::new("x").to_basic();
-        let y = Variable::new("y").to_basic();
-        let z = Variable::new("z").to_basic();
+        let x = Variable::new("x").base();
+        let y = Variable::new("y").base();
+        let z = Variable::new("z").base();
 
         let expr = (x.clone() & y.clone()) | z.clone();
         let eval = expr.subs("x", y.clone()).subs("y", True).subs("z", False);

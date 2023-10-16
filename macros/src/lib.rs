@@ -91,6 +91,14 @@ pub fn procagate(input: proc::TokenStream) -> proc::TokenStream {
                 }
             };
         }
+
+        #(
+        impl From<#vars> for #enum_name {
+            fn from(value: #vars) -> Self {
+                #enum_name::#vars(value)
+            }
+        }
+        )*
     };
 
     tok.into()
