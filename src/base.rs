@@ -3,9 +3,9 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use derive_more::Display;
 
-use crate::boolean::Boolean;
+use crate::boolean::BooleanAtom;
 use crate::numeric::{Integer, Number};
-use crate::operator::{Add, Mul};
+use crate::operator::{Add, And, Mul, Not, Or, Pow};
 use crate::traits::CalcursType;
 
 pub type PTR<T> = Box<T>;
@@ -21,82 +21,36 @@ impl Variable {
         Self { name: name.into() }
     }
 
-    pub fn simplify(self) -> Self {
-        self
-    }
-
     pub fn is_zero(&self) -> bool {
         false
     }
 }
 
 impl CalcursType for Variable {
+    #[inline]
     fn base(self) -> Base {
-        BaseKind::Var(self).into()
-    }
-}
-
-impl BaseKind {
-    pub fn subs(self, dict: SubsDict) -> Self {
-        match self {
-            BaseKind::Var(ref v) => {
-                if dict.borrow().contains_key(v) {
-                    let basic = dict.borrow_mut().remove(v).unwrap();
-                    basic.kind
-                } else {
-                    self
-                }
-            }
-            BaseKind::Boolean(b) => b.kind.subs(dict).base().kind,
-            BaseKind::Dummy => self,
-            _ => todo!(), // BK::Number(_) => todo!(),
-        }
-    }
-
-    pub fn simplify(self) -> BaseKind {
-        match self {
-            BaseKind::Boolean(b) => b.kind.simplify().base().kind,
-            BaseKind::Dummy | BaseKind::Var(_) => self,
-            _ => todo!(), // BK::Number(_) => todo!(),
-        }
+        Base::Var(self).base()
     }
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Display)]
-pub enum BaseKind {
+pub enum Base {
     Var(Variable),
-    Boolean(Boolean),
+    BooleanAtom(BooleanAtom),
     Number(Number),
+    Dummy,
 
     Add(Add),
+
     Mul(Mul),
-
-    Dummy,
-}
-
-impl From<BaseKind> for Base {
-    fn from(value: BaseKind) -> Self {
-        Base { kind: value }
-    }
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Display)]
-pub struct Base {
-    pub kind: BaseKind,
-}
-
-impl Base {
-    pub fn subs<VAR: Into<Variable>, T: CalcursType>(self, var: VAR, b: T) -> Self {
-        let dict = Rc::new(RefCell::new([(var.into(), b.base())].into()));
-        self.kind.subs(dict).into()
-    }
-
-    pub fn simplify(self) -> Base {
-        self.kind.simplify().into()
-    }
+    Pow(PTR<Pow>),
+    Or(Or),
+    And(And),
+    Not(Not),
 }
 
 impl CalcursType for Base {
+    #[inline]
     fn base(self) -> Self {
         self
     }
@@ -129,5 +83,29 @@ impl ops::Sub for Base {
 
     fn sub(self, rhs: Self) -> Self::Output {
         Add::add(self, Mul::mul(Integer::new(-1), rhs))
+    }
+}
+
+impl ops::BitOr for Base {
+    type Output = Base;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Or::or(self, rhs)
+    }
+}
+
+impl ops::BitAnd for Base {
+    type Output = Base;
+
+    fn bitand(self, rhs: Self) -> Self::Output {
+        And::and(self, rhs)
+    }
+}
+
+impl ops::Not for Base {
+    type Output = Base;
+
+    fn not(self) -> Self::Output {
+        Not::not(self)
     }
 }

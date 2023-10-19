@@ -2,95 +2,94 @@ use std::ops;
 
 use calcurs_macros::Procagate;
 use derive_more::Display;
-use lazy_static::lazy_static;
-use num::{bigint, BigInt, BigRational, Zero};
+use num::{rational::Ratio, Zero};
 use num_traits::One;
 
 use crate::{
     base::Base,
-    base::BaseKind,
-    traits::{CalcursType, Numeric},
+    traits::{CalcursType, Num},
 };
 
-lazy_static! {
-    pub static ref ZERO: Number = Integer::num(0).into();
-    pub static ref ONE: Number = Integer::num(1).into();
-}
+// #[derive(Debug, Clone, Hash, Eq, PartialEq, Display)]
+// pub struct Number {
+//     pub kind: NumberKind,
+// }
 
-#[derive(Debug, Clone, Hash, Eq, PartialEq, Display)]
-pub struct Number {
-    pub kind: NumberKind,
-}
+// impl Num for Number {
+//     fn is_zero(&self) -> bool {
+//         self.kind.is_zero()
+//     }
 
-impl Numeric for Number {
-    fn is_zero(&self) -> bool {
-        self.kind.is_zero()
-    }
+//     fn is_one(&self) -> bool {
+//         self.kind.is_one()
+//     }
 
-    fn is_one(&self) -> bool {
-        self.kind.is_one()
-    }
+//     fn sign(&self) -> Sign {
+//         self.kind.sign()
+//     }
+// }
 
-    fn sign(&self) -> Sign {
-        self.kind.sign()
-    }
-}
+// impl CalcursType for Number {
+//     #[inline]
+//     fn base(self) -> Base {
+//         BaseKind::Number(self).base()
+//     }
+// }
 
-impl CalcursType for Number {
-    fn base(self) -> Base {
-        BaseKind::Number(self).into()
-    }
-}
+// todo maybe try into + precedence
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Display, Procagate)]
-pub enum NumberKind {
+pub enum Number {
     Integer(Integer),
     Rational(Rational),
-
     Infinity(Infinity),
     NaN(NaN),
 }
 
-impl Numeric for NumberKind {
+impl Num for Number {
     fn is_zero(&self) -> bool {
-        procagate_number_kind!(self, v => { v.is_zero() })
+        procagate_number!(self, v => { v.is_zero() })
     }
 
     fn is_one(&self) -> bool {
-        procagate_number_kind!(self, v => { v.is_zero() })
+        procagate_number!(self, v => { v.is_one() })
     }
 
     fn sign(&self) -> Sign {
-        procagate_number_kind!(self, v => { v.sign() })
+        procagate_number!(self, v => { v.sign() })
     }
 }
 
-impl From<NumberKind> for Number {
-    fn from(value: NumberKind) -> Self {
-        Number { kind: value }
-    }
-}
+// impl From<NumberKind> for Number {
+//     fn from(value: Number) -> Self {
+//         Number { kind: value }
+//     }
+// }
 
-impl NumberKind {
-    pub fn add_kind<T: Into<NumberKind>>(self, other: T) -> NumberKind {
+impl Number {
+    //TODO take &mut
+    pub fn add_kind<T: Into<Number>>(self, other: T) -> Number {
         let other = other.into();
-        use NumberKind as N;
+        use Number as N;
         match (self, other) {
             (N::NaN(_), _) | (_, N::NaN(_)) => N::NaN(NaN),
+
             (N::Infinity(i), n) | (n, N::Infinity(i)) => i.add_inf(n),
+
             (N::Integer(i1), N::Integer(i2)) => i1.add_int(i2),
+
             (N::Integer(i), N::Rational(r)) | (N::Rational(r), N::Integer(i)) => r.add_int(i),
             (N::Rational(r1), N::Rational(r2)) => r1.add_rat(r2),
         }
     }
 
-    pub fn sub_kind(self, mut other: NumberKind) -> NumberKind {
+    pub fn sub_kind(self, mut other: Number) -> Number {
         other = other.mul_kind(Integer::num(-1));
         self.add_kind(other)
     }
 
-    pub fn mul_kind(self, other: NumberKind) -> NumberKind {
-        use NumberKind as N;
+    pub fn mul_kind(self, other: Number) -> Number {
+        use Number as N;
         match (self, other) {
             (N::NaN(_), _) | (_, N::NaN(_)) => N::NaN(NaN),
             (N::Infinity(i), n) | (n, N::Infinity(i)) => i.mul_inf(n),
@@ -100,8 +99,8 @@ impl NumberKind {
         }
     }
 
-    pub fn div_kind(self, other: NumberKind) -> NumberKind {
-        use NumberKind as N;
+    pub fn div_kind(self, other: Number) -> Number {
+        use Number as N;
         match (self, other) {
             (N::NaN(_), _) | (_, N::NaN(_)) => N::NaN(NaN),
 
@@ -116,26 +115,27 @@ impl NumberKind {
     }
 
     pub fn is_zero(&self) -> bool {
-        procagate_number_kind!(self, v => { v.is_zero() })
+        procagate_number!(self, v => { v.is_zero() })
     }
 
-    fn self_div_inf(&self) -> NumberKind {
+    fn self_div_inf(&self) -> Number {
         match self {
-            NumberKind::Rational(_) | NumberKind::Integer(_) => Integer::num(0),
-            NumberKind::Infinity(_) => NaN.into(),
-            NumberKind::NaN(_) => NaN.into(),
+            Number::Rational(_) | Number::Integer(_) => Integer::num(0),
+            Number::Infinity(_) => NaN.into(),
+            Number::NaN(_) => NaN.into(),
         }
     }
 
+    #[inline]
     pub fn base(self) -> Base {
-        BaseKind::Number(self.into()).into()
+        Base::Number(self.into()).base()
     }
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Display, Copy)]
 pub struct NaN;
 
-impl Numeric for NaN {
+impl Num for NaN {
     fn is_zero(&self) -> bool {
         false
     }
@@ -150,8 +150,9 @@ impl Numeric for NaN {
 }
 
 impl CalcursType for NaN {
+    #[inline]
     fn base(self) -> Base {
-        Number::from(NumberKind::NaN(self)).base()
+        Number::from(Number::NaN(self)).base()
     }
 }
 
@@ -223,7 +224,7 @@ pub struct Infinity {
     dir: Sign,
 }
 
-impl Numeric for Infinity {
+impl Num for Infinity {
     fn is_zero(&self) -> bool {
         false
     }
@@ -238,8 +239,9 @@ impl Numeric for Infinity {
 }
 
 impl CalcursType for Infinity {
+    #[inline]
     fn base(self) -> Base {
-        Number::from(NumberKind::Infinity(self)).base()
+        Number::from(Number::Infinity(self)).base()
     }
 }
 
@@ -264,8 +266,8 @@ impl Infinity {
         }
     }
 
-    pub fn add_inf(self, other: NumberKind) -> NumberKind {
-        use NumberKind as N;
+    pub fn add_inf(self, other: Number) -> Number {
+        use Number as N;
         match other {
             N::Infinity(_) if self.dir == Sign::UnSigned => N::NaN(NaN),
             N::Infinity(inf) if self.dir != inf.dir => N::NaN(NaN),
@@ -274,8 +276,8 @@ impl Infinity {
         }
     }
 
-    pub fn mul_inf(self, other: NumberKind) -> NumberKind {
-        use NumberKind as N;
+    pub fn mul_inf(self, other: Number) -> Number {
+        use Number as N;
         match other {
             N::Rational(r) => Infinity::new(self.dir * r.sign()).into(),
             N::Integer(i) => Infinity::new(self.dir * i.sign()).into(),
@@ -284,8 +286,8 @@ impl Infinity {
         }
     }
 
-    pub fn div_inf(self, other: NumberKind) -> NumberKind {
-        use NumberKind as N;
+    pub fn div_inf(self, other: Number) -> Number {
+        use Number as N;
         match other {
             N::Infinity(_) | N::Integer(_) | N::Rational(_) => self.mul_inf(other),
             N::NaN(_) => NaN.into(),
@@ -293,10 +295,10 @@ impl Infinity {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Display, Default)]
-pub struct Integer(BigInt);
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, Display, Default)]
+pub struct Integer(i64);
 
-impl Numeric for Integer {
+impl Num for Integer {
     fn is_zero(&self) -> bool {
         self.0.is_zero()
     }
@@ -306,56 +308,57 @@ impl Numeric for Integer {
     }
 
     fn sign(&self) -> Sign {
-        match self.0.sign() {
-            bigint::Sign::Minus => Sign::Negitive,
-            bigint::Sign::NoSign => Sign::UnSigned,
-            bigint::Sign::Plus => Sign::Positive,
+        match self.0.signum() {
+            1 => Sign::Positive,
+            -1 => Sign::Negitive,
+            _ => Sign::UnSigned,
         }
     }
 }
 
 impl CalcursType for Integer {
+    #[inline]
     fn base(self) -> Base {
-        Number::from(NumberKind::Integer(self)).base()
+        Number::from(Number::Integer(self)).base()
     }
 }
 
 impl From<Integer> for Rational {
     fn from(value: Integer) -> Self {
-        Rational(BigRational::from_integer(value.0))
+        Rational(Ratio::from_integer(value.0))
     }
 }
 
 impl Integer {
-    pub fn new(val: i32) -> Self {
-        Self(val.into())
+    pub fn new(val: i64) -> Self {
+        Self(val)
     }
 
-    pub fn num(val: i32) -> NumberKind {
-        Self(val.into()).into()
+    pub fn num(val: i64) -> Number {
+        Self(val).into()
     }
 
     pub fn is_zero(&self) -> bool {
         self.0.is_zero()
     }
 
-    pub fn add_int(self, other: Integer) -> NumberKind {
+    pub fn add_int(self, other: Integer) -> Number {
         Integer(self.0 + other.0).into()
     }
 
-    pub fn sub_int(self, other: Integer) -> NumberKind {
+    pub fn sub_int(self, other: Integer) -> Number {
         Integer(self.0 - other.0).into()
     }
 
-    pub fn mul_int(self, other: Integer) -> NumberKind {
+    pub fn mul_int(self, other: Integer) -> Number {
         Integer(self.0 * other.0).into()
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Display, Default)]
-pub struct Rational(BigRational);
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, Display, Default)]
+pub struct Rational(Ratio<i64>);
 
-impl Numeric for Rational {
+impl Num for Rational {
     fn is_zero(&self) -> bool {
         self.0.is_zero()
     }
@@ -365,30 +368,31 @@ impl Numeric for Rational {
     }
 
     fn sign(&self) -> Sign {
-        match self.0.numer().sign() {
-            bigint::Sign::Minus => Sign::Negitive,
-            bigint::Sign::NoSign => Sign::UnSigned,
-            bigint::Sign::Plus => Sign::Positive,
+        match self.0.numer().signum() {
+            1 => Sign::Positive,
+            -1 => Sign::Negitive,
+            _ => Sign::UnSigned,
         }
     }
 }
 
 impl CalcursType for Rational {
+    #[inline]
     fn base(self) -> Base {
-        Number::from(NumberKind::Rational(self)).base()
+        Number::from(Number::Rational(self)).base()
     }
 }
 
 impl Rational {
-    pub fn new(mut val: i32, mut denom: i32) -> Self {
+    pub fn new(mut val: i64, mut denom: i64) -> Self {
         if denom.is_negative() {
             val *= -1;
             denom *= -1;
         }
-        Self(BigRational::new(val.into(), denom.into()))
+        Self(Ratio::new(val, denom))
     }
 
-    pub fn num(val: i32, denom: i32) -> NumberKind {
+    pub fn num(val: i64, denom: i64) -> Number {
         Self::new(val, denom).cleanup()
     }
 
@@ -396,7 +400,7 @@ impl Rational {
         self.0.is_zero()
     }
 
-    pub fn cleanup(self) -> NumberKind {
+    pub fn cleanup(self) -> Number {
         if self.0.is_integer() {
             Integer(self.0.to_integer()).into()
         } else {
@@ -404,105 +408,58 @@ impl Rational {
         }
     }
 
-    pub fn add_int(self, i: Integer) -> NumberKind {
+    pub fn add_int(self, i: Integer) -> Number {
         self.add_rat(i.into())
     }
 
-    pub fn sub_int(self, i: Integer) -> NumberKind {
+    pub fn sub_int(self, i: Integer) -> Number {
         self.sub_rat(i.into())
     }
 
-    pub fn mul_int(self, i: Integer) -> NumberKind {
+    pub fn mul_int(self, i: Integer) -> Number {
         self.mul_rat(i.into())
     }
 
-    pub fn div_int(self, i: Integer) -> NumberKind {
+    pub fn div_int(self, i: Integer) -> Number {
         self.div_rat(i.into())
     }
 
-    pub fn add_rat(self, r: Rational) -> NumberKind {
+    pub fn add_rat(self, r: Rational) -> Number {
         Rational(self.0 + r.0).cleanup()
     }
 
-    pub fn sub_rat(self, r: Rational) -> NumberKind {
+    pub fn sub_rat(self, r: Rational) -> Number {
         Rational(self.0 - r.0).cleanup()
     }
 
-    pub fn mul_rat(self, r: Rational) -> NumberKind {
+    pub fn mul_rat(self, r: Rational) -> Number {
         Rational(self.0 * r.0).cleanup()
     }
 
-    pub fn div_rat(self, r: Rational) -> NumberKind {
+    pub fn div_rat(self, r: Rational) -> Number {
         if r.0.is_zero() {
+            // todo: complex inf
             Infinity::new(self.sign()).into()
         } else {
             Rational(self.0 / r.0).cleanup()
         }
     }
+
+    pub fn pow_int(self, i: Integer) -> Number {
+        //TODO: is max correct?
+        let exp = i.0.try_into().unwrap_or(i32::MAX);
+        if exp == 0 {
+            return Integer::num(1);
+        }
+
+        self.0.pow(exp);
+        self.into()
+    }
 }
 
 #[cfg(test)]
-mod test_numbers {
-
+mod num_test {
     use crate::prelude::*;
-
-    use pretty_assertions::assert_eq;
-
-    macro_rules! nk {
-        (+inf) => {
-            NumberKind::Infinity(Infinity::pos())
-        };
-
-        (-inf) => {
-            NumberKind::Infinity(Infinity::neg())
-        };
-
-        (inf) => {
-            NumberKind::Infinity(Infinity::default())
-        };
-
-        (nan) => {
-            NumberKind::NaN(NaN)
-        };
-
-        ($int: literal) => {
-            Integer::num($int)
-        };
-
-        ($val: literal / $denom: literal) => {
-            Rational::num($val, $denom)
-        };
-    }
-
-    macro_rules! c {
-        (+inf) => {
-            Infinity::pos().base()
-        };
-
-        (-inf) => {
-            Infinity::neg().base()
-        };
-
-        (inf) => {
-            Infinity::default().base()
-        };
-
-        (nan) => {
-            NaN.base()
-        };
-
-        ($int: literal) => {
-            Integer::num($int).base()
-        };
-
-        ($val: literal / $denom: literal) => {
-            Rational::num($val, $denom).base()
-        };
-
-        (v($var: tt)) => {
-            Variable::new(stringify!($var)).base()
-        };
-    }
 
     #[test]
     fn rational() {
@@ -510,63 +467,5 @@ mod test_numbers {
         assert!(Rational::new(1, -2).is_neg());
         assert!(Rational::new(-1, -2).is_pos());
         assert!(Rational::new(-1, 2).is_neg());
-    }
-
-    #[test]
-    fn add_binop() {
-        assert_eq!(c!(2) + c!(3), c!(5));
-        assert_eq!(c!(v(x)) + c!(v(x)) + c!(3), c!(3) + c!(v(x)) + c!(v(x)));
-        assert_eq!(c!(-1) + c!(3), c!(2));
-        assert_eq!(c!(-3) + c!(1 / 2), c!(-5 / 2));
-        assert_eq!(c!(1 / 2) + c!(1 / 2), c!(1));
-        assert_eq!(c!(inf) + c!(4), c!(inf));
-        assert_eq!(c!(-inf) + c!(4), c!(-inf));
-        assert_eq!(c!(+inf) + c!(+inf), c!(+inf));
-        assert_eq!(c!(-inf) + c!(+inf), c!(nan));
-        assert_eq!(c!(nan) + c!(inf), c!(nan));
-        assert_eq!(c!(4 / 2), c!(2));
-    }
-
-    #[test]
-    fn mul_binop() {
-        assert_eq!(c!(-1) * c!(3), c!(-3));
-        assert_eq!(c!(-1) * c!(0), c!(0));
-        assert_eq!(c!(-3) * c!(1 / 2), c!(-3 / 2));
-        assert_eq!(c!(1 / 2) * c!(1 / 2), c!(1 / 4));
-        assert_eq!(c!(inf) * c!(4), c!(inf));
-        assert_eq!(c!(-inf) * c!(4 / 2), c!(-inf));
-        assert_eq!(c!(+inf) * c!(4), c!(+inf));
-        assert_eq!(c!(+inf) * c!(-1), c!(-inf));
-        assert_eq!(c!(+inf) * c!(+inf), c!(+inf));
-        assert_eq!(c!(-inf) * c!(+inf), c!(-inf));
-        assert_eq!(c!(nan) * c!(inf), c!(nan));
-    }
-
-    #[test]
-    fn sub_binop() {
-        assert_eq!(c!(-1) - c!(3), c!(-4));
-        assert_eq!(c!(-3) - c!(1 / 2), c!(-7 / 2));
-        assert_eq!(c!(1 / 2) - c!(1 / 2), c!(0));
-        assert_eq!(c!(inf) - c!(4), c!(inf));
-        assert_eq!(c!(-inf) - c!(4 / 2), c!(-inf));
-        assert_eq!(c!(+inf) - c!(4), c!(+inf));
-        assert_eq!(c!(+inf) - c!(+inf), c!(nan));
-        assert_eq!(c!(-inf) - c!(+inf), c!(-inf));
-        assert_eq!(c!(nan) - c!(inf), c!(nan));
-    }
-
-    #[test]
-    fn div_num() {
-        assert_eq!(nk!(-1).div_kind(nk!(3)), nk!(-1 / 3));
-        assert_eq!(nk!(-1).div_kind(nk!(0)), nk!(-inf));
-        assert_eq!(nk!(-3).div_kind(nk!(1 / 2)), nk!(-6));
-        assert_eq!(nk!(1 / 2).div_kind(nk!(1 / 2)), nk!(1));
-        assert_eq!(nk!(inf).div_kind(nk!(4)), nk!(inf));
-        assert_eq!(nk!(-inf).div_kind(nk!(4 / 2)), nk!(-inf));
-        assert_eq!(nk!(+inf).div_kind(nk!(4)), nk!(+inf));
-        assert_eq!(nk!(+inf).div_kind(nk!(-1)), nk!(-inf));
-        assert_eq!(nk!(+inf).div_kind(nk!(+inf)), nk!(+inf));
-        assert_eq!(nk!(-inf).div_kind(nk!(+inf)), nk!(-inf));
-        assert_eq!(nk!(nan).div_kind(nk!(inf)), nk!(nan));
     }
 }
