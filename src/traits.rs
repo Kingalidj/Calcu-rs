@@ -1,7 +1,7 @@
 use crate::{
     base::Base,
     boolean::{BoolValue, BooleanAtom},
-    numeric::{Integer, Number, Sign},
+    numeric::{Number, Rational, Sign},
 };
 
 pub trait CalcursType: Clone {
@@ -50,10 +50,9 @@ pub trait Bool {
     #[inline]
     fn to_num(&self) -> Number {
         match self.is_false() {
-            true => Integer::num(0),
-            false => Integer::num(1),
+            true => Rational::int(0),
+            false => Rational::int(1),
         }
-        .into()
     }
 
     fn to_bool(&self) -> Option<BooleanAtom> {

@@ -3,6 +3,7 @@ pub mod boolean;
 pub mod constants;
 pub mod numeric;
 pub mod operator;
+pub mod rational;
 pub mod traits;
 
 pub mod prelude {

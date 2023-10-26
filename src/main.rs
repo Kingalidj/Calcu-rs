@@ -3,5 +3,5 @@ extern crate calcu_rs;
 use calcu_rs::prelude::*;
 
 fn main() {
-    println!("{}", 2 ^ 3);
+    println!("{}", Rational::int(-3).base() * Rational::frac(1, 2).base());
 }

@@ -8,7 +8,7 @@ use crate::{
     base::{Base, PTR},
     boolean::{BoolValue, BooleanAtom},
     constants::{FALSE, ONE, TRUE},
-    numeric::{Integer, Number},
+    numeric::{Number, Rational, Undefined},
     traits::{Bool, CalcursType, Num},
 };
 
@@ -66,7 +66,7 @@ impl CalcursType for Add {
 impl Add {
     pub fn add(b1: impl CalcursType, b2: impl CalcursType) -> Base {
         Self {
-            coeff: Integer::num(0),
+            coeff: Rational::int(0),
             arg_map: Default::default(),
         }
         .add_arg(b1.base())
@@ -90,7 +90,7 @@ impl Add {
             B::Number(num) => self = self.add_num(num),
 
             B::Mul(mut mul) => {
-                let mut coeff = Integer::num(1);
+                let mut coeff = Rational::int(1);
                 (mul.coeff, coeff) = (coeff, mul.coeff);
                 self.add_term(coeff, Base::Mul(mul));
             }
@@ -100,7 +100,7 @@ impl Add {
                     self.add_term(coeff, term);
                 });
 
-                self.coeff = self.coeff.add_kind(add.coeff);
+                self.coeff = self.coeff.add_num(add.coeff);
             }
             B::Pow(_) | B::Not(_) | B::And(_) | B::Or(_) | B::Var(_) | B::Dummy => {
                 let coeff = ONE.clone();
@@ -113,7 +113,7 @@ impl Add {
 
     fn add_num(mut self, n: Number) -> Self {
         if !n.is_zero() {
-            self.coeff = self.coeff.add_kind(n);
+            self.coeff = self.coeff.add_num(n);
         }
         self
     }
@@ -121,7 +121,7 @@ impl Add {
     /// adds the term: coeff * b
     fn add_term(&mut self, coeff: Number, b: Base) {
         if let Some(mut key) = self.arg_map.remove(&b) {
-            key = key.add_kind(coeff);
+            key = key.add_num(coeff);
 
             if !key.is_zero() {
                 self.arg_map.insert(b, key);
@@ -150,7 +150,7 @@ impl Mul {
         let b2 = b2.base();
 
         Self {
-            coeff: Integer::num(1),
+            coeff: Rational::int(1),
             arg_map: Default::default(),
         }
         .mul_arg(b1)
@@ -170,7 +170,7 @@ impl Mul {
             B::Number(n) => self = self.mul_num(n),
 
             B::Mul(mul) => {
-                self.coeff = self.coeff.mul_kind(mul.coeff);
+                self.coeff = self.coeff.mul_num(mul.coeff);
                 mul.arg_map
                     .into_iter()
                     .for_each(|(key, val)| self.mul_term(key, val))
@@ -180,6 +180,7 @@ impl Mul {
                 self.mul_term(b, exp);
             }
         }
+
         self
     }
 
@@ -197,7 +198,7 @@ impl Mul {
         if n.is_zero() {
             self.coeff = n;
         } else if !n.is_one() {
-            self.coeff = self.coeff.mul_kind(n);
+            self.coeff = self.coeff.mul_num(n);
         }
         self
     }
@@ -213,6 +214,10 @@ impl Mul {
 
 impl fmt::Display for Mul {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.arg_map.is_empty() {
+            return write!(f, "{}", self.coeff);
+        }
+
         let mut iter = self.arg_map.iter();
 
         write!(f, "(")?;
@@ -258,6 +263,12 @@ pub struct Pow {
     exp: Base,
 }
 
+impl CalcursType for Pow {
+    fn base(self) -> Base {
+        Base::Pow(self.into())
+    }
+}
+
 impl fmt::Display for Pow {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "({}^{})", self.base, self.exp)
@@ -267,9 +278,15 @@ impl fmt::Display for Pow {
 impl Pow {
     pub fn pow(b: impl CalcursType, e: impl CalcursType) -> Base {
         use Base as B;
-        let b = b.base();
-        let e = e.base();
-        todo!()
+
+        let base = b.base();
+        let exp = e.base();
+
+        match (base, exp) {
+            (B::Number(n1), B::Number(n2)) if n1.is_zero() && n2.is_zero() => Undefined.base(),
+            (_, B::Number(n)) if n.is_zero() => Rational::int(1).base(),
+            (base, exp) => Self { base, exp }.base(),
+        }
     }
 }
 
@@ -581,7 +598,7 @@ mod op_test {
         };
 
         (nan) => {
-            NaN.base()
+            Undefined.base()
         };
 
         (false) => {
@@ -593,11 +610,11 @@ mod op_test {
         };
 
         ($int: literal) => {
-            Integer::num($int).base()
+            Rational::int($int).base()
         };
 
         ($val: literal / $denom: literal) => {
-            Rational::num($val, $denom).base()
+            Rational::frac($val, $denom).base()
         };
 
         (v: $var: tt) => {

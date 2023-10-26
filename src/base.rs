@@ -4,7 +4,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use derive_more::Display;
 
 use crate::boolean::BooleanAtom;
-use crate::numeric::{Integer, Number};
+use crate::numeric::{Number, Rational};
 use crate::operator::{Add, And, Mul, Not, Or, Pow};
 use crate::traits::CalcursType;
 
@@ -82,7 +82,7 @@ impl ops::Sub for Base {
     type Output = Base;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        Add::add(self, Mul::mul(Integer::new(-1), rhs))
+        Add::add(self, Mul::mul(Rational::int(-1), rhs))
     }
 }
 

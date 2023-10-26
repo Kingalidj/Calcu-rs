@@ -16,7 +16,6 @@ dependencies = [
  "lazy_static",
  "macros",
  "num",
- "num-traits",
  "pretty_assertions",
 ]
 
