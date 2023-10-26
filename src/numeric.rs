@@ -262,7 +262,7 @@ impl Number {
         match self {
             N::Rational(r) => {
                 let sign = r.sign();
-                inf.sign = inf.sign * sign;
+                inf.sign *= sign;
                 inf.into()
             }
             N::Infinity(i) => i.div_num(inf.into()),

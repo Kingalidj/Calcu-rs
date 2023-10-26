@@ -82,7 +82,7 @@ impl Num for Rational {
     }
 
     fn is_one(&self) -> bool {
-        self.numer == 1 && self.denom() == 1 && self.is_neg == false
+        self.numer == 1 && self.denom() == 1 && !self.is_neg
     }
 
     fn sign(&self) -> Sign {
@@ -102,8 +102,8 @@ impl Rational {
         }
 
         let is_neg = (num * den).is_negative();
-        let numer = num.abs() as UInt;
-        let denom = NonZeroUInt::new(den.abs() as UInt).unwrap();
+        let numer = num.unsigned_abs() as UInt;
+        let denom = NonZeroUInt::new(den.unsigned_abs() as UInt).unwrap();
 
         Self {
             is_neg,
@@ -116,7 +116,7 @@ impl Rational {
 
     pub fn int(n: i32) -> Number {
         let is_neg = n.is_negative();
-        let numer = n.abs() as UInt;
+        let numer = n.unsigned_abs() as UInt;
         let denom = NonZeroUInt::new(1).unwrap();
         Self {
             is_neg,
@@ -282,8 +282,8 @@ impl std::ops::Mul for Rational {
         self.is_neg = self.is_neg || rhs.is_neg;
         let gcd_ad = self.numer.gcd(&rhs.denom());
         let gcd_bc = self.denom().gcd(&rhs.numer);
-        self.numer /= gcd_ad.clone();
-        self.numer *= rhs.numer / gcd_bc.clone();
+        self.numer /= gcd_ad;
+        self.numer *= rhs.numer / gcd_bc;
         self.denom.div(gcd_bc);
         self.denom.mul(rhs.denom() / gcd_ad);
         self
@@ -297,28 +297,19 @@ impl std::ops::Div for Rational {
         self.is_neg = self.is_neg || rhs.is_neg;
         let gcd_ac = self.numer.gcd(&rhs.numer);
         let gcd_bd = self.denom().gcd(&rhs.denom());
-        self.numer /= gcd_ac.clone();
-        self.numer *= rhs.denom() / gcd_bd.clone();
+        self.numer /= gcd_ac;
+        self.numer *= rhs.denom() / gcd_bd;
         self.denom.div(gcd_bd);
         self.denom.mul(rhs.numer / gcd_ac);
-        self.into()
+        self
     }
 }
 
 impl PartialOrd for Rational {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        use std::cmp::Ordering;
-
-        let self_val = self.numer * other.denom();
-        let other_val = other.numer * self.denom();
-
-        if self_val < other_val {
-            Some(Ordering::Less)
-        } else if self_val > other_val {
-            Some(Ordering::Greater)
-        } else {
-            Some(Ordering::Equal)
-        }
+        let v1 = self.numer * other.denom();
+        let v2 = other.numer * self.denom();
+        v1.partial_cmp(&v2)
     }
 }
 
