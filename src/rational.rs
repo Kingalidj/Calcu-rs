@@ -13,11 +13,11 @@ struct NonZeroUInt(UInt);
 
 impl NonZeroUInt {
     #[inline]
-    fn new(n: UInt) -> Option<Self> {
+    fn new(n: UInt) -> Self {
         if n == 0 {
-            None
+            panic!("NonZeroUInt::new: found 0");
         } else {
-            Some(NonZeroUInt(n))
+            NonZeroUInt(n)
         }
     }
 
@@ -85,6 +85,10 @@ impl Num for Rational {
         self.numer == 1 && self.denom() == 1 && !self.is_neg
     }
 
+    fn is_neg_one(&self) -> bool {
+        self.numer == 1 && self.denom() == 1 && self.is_neg
+    }
+
     fn sign(&self) -> Sign {
         match self.is_neg {
             true => Sign::Negitive,
@@ -94,16 +98,15 @@ impl Num for Rational {
 }
 
 impl Rational {
-    pub fn frac(num: i32, den: i32) -> Number {
+    pub fn new(num: i32, den: i32) -> Self {
         match (num, den) {
-            (0, 0) => return Undefined.into(),
-            (_, 0) => return Infinity::new(Sign::UnSigned).into(), // TODO
+            (_, 0) => panic!("Rational::new: found 0 denominator"),
             _ => (),
         }
 
         let is_neg = (num * den).is_negative();
         let numer = num.unsigned_abs() as UInt;
-        let denom = NonZeroUInt::new(den.unsigned_abs() as UInt).unwrap();
+        let denom = NonZeroUInt::new(den.unsigned_abs() as UInt);
 
         Self {
             is_neg,
@@ -114,10 +117,20 @@ impl Rational {
         .into()
     }
 
-    pub fn int(n: i32) -> Number {
+    pub fn frac_num(num: i32, den: i32) -> Number {
+        match (num, den) {
+            (0, 0) => return Undefined.into(),
+            (_, 0) => return Infinity::new(Sign::UnSigned).into(), // TODO
+            _ => (),
+        }
+
+        Self::new(num, den).into()
+    }
+
+    pub fn int_num(n: i32) -> Number {
         let is_neg = n.is_negative();
         let numer = n.unsigned_abs() as UInt;
-        let denom = NonZeroUInt::new(1).unwrap();
+        let denom = NonZeroUInt::new(1);
         Self {
             is_neg,
             numer,
@@ -159,7 +172,9 @@ impl Rational {
         self
     }
 
-    /// assume denom != 0 and f1.denom != f2.denom
+    /// tuple acts as a fraction, e.g 1 / 3 => (1, 3)
+    ///
+    /// assume f.1 != 0 and f1.1 != f2.1
     #[inline]
     fn unsigned_add(f1: (UInt, UInt), f2: (UInt, UInt)) -> Rational {
         let lcm = f1.1.lcm(&f2.1);
@@ -168,12 +183,14 @@ impl Rational {
         Rational {
             is_neg: false,
             numer: lhs_numer + rhs_numer,
-            denom: NonZeroUInt::new(lcm).unwrap(),
+            denom: NonZeroUInt::new(lcm),
         }
         .reduce()
     }
 
-    /// assume denom != 0 and f1.denom != f2.denom and f1 >= f2
+    /// tuple acts as a fraction, e.g 1 / 3 => (1, 3)
+    ///
+    /// assume f.1 != 0 and f1.1 != f2.1 and f1 >= f2
     #[inline]
     fn unsigned_sub(f1: (UInt, UInt), f2: (UInt, UInt)) -> Rational {
         let lcm = f1.1.lcm(&f2.1);
@@ -182,7 +199,7 @@ impl Rational {
         Rational {
             is_neg: false,
             numer: lhs_numer - rhs_numer,
-            denom: NonZeroUInt::new(lcm).unwrap(),
+            denom: NonZeroUInt::new(lcm),
         }
         .reduce()
     }
@@ -193,6 +210,7 @@ impl Rational {
         res
     }
 
+    // TODO: user std::ops
     pub fn div_ratio(self, other: Self) -> Number {
         (self / other).into()
     }
@@ -208,8 +226,29 @@ impl Rational {
     pub fn add_ratio(self, other: Self) -> Number {
         (self + other).into()
     }
+
+    pub fn inverse(&self) -> Option<Self> {
+        if self.is_zero() {
+            None
+        } else {
+            let mut inv = *self;
+            inv.denom.set(self.numer);
+            inv.numer = self.denom();
+            Some(inv)
+        }
+    }
 }
 
+impl std::ops::Neg for Rational {
+    type Output = Self;
+
+    fn neg(mut self) -> Self::Output {
+        self.is_neg = !self.is_neg;
+        self
+    }
+}
+
+//TODO: checked add
 impl std::ops::Add for Rational {
     type Output = Rational;
 
@@ -316,5 +355,30 @@ impl PartialOrd for Rational {
 impl Ord for Rational {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.partial_cmp(other).unwrap()
+    }
+}
+
+#[cfg(test)]
+mod rational_test {
+
+    use crate::prelude::*;
+    use pretty_assertions::assert_eq;
+
+    macro_rules! r {
+        ($v: literal) => {
+            Rational::new($v, 1)
+        };
+
+        ($numer: literal / $denom: literal) => {
+            Rational::new($numer, $denom)
+        };
+    }
+
+    #[test]
+    fn exprs() {
+        assert_eq!(r!(1) + r!(1), r!(2));
+        assert_eq!(r!(1 / 3) + r!(2 / 3), r!(1));
+        assert_eq!(r!(1 / 3) - r!(2 / 3), r!(-1 / 3));
+        assert_eq!(r!(1 / -3) * r!(3), r!(-1));
     }
 }

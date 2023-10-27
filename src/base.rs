@@ -1,11 +1,10 @@
-use std::ops;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use derive_more::Display;
 
 use crate::boolean::BooleanAtom;
-use crate::numeric::{Number, Rational};
-use crate::operator::{Add, And, Mul, Not, Or, Pow};
+use crate::numeric::Number;
+use crate::operator::{Add, And, Div, Mul, Not, Or, Pow, Sub};
 use crate::traits::CalcursType;
 
 pub type PTR<T> = Box<T>;
@@ -40,9 +39,9 @@ pub enum Base {
     Number(Number),
     Dummy,
 
-    Add(Add),
+    Add(PTR<Add>),
 
-    Mul(Mul),
+    Mul(PTR<Mul>),
     Pow(PTR<Pow>),
     Or(Or),
     And(And),
@@ -62,7 +61,7 @@ impl<T: Into<String>> From<T> for Variable {
     }
 }
 
-impl ops::Add for Base {
+impl std::ops::Add for Base {
     type Output = Base;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -70,7 +69,7 @@ impl ops::Add for Base {
     }
 }
 
-impl ops::Mul for Base {
+impl std::ops::Mul for Base {
     type Output = Base;
 
     fn mul(self, rhs: Self) -> Self::Output {
@@ -78,15 +77,31 @@ impl ops::Mul for Base {
     }
 }
 
-impl ops::Sub for Base {
+impl std::ops::Div for Base {
     type Output = Base;
 
-    fn sub(self, rhs: Self) -> Self::Output {
-        Add::add(self, Mul::mul(Rational::int(-1), rhs))
+    fn div(self, rhs: Self) -> Self::Output {
+        Div::div(self, rhs)
     }
 }
 
-impl ops::BitOr for Base {
+impl std::ops::Sub for Base {
+    type Output = Base;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Sub::sub(self, rhs)
+    }
+}
+
+impl std::ops::BitXor for Base {
+    type Output = Base;
+
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        Pow::pow(self, rhs)
+    }
+}
+
+impl std::ops::BitOr for Base {
     type Output = Base;
 
     fn bitor(self, rhs: Self) -> Self::Output {
@@ -94,7 +109,7 @@ impl ops::BitOr for Base {
     }
 }
 
-impl ops::BitAnd for Base {
+impl std::ops::BitAnd for Base {
     type Output = Base;
 
     fn bitand(self, rhs: Self) -> Self::Output {
@@ -102,7 +117,7 @@ impl ops::BitAnd for Base {
     }
 }
 
-impl ops::Not for Base {
+impl std::ops::Not for Base {
     type Output = Base;
 
     fn not(self) -> Self::Output {

@@ -11,6 +11,8 @@ pub trait CalcursType: Clone {
 pub trait Num {
     fn is_zero(&self) -> bool;
     fn is_one(&self) -> bool;
+    fn is_neg_one(&self) -> bool;
+
     fn sign(&self) -> Sign;
 
     fn is_pos(&self) -> bool {
@@ -50,8 +52,8 @@ pub trait Bool {
     #[inline]
     fn to_num(&self) -> Number {
         match self.is_false() {
-            true => Rational::int(0),
-            false => Rational::int(1),
+            true => Rational::int_num(0),
+            false => Rational::int_num(1),
         }
     }
 

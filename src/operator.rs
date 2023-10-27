@@ -21,9 +21,14 @@ pub struct Add {
     coeff: Number,
     arg_map: HashMap<Base, Number>,
 }
+pub type Sub = Add;
 
 impl fmt::Display for Add {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.arg_map.is_empty() {
+            return write!(f, "{}", self.coeff);
+        }
+
         let mut iter = self.arg_map.iter();
 
         write!(f, "(")?;
@@ -50,7 +55,7 @@ impl Hash for Add {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         "Add".hash(state);
         self.coeff.hash(state);
-        for a in &self.arg_map {
+        for a in self.arg_map.iter() {
             a.hash(state);
         }
     }
@@ -59,22 +64,35 @@ impl Hash for Add {
 impl CalcursType for Add {
     #[inline]
     fn base(self) -> Base {
-        Base::Add(self).base()
+        Base::Add(self.into()).base()
     }
 }
 
 impl Add {
+    /// a + b
     pub fn add(b1: impl CalcursType, b2: impl CalcursType) -> Base {
         Self {
-            coeff: Rational::int(0),
+            // TODO: default element
+            coeff: Rational::int_num(0),
             arg_map: Default::default(),
         }
         .add_arg(b1.base())
         .add_arg(b2.base())
-        .cleanup()
+        .reduce()
     }
 
-    fn cleanup(self) -> Base {
+    /// a - b
+    pub fn sub(b1: impl CalcursType, b2: impl CalcursType) -> Base {
+        Self {
+            coeff: Rational::int_num(0),
+            arg_map: Default::default(),
+        }
+        .add_arg(b1.base())
+        .add_arg(Mul::mul(b2.base(), Rational::int_num(-1)))
+        .reduce()
+    }
+
+    fn reduce(self) -> Base {
         if self.arg_map.is_empty() {
             self.coeff.base()
         } else {
@@ -90,7 +108,7 @@ impl Add {
             B::Number(num) => self = self.add_num(num),
 
             B::Mul(mut mul) => {
-                let mut coeff = Rational::int(1);
+                let mut coeff = Rational::int_num(1);
                 (mul.coeff, coeff) = (coeff, mul.coeff);
                 self.add_term(coeff, Base::Mul(mul));
             }
@@ -143,19 +161,35 @@ pub struct Mul {
     coeff: Number,
     arg_map: HashMap<Base, Base>,
 }
+pub type Div = Mul;
 
 impl Mul {
+    /// a * b
     pub fn mul(b1: impl CalcursType, b2: impl CalcursType) -> Base {
         let b1 = b1.base();
         let b2 = b2.base();
 
         Self {
-            coeff: Rational::int(1),
+            coeff: Rational::int_num(1),
             arg_map: Default::default(),
         }
         .mul_arg(b1)
         .mul_arg(b2)
-        .cleanup()
+        .reduce()
+    }
+
+    /// a * b^-1 <=> a * (1 / b)
+    pub fn div(b1: impl CalcursType, b2: impl CalcursType) -> Base {
+        let b1 = b1.base();
+        let b2 = b2.base();
+
+        Self {
+            coeff: Rational::int_num(1),
+            arg_map: Default::default(),
+        }
+        .mul_arg(b1)
+        .mul_arg(Pow::pow(b2, Rational::int_num(-1)))
+        .reduce()
     }
 
     fn mul_arg(mut self, b: Base) -> Self {
@@ -175,7 +209,12 @@ impl Mul {
                     .into_iter()
                     .for_each(|(key, val)| self.mul_term(key, val))
             }
-            B::Pow(_) | B::Not(_) | B::And(_) | B::Or(_) | B::Var(_) | B::Add(_) | B::Dummy => {
+
+            B::Pow(pow) => {
+                self.mul_term(pow.base, pow.exp);
+            }
+
+            B::Not(_) | B::And(_) | B::Or(_) | B::Var(_) | B::Add(_) | B::Dummy => {
                 let exp = ONE.clone().base();
                 self.mul_term(b, exp);
             }
@@ -187,7 +226,7 @@ impl Mul {
     /// adds the term: b^exp
     fn mul_term(&mut self, b: Base, exp: Base) {
         if let Some(key) = self.arg_map.remove(&b) {
-            let exp = Add::add(key.base(), exp.base());
+            let exp = Add::add(key, exp);
             self.arg_map.insert(b, exp);
         } else {
             self.arg_map.insert(b, exp);
@@ -196,6 +235,7 @@ impl Mul {
 
     fn mul_num(mut self, n: Number) -> Self {
         if n.is_zero() {
+            self.arg_map.clear();
             self.coeff = n;
         } else if !n.is_one() {
             self.coeff = self.coeff.mul_num(n);
@@ -203,7 +243,7 @@ impl Mul {
         self
     }
 
-    fn cleanup(self) -> Base {
+    fn reduce(self) -> Base {
         if self.coeff.is_zero() || self.arg_map.is_empty() {
             self.coeff.base()
         } else {
@@ -244,7 +284,7 @@ impl Hash for Mul {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         "Mul".hash(state);
         self.coeff.hash(state);
-        for a in &self.arg_map {
+        for a in self.arg_map.iter() {
             a.hash(state);
         }
     }
@@ -253,7 +293,7 @@ impl Hash for Mul {
 impl CalcursType for Mul {
     #[inline]
     fn base(self) -> Base {
-        Base::Mul(self).base()
+        Base::Mul(self.into()).base()
     }
 }
 
@@ -284,7 +324,24 @@ impl Pow {
 
         match (base, exp) {
             (B::Number(n1), B::Number(n2)) if n1.is_zero() && n2.is_zero() => Undefined.base(),
-            (_, B::Number(n)) if n.is_zero() => Rational::int(1).base(),
+
+            (_, B::Number(n)) if n.is_zero() => Rational::int_num(1).base(),
+            (base, B::Number(n)) if n.is_one() => base,
+
+            (B::Number(num), B::Number(n)) if n.is_neg_one() => {
+                Rational::int_num(1).div_num(num).base()
+            }
+
+            (Base::Number(n1), B::Number(n2)) => {
+                todo!()
+            }
+
+            // (a^e)^n => a^(e * n)
+            (B::Pow(mut pow), B::Number(num)) => {
+                pow.exp = Add::add(pow.exp, num.base());
+                pow.base()
+            }
+
             (base, exp) => Self { base, exp }.base(),
         }
     }
@@ -292,10 +349,9 @@ impl Pow {
 
 /// Represents or in symbolic expressions
 ///
-/// Implemented with a coeff and a HashSet: \
-/// coeff ∨ v1 ∨ v2 ∨ v3...
+/// Implemented with a HashSet: \
+/// v1 ∨ v2 ∨ v3...
 ///
-/// coeff is used for extracting boolean atoms from the arguments
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Or {
     arg_set: HashSet<Base>,
@@ -354,7 +410,7 @@ impl Or {
         }
         .or_arg(b1.base())
         .or_arg(b2.base())
-        .cleanup()
+        .reduce()
     }
 
     fn or_arg(mut self, b: Base) -> Self {
@@ -400,7 +456,7 @@ impl Or {
         self.arg_set.insert(b);
     }
 
-    fn cleanup(self) -> Base {
+    fn reduce(self) -> Base {
         if self.arg_set.len() == 1 {
             return self.arg_set.into_iter().next().unwrap().base();
         }
@@ -474,7 +530,7 @@ impl And {
         }
         .and_arg(b1.base())
         .and_arg(b2.base())
-        .cleanup()
+        .reduce()
     }
 
     fn and_arg(mut self, b: Base) -> Self {
@@ -518,7 +574,7 @@ impl And {
         self.arg_set.insert(b);
     }
 
-    fn cleanup(self) -> Base {
+    fn reduce(self) -> Base {
         if self.arg_set.len() == 1 {
             return self.arg_set.into_iter().next().unwrap().base();
         }
@@ -610,11 +666,11 @@ mod op_test {
         };
 
         ($int: literal) => {
-            Rational::int($int).base()
+            Rational::int_num($int).base()
         };
 
         ($val: literal / $denom: literal) => {
-            Rational::frac($val, $denom).base()
+            Rational::frac_num($val, $denom).base()
         };
 
         (v: $var: tt) => {
@@ -651,6 +707,11 @@ mod op_test {
         assert_eq!(c!(+inf) * c!(+inf), c!(+inf));
         assert_eq!(c!(-inf) * c!(+inf), c!(-inf));
         assert_eq!(c!(nan) * c!(inf), c!(nan));
+    }
+
+    #[test]
+    fn div() {
+        assert_eq!(c!(1) / c!(3), c!(1 / 3));
     }
 
     #[test]

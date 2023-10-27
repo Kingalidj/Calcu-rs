@@ -83,6 +83,10 @@ impl Num for Infinity {
         false
     }
 
+    fn is_neg_one(&self) -> bool {
+        false
+    }
+
     fn sign(&self) -> Sign {
         self.sign
     }
@@ -162,6 +166,10 @@ impl Num for Undefined {
         false
     }
 
+    fn is_neg_one(&self) -> bool {
+        false
+    }
+
     fn sign(&self) -> Sign {
         Sign::UnSigned
     }
@@ -201,6 +209,10 @@ impl Num for Number {
 
     fn is_one(&self) -> bool {
         procagate_number!(self, v => { v.is_one() })
+    }
+
+    fn is_neg_one(&self) -> bool {
+        procagate_number!(self, v => { v.is_neg_one() })
     }
 
     fn sign(&self) -> Sign {
