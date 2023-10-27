@@ -3,8 +3,9 @@ extern crate calcu_rs;
 use calcu_rs::prelude::*;
 
 fn main() {
+    println!("{}", Variable::new("x").base() + Variable::new("x").base());
     println!(
         "{}",
-        (Rational::int_num(1).base() / Rational::int_num(4).base()) / Rational::int_num(4).base()
+        Variable::new("x").base() * Rational::int_num(2).base() * Variable::new("y").base()
     );
 }

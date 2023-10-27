@@ -13,3 +13,4 @@ num = "0.4.1"
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"
+test-case = "3.2.1"

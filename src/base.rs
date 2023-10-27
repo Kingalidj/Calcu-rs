@@ -40,7 +40,6 @@ pub enum Base {
     Dummy,
 
     Add(PTR<Add>),
-
     Mul(PTR<Mul>),
     Pow(PTR<Pow>),
     Or(Or),
