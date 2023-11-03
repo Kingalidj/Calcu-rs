@@ -22,7 +22,7 @@ impl BoolValue {
     }
 }
 
-#[derive(Debug, Clone, Copy, Hash, PartialOrd, PartialEq, Eq, Display)]
+#[derive(Debug, Clone, Copy, Hash, PartialOrd, Ord, PartialEq, Eq, Display)]
 pub enum BooleanAtom {
     True,
     False,

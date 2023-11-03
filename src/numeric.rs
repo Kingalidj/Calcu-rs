@@ -80,18 +80,22 @@ pub struct Infinity {
 }
 
 impl Num for Infinity {
+    #[inline]
     fn is_zero(&self) -> bool {
         false
     }
 
+    #[inline]
     fn is_one(&self) -> bool {
         false
     }
 
+    #[inline]
     fn is_neg_one(&self) -> bool {
         false
     }
 
+    #[inline]
     fn sign(&self) -> Sign {
         self.sign
     }
@@ -105,20 +109,24 @@ impl CalcursType for Infinity {
 }
 
 impl Infinity {
+    #[inline]
     pub fn new(dir: Sign) -> Self {
         Self { sign: dir }
     }
 
+    #[inline]
     pub fn is_zero(&self) -> bool {
         false
     }
 
+    #[inline]
     pub fn pos() -> Self {
         Self {
             sign: Sign::Positive,
         }
     }
 
+    #[inline]
     pub fn neg() -> Self {
         Self {
             sign: Sign::Negative,
@@ -163,18 +171,22 @@ impl Infinity {
 pub struct Undefined;
 
 impl Num for Undefined {
+    #[inline]
     fn is_zero(&self) -> bool {
         false
     }
 
+    #[inline]
     fn is_one(&self) -> bool {
         false
     }
 
+    #[inline]
     fn is_neg_one(&self) -> bool {
         false
     }
 
+    #[inline]
     fn sign(&self) -> Sign {
         Sign::UnSigned
     }
@@ -211,18 +223,22 @@ impl CalcursType for Number {
 }
 
 impl Num for Number {
+    #[inline]
     fn is_zero(&self) -> bool {
         procagate_number!(self, v => { v.is_zero() })
     }
 
+    #[inline]
     fn is_one(&self) -> bool {
         procagate_number!(self, v => { v.is_one() })
     }
 
+    #[inline]
     fn is_neg_one(&self) -> bool {
         procagate_number!(self, v => { v.is_neg_one() })
     }
 
+    #[inline]
     fn sign(&self) -> Sign {
         procagate_number!(self, v => { v.sign() })
     }

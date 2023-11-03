@@ -1,11 +1,8 @@
 extern crate calcu_rs;
 
-use calcu_rs::prelude::*;
+use calcu_rs::{base, prelude::*};
 
 fn main() {
-    //println!("{}", Variable::new("x").base() + Variable::new("x").base());
-    //println!(
-    //    "{}",
-    //    Variable::new("x").base() * Rational::int_num(2).base() * Variable::new("y").base()
-    //);
+    let expr = (base!(v: x) ^ base!(2)) + base!(v: x);
+    println!("{}", expr);
 }

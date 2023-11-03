@@ -1,365 +1,532 @@
+use std::collections::BTreeMap;
+
+use crate::{
+    base::Base,
+    numeric::{Number, Undefined},
+    traits::{Bool, CalcursType, Num},
+};
+
+use crate::constants as C;
+use Base as B;
+
+//  n1 * mul_1 + n2 * mul_2 + n3 * mul_3 + ...
+// <=> n1 * {pow_1_1 * pow_1_2 * ... } + n2 * { pow_2_1 * pow_2_2 * ...} + ...
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+struct AddArgs {
+    args: BTreeMap<MulArgs, Number>,
+}
+
+impl AddArgs {
+    pub fn insert_mul(&mut self, mul: Mul) {
+        if mul.coeff.is_zero() {
+            return;
+        }
+
+        if let Some(coeff) = self.args.get_mut(&mul.args) {
+            // 2x + 3x => 5x
+            *coeff += mul.coeff;
+            if coeff.is_zero() {
+                self.args.remove(&mul.args);
+            }
+        } else {
+            self.args.insert(mul.args, mul.coeff);
+        }
+    }
+
+    #[inline]
+    pub fn into_mul_iter(self) -> impl Iterator<Item = Mul> {
+        self.args
+            .into_iter()
+            .map(|(args, coeff)| Mul { coeff, args })
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.args.len()
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.args.is_empty()
+    }
+
+    #[inline]
+    pub fn is_mul(&self) -> bool {
+        self.len() == 1
+    }
+
+    #[inline]
+    pub fn to_mul(mut self) -> Option<Mul> {
+        if self.is_mul() {
+            let (args, coeff) = self.args.pop_first().unwrap();
+            Some(Mul { args, coeff })
+        } else {
+            None
+        }
+    }
+}
+
+impl std::fmt::Display for AddArgs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut iter = self.args.iter().rev();
+
+        if let Some((args, coeff)) = iter.next() {
+            Mul::fmt_parts(args, coeff, f)?;
+        }
+
+        while let Some((args, coeff)) = iter.next() {
+            write!(f, " + ")?;
+            Mul::fmt_parts(args, coeff, f)?;
+        }
+
+        Ok(())
+    }
+}
+
+/// Represents addition in symbolic expressions
+///
+/// Implemented with a coefficient and an [AddArgs]: \
+/// coeff + mul1 + mul2 + mul3...
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Add {
+    coeff: Number,
+    args: AddArgs,
+}
+
+pub type Sub = Add;
+
+impl Add {
+    /// n1 + n2
+    pub fn add(n1: impl CalcursType, n2: impl CalcursType) -> Base {
+        Self {
+            coeff: C::ZERO,
+            args: Default::default(),
+        }
+        .arg(n1.base())
+        .arg(n2.base())
+        .reduce()
+    }
+
+    /// n1 + (-1 * n2)
+    #[inline]
+    pub fn sub(n1: impl CalcursType, n2: impl CalcursType) -> Base {
+        Add::add(n1, Mul::mul(C::MINUS_ONE, n2))
+    }
+
+    fn arg(mut self, b: Base) -> Self {
+        match b {
+            B::BooleanAtom(atom) => self.coeff += atom.to_num(),
+            B::Number(num) => self.coeff += num,
+
+            B::Mul(mul) => self.args.insert_mul(*mul),
+            B::Add(add) => {
+                self.coeff += add.coeff;
+                add.args
+                    .into_mul_iter()
+                    .for_each(|mul| self.args.insert_mul(mul));
+            }
+
+            base @ (B::Var(_) | B::Dummy | B::Pow(_)) => self.args.insert_mul(Mul::from_base(base)),
+        };
+
+        self
+    }
+
+    fn reduce(self) -> Base {
+        match (self.coeff, self.args) {
+            // x + {} => x
+            (x, args) if args.is_empty() => x.base(),
+            // 0 + x => x
+            (C::ZERO, x) if x.is_mul() => x.to_mul().unwrap().base(),
+
+            (coeff, args) => Self { coeff, args }.base(),
+        }
+    }
+}
+
+impl CalcursType for Add {
+    #[inline]
+    fn base(self) -> Base {
+        B::Add(self.into())
+    }
+}
+
+impl std::fmt::Display for Add {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.args)?;
+
+        if !self.coeff.is_zero() {
+            write!(f, " + {}", self.coeff)?;
+        };
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+struct MulArgs {
+    args: BTreeMap<Base, Base>,
+}
+
+impl MulArgs {
+    pub fn insert_pow(&mut self, mut pow: Pow) {
+        if let Some(exp) = self.args.remove(&pow.base) {
+            pow.exp = Add::add(exp, pow.exp);
+            self.args.insert(pow.base, pow.exp);
+        } else {
+            self.args.insert(pow.base, pow.exp);
+        }
+    }
+
+    #[inline]
+    pub fn into_pow_iter(self) -> impl Iterator<Item = Pow> {
+        self.args.into_iter().map(|(base, exp)| Pow { base, exp })
+    }
+
+    #[inline]
+    pub fn is_pow(&self) -> bool {
+        self.args.len() == 1
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.args.len()
+    }
+
+    #[inline]
+    pub fn to_pow(mut self) -> Option<Pow> {
+        if self.is_pow() {
+            let (base, exp) = self.args.pop_first().unwrap();
+            Some(Pow { base, exp })
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.args.is_empty()
+    }
+
+    #[inline]
+    pub fn from_base(b: Base) -> Self {
+        let pow = Pow::from_base(b);
+        let args = BTreeMap::from([(pow.base, pow.exp)]);
+        Self { args }
+    }
+}
+
+impl std::fmt::Display for MulArgs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut iter = self.args.iter();
+
+        if let Some((base, exp)) = iter.next() {
+            Pow::fmt_parts(base, exp, f)?;
+        }
+
+        while let Some((base, exp)) = iter.next() {
+            write!(f, " * ")?;
+            Pow::fmt_parts(base, exp, f)?;
+        }
+
+        Ok(())
+    }
+}
+
+/// Represents multiplication in symbolic expressions
+///
+/// Implemented with a coefficient and a hashmap: \
+/// coeff * pow1 * pow2 * pow3...
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Mul {
+    coeff: Number,
+    args: MulArgs,
+}
+
+pub type Div = Mul;
+
+impl Mul {
+    /// n1 * n2
+    pub fn mul(n1: impl CalcursType, n2: impl CalcursType) -> Base {
+        Self {
+            coeff: C::ONE,
+            args: MulArgs::default(),
+        }
+        .arg(n1.base())
+        .arg(n2.base())
+        .reduce()
+    }
+
+    /// n1 * (1 / n2)
+    #[inline]
+    pub fn div(n1: impl CalcursType, n2: impl CalcursType) -> Base {
+        Mul::mul(n1, Pow::pow(n2, C::MINUS_ONE))
+    }
+
+    fn arg(mut self, b: Base) -> Self {
+        if self.coeff == C::ZERO || B::Number(C::ONE) == b {
+            return self;
+        }
+
+        match b {
+            B::BooleanAtom(atom) => self.coeff *= atom.to_num(),
+            B::Number(num) => self.coeff *= num,
+            B::Pow(pow) => self.args.insert_pow(*pow),
+            B::Mul(mul) => {
+                self.coeff *= mul.coeff;
+                mul.args
+                    .into_pow_iter()
+                    .for_each(|pow| self.args.insert_pow(pow))
+            }
+            base @ (B::Var(_) | B::Dummy | B::Add(_)) => self.args.insert_pow(Pow::from_base(base)),
+        }
+
+        self
+    }
+
+    fn reduce(self) -> Base {
+        match (self.coeff, self.args) {
+            // 0 * x => 0
+            (C::ZERO, _) => C::ZERO.base(),
+            // 1 * x => x
+            (C::ONE, x) if x.is_pow() => x.to_pow().unwrap().base(),
+            // x * {} => x
+            (x, args) if args.is_empty() => x.base(),
+
+            (coeff, args) => Self { coeff, args }.base(),
+        }
+    }
+
+    fn fmt_parts(
+        args: &MulArgs,
+        coeff: &Number,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        if args.len() == 1 {
+            if coeff.is_one() {
+                write!(f, "{args}")?;
+            } else {
+                write!(f, "{coeff}{args}")?;
+            }
+        } else {
+            write!(f, "{coeff} * {args}")?;
+        }
+        Ok(())
+    }
+
+    #[inline]
+    fn from_base(b: Base) -> Self {
+        Self {
+            coeff: C::ONE,
+            args: MulArgs::from_base(b),
+        }
+    }
+}
+
+impl CalcursType for Mul {
+    fn base(self) -> Base {
+        B::Mul(self.into())
+    }
+}
+
+impl std::fmt::Display for Mul {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Mul::fmt_parts(&self.args, &self.coeff, f)
+    }
+}
+
+/// base^exp
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Pow {
+    base: Base,
+    exp: Base,
+}
+
+impl Pow {
+    pub fn pow(n1: impl CalcursType, n2: impl CalcursType) -> Base {
+        Self {
+            base: n1.base(),
+            exp: n2.base(),
+        }
+        .reduce()
+    }
+
+    fn reduce(mut self) -> Base {
+        if let B::BooleanAtom(atom) = self.base {
+            self.base = atom.to_num().base();
+        }
+
+        if let B::BooleanAtom(atom) = self.exp {
+            self.exp = atom.to_num().base();
+        }
+
+        match (self.base, self.exp) {
+            // 1^x = 1
+            (one @ B::Number(C::ONE), _) => one,
+            // x^1 = x
+            (x, B::Number(C::ONE)) => x,
+
+            // 0^0 = undefined
+            (B::Number(C::ZERO), B::Number(C::ZERO)) => Undefined.base(),
+
+            // x^0 = 1 | x != 0 [0^0 already handled]
+            (_, B::Number(C::ZERO)) => C::ONE.base(),
+
+            // 0^x = undefined | x < 0
+            (B::Number(C::ZERO), B::Number(x)) if x.is_neg() => Undefined.base(),
+
+            // 0^x = 0 | x > 0 [0^x | x = 0 & x < 0 already handled]
+            (zero @ B::Number(C::ZERO), _) => zero,
+
+            // n^-1 = 1/n | n != 0 [0^x already handled]
+            (B::Number(n), B::Number(C::MINUS_ONE)) if !n.is_zero() => C::ONE.div_num(n).base(),
+
+            // (x^y)^z = x^(y*z)
+            //(B::Pow(pow), z) => Pow::pow(pow.base, Mul::mul(pow.exp, z)),
+            (base, exp) => Self { base, exp }.base(),
+        }
+    }
+
+    #[inline]
+    fn from_base(b: Base) -> Self {
+        if let B::Pow(pow) = b {
+            *pow
+        } else {
+            Pow {
+                base: b,
+                exp: B::Number(C::ONE),
+            }
+        }
+    }
+
+    fn fmt_parts(base: &Base, exp: &Base, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let B::Number(C::ONE) = exp {
+            write!(f, "{base}")
+        } else {
+            write!(f, "{base}^{exp}")
+        }
+    }
+}
+
+impl CalcursType for Pow {
+    fn base(self) -> Base {
+        B::Pow(self.into())
+    }
+}
+
+impl std::fmt::Display for Pow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Pow::fmt_parts(&self.base, &self.exp, f)
+    }
+}
+
+#[cfg(test)]
+mod op_test {
+    use crate::base;
+    use crate::prelude::*;
+    use pretty_assertions::assert_eq;
+    use test_case::test_case;
+
+    #[test_case(base!(2), base!(3), base!(5))]
+    #[test_case(base!(1 / 2), base!(1 / 2), base!(1))]
+    #[test_case(base!(v: x), base!(v: x), base!(v: x) * base!(2))]
+    #[test_case(base!(-3), base!(1 / 2), base!(-5 / 2))]
+    #[test_case(base!(inf), base!(4), base!(inf))]
+    #[test_case(base!(neg_inf), base!(4), base!(neg_inf))]
+    #[test_case(base!(pos_inf), base!(pos_inf), base!(pos_inf))]
+    #[test_case(base!(neg_inf), base!(pos_inf), base!(nan))]
+    #[test_case(base!(nan), base!(pos_inf), base!(nan))]
+    #[test_case(base!(4 / 2), base!(0), base!(2))]
+    fn add(x: Base, y: Base, z: Base) {
+        assert_eq!(x + y, z);
+    }
+
+    #[test_case(base!(-1), base!(3), base!(-4))]
+    #[test_case(base!(-3), base!(1 / 2), base!(-7 / 2))]
+    #[test_case(base!(1 / 2), base!(1 / 2), base!(0))]
+    #[test_case(base!(inf), base!(4), base!(inf))]
+    #[test_case(base!(neg_inf), base!(4 / 2), base!(neg_inf))]
+    #[test_case(base!(pos_inf), base!(4), base!(pos_inf))]
+    #[test_case(base!(pos_inf), base!(pos_inf), base!(nan))]
+    #[test_case(base!(neg_inf), base!(pos_inf), base!(neg_inf))]
+    #[test_case(base!(nan), base!(inf), base!(nan))]
+    fn sub(x: Base, y: Base, z: Base) {
+        assert_eq!(x - y, z)
+    }
+
+    #[test_case(base!(-1), base!(3), base!(-3))]
+    #[test_case(base!(-1), base!(0), base!(0))]
+    #[test_case(base!(-1), base!(3) * base!(0), base!(0))]
+    #[test_case(base!(-3), base!(1 / 2), base!(-3 / 2))]
+    #[test_case(base!(1 / 2), base!(1 / 2), base!(1 / 4))]
+    #[test_case(base!(inf), base!(4), base!(inf))]
+    #[test_case(base!(neg_inf), base!(4 / 2), base!(neg_inf))]
+    #[test_case(base!(pos_inf), base!(4), base!(pos_inf))]
+    #[test_case(base!(pos_inf), base!(-1), base!(neg_inf))]
+    #[test_case(base!(pos_inf), base!(pos_inf), base!(pos_inf))]
+    #[test_case(base!(neg_inf), base!(pos_inf), base!(neg_inf))]
+    #[test_case(base!(nan), base!(inf), base!(nan))]
+    fn mul(x: Base, y: Base, z: Base) {
+        assert_eq!(x * y, z);
+    }
+
+    #[test_case(base!(1), base!(3), base!(1 / 3))]
+    fn div(x: Base, y: Base, z: Base) {
+        assert_eq!(x / y, z);
+    }
+
+    //#[test]
+    //fn and() {
+    //    assert_eq!(c!(false) & c!(true), c!(false));
+    //    assert_eq!(c!(true) & c!(true), c!(true));
+    //    assert_eq!(c!(false) & c!(v: x), c!(false));
+    //    assert_eq!(c!(true) & c!(v: x), c!(v: x));
+    //    assert_eq!(c!(v: y) & c!(v: x), c!(v: x) & c!(v: y));
+
+    //    assert_eq!(c!(false) & c!(3), c!(false));
+    //    assert_eq!(c!(true) & c!(0), c!(false));
+    //    assert_eq!(c!(true) & c!(10), c!(true));
+    //}
+
+    //#[test]
+    //fn or() {
+    //    assert_eq!(c!(false) | c!(true), c!(true));
+    //    assert_eq!(c!(true) | c!(v: x), c!(true));
+    //    assert_eq!(c!(false) | c!(v: x), c!(v: x));
+    //    assert_eq!(c!(v: y) | c!(v: x), c!(v: x) | c!(v: y));
+
+    //    assert_eq!(c!(false) | c!(3), c!(true));
+    //    assert_eq!(c!(true) | c!(0), c!(true));
+    //    assert_eq!(c!(false) | c!(0), c!(false));
+    //}
+
+    //#[test]
+    //fn not() {
+    //    assert_eq!(!c!(false), c!(true));
+    //    assert_eq!(!c!(true), c!(false));
+    //    assert_eq!(!c!(v: x), !c!(v: x));
+    //    assert!(!c!(v: x) != c!(v: x));
+    //}
+
+    //#[test]
+    //fn bool_expr() {
+    //    assert_eq!(c!(false) & c!(false) | c!(true), c!(true));
+    //    assert_eq!(c!(false) | c!(false) & c!(true), c!(false));
+    //    assert_eq!(c!(false) & c!(true) | c!(false), c!(false));
+    //    assert_eq!(c!(true) & (c!(false) | c!(true)), c!(true));
+    //}
+}
+
 #[cfg(hide)]
 mod __ {
-    use std::{
-        collections::{HashMap, HashSet},
-        fmt,
-        hash::Hash,
-    };
+    use std::{collections::HashSet, fmt, hash::Hash};
 
     use crate::{
         base::{Base, PTR},
         boolean::{BoolValue, BooleanAtom},
-        constants::{FALSE, ONE, TRUE},
-        numeric::{Number, Rational, Undefined},
-        traits::{Bool, CalcursType, Num},
+        constants::{FALSE, TRUE},
+        traits::{Bool, CalcursType},
     };
-
-    /// Represents addition in symbolic expressions
-    ///
-    /// Implemented with a coefficient and a hashmap: \
-    /// coeff + key1 * value1 + key2 * value2 + ...
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct Add {
-        coeff: Number,
-        arg_map: HashMap<Base, Number>,
-    }
-    pub type Sub = Add;
-
-    impl fmt::Display for Add {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            if self.arg_map.is_empty() {
-                return write!(f, "{}", self.coeff);
-            }
-
-            let mut iter = self.arg_map.iter();
-
-            write!(f, "(")?;
-
-            if let Some((k, v)) = iter.next() {
-                write!(f, "{v}{k}")?;
-            }
-
-            for (k, v) in iter {
-                write!(f, " + {v}{k}")?;
-            }
-
-            if !self.coeff.is_zero() {
-                write!(f, " + {}", self.coeff)?;
-            }
-
-            write!(f, ")")?;
-
-            Ok(())
-        }
-    }
-
-    impl Hash for Add {
-        fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-            "Add".hash(state);
-            self.coeff.hash(state);
-            for a in self.arg_map.iter() {
-                a.hash(state);
-            }
-        }
-    }
-
-    impl CalcursType for Add {
-        #[inline]
-        fn base(self) -> Base {
-            Base::Add(self.into()).base()
-        }
-    }
-
-    impl Add {
-        /// a + b
-        pub fn add(b1: impl CalcursType, b2: impl CalcursType) -> Base {
-            Self {
-                // TODO: default element
-                coeff: Rational::int_num(0),
-                arg_map: Default::default(),
-            }
-            .add_arg(b1.base())
-            .add_arg(b2.base())
-            .reduce()
-        }
-
-        /// a - b
-        pub fn sub(b1: impl CalcursType, b2: impl CalcursType) -> Base {
-            Self {
-                coeff: Rational::int_num(0),
-                arg_map: Default::default(),
-            }
-            .add_arg(b1.base())
-            .add_arg(Mul::mul(b2.base(), Rational::int_num(-1)))
-            .reduce()
-        }
-
-        fn reduce(self) -> Base {
-            if self.arg_map.is_empty() {
-                self.coeff.base()
-            } else if self.arg_map.len() == 1 && self.coeff.is_zero() {
-                // reduce to mul
-                let (a, b) = self.arg_map.into_iter().next().unwrap();
-                Mul::mul(a, b)
-            } else {
-                self.base()
-            }
-        }
-
-        fn add_arg(mut self, b: Base) -> Self {
-            use Base as B;
-
-            match b {
-                B::BooleanAtom(bool) => self = self.add_num(bool.to_num()),
-                B::Number(num) => self = self.add_num(num),
-
-                B::Mul(mut mul) => {
-                    let mut coeff = Rational::int_num(1);
-                    std::mem::swap(&mut coeff, &mut mul.coeff);
-                    self.add_term(coeff, Base::Mul(mul));
-                }
-
-                B::Add(add) => {
-                    add.arg_map.into_iter().for_each(|(term, coeff)| {
-                        self.add_term(coeff, term);
-                    });
-
-                    self.coeff = self.coeff.add_num(add.coeff);
-                }
-                B::Pow(_) | B::Not(_) | B::And(_) | B::Or(_) | B::Var(_) | B::Dummy => {
-                    let coeff = ONE.clone();
-                    self.add_term(coeff, b);
-                }
-            }
-
-            self
-        }
-
-        fn add_num(mut self, n: Number) -> Self {
-            if !n.is_zero() {
-                self.coeff = self.coeff.add_num(n);
-            }
-            self
-        }
-
-        /// adds the term: coeff * b
-        fn add_term(&mut self, coeff: Number, b: Base) {
-            if let Some(mut key) = self.arg_map.remove(&b) {
-                key = key.add_num(coeff);
-
-                if !key.is_zero() {
-                    self.arg_map.insert(b, key);
-                }
-            } else if !coeff.is_zero() {
-                self.arg_map.insert(b, coeff);
-            }
-        }
-    }
-
-    /// Represents multiplication in symbolic expressions
-    ///
-    /// Implemented with a coefficient and a hashmap: \
-    /// coeff * key1^value1 * key2^value2 * ...
-    ///
-    /// coeff is used to extract all [Number]s
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct Mul {
-        coeff: Number,
-        arg_map: HashMap<Base, Base>,
-    }
-    pub type Div = Mul;
-
-    impl Mul {
-        /// a * b
-        pub fn mul(b1: impl CalcursType, b2: impl CalcursType) -> Base {
-            let b1 = b1.base();
-            let b2 = b2.base();
-
-            Self {
-                coeff: Rational::int_num(1),
-                arg_map: Default::default(),
-            }
-            .mul_arg(b1)
-            .mul_arg(b2)
-            .reduce()
-        }
-
-        /// a * b^-1 <=> a * (1 / b)
-        pub fn div(b1: impl CalcursType, b2: impl CalcursType) -> Base {
-            Self::mul(b1, Pow::pow(b2, Rational::int_num(-1)))
-        }
-
-        fn mul_arg(mut self, b: Base) -> Self {
-            use Base as B;
-
-            if self.coeff.is_zero() {
-                return self;
-            }
-
-            match b {
-                B::BooleanAtom(b) => self = self.mul_num(b.to_num()),
-                B::Number(n) => self = self.mul_num(n),
-
-                B::Mul(mul) => {
-                    self.coeff = self.coeff.mul_num(mul.coeff);
-                    mul.arg_map
-                        .into_iter()
-                        .for_each(|(key, val)| self.mul_term(key, val))
-                }
-
-                B::Pow(pow) => {
-                    self.mul_term(pow.base, pow.exp);
-                }
-
-                B::Not(_) | B::And(_) | B::Or(_) | B::Var(_) | B::Add(_) | B::Dummy => {
-                    let exp = ONE.clone().base();
-                    self.mul_term(b, exp);
-                }
-            }
-
-            self
-        }
-
-        /// adds the term: b^exp
-        fn mul_term(&mut self, b: Base, exp: Base) {
-            if let Some(key) = self.arg_map.remove(&b) {
-                let exp = Add::add(key, exp);
-                self.arg_map.insert(b, exp);
-            } else {
-                self.arg_map.insert(b, exp);
-            }
-        }
-
-        fn mul_num(mut self, n: Number) -> Self {
-            if n.is_zero() {
-                self.arg_map.clear();
-                self.coeff = n;
-            } else if !n.is_one() {
-                self.coeff = self.coeff.mul_num(n);
-            }
-            self
-        }
-
-        fn reduce(self) -> Base {
-            if self.coeff.is_zero() || self.arg_map.is_empty() {
-                self.coeff.base()
-            } else if self.arg_map.len() == 1 && self.coeff.is_one() {
-                // reduce to pow
-                let (a, b) = self.arg_map.into_iter().next().unwrap();
-                Pow::pow(a, b)
-            } else {
-                self.base()
-            }
-        }
-
-        fn format_term(b: &Base, e: &Base, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            match e {
-                Base::Number(n) if n.is_one() => write!(f, "{b}"),
-                _ => write!(f, "{b}^{e}"),
-            }
-        }
-    }
-
-    impl fmt::Display for Mul {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            if self.arg_map.is_empty() {
-                return write!(f, "{}", self.coeff);
-            } else if self.arg_map.len() == 1 && !self.coeff.is_one() {
-                let (a, b) = self.arg_map.iter().next().unwrap();
-                write!(f, "{}", self.coeff)?;
-                return Self::format_term(a, b, f);
-            }
-
-            let mut iter = self.arg_map.iter();
-
-            write!(f, "(")?;
-
-            if let Some((k, v)) = iter.next() {
-                Self::format_term(k, v, f)?;
-            }
-
-            for (k, v) in iter {
-                write!(f, " * ")?;
-                Self::format_term(k, v, f)?;
-            }
-
-            if !self.coeff.is_one() {
-                write!(f, " * {}", self.coeff)?;
-            }
-
-            write!(f, ")")?;
-
-            Ok(())
-        }
-    }
-
-    impl Hash for Mul {
-        fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-            "Mul".hash(state);
-            self.coeff.hash(state);
-            for a in self.arg_map.iter() {
-                a.hash(state);
-            }
-        }
-    }
-
-    impl CalcursType for Mul {
-        #[inline]
-        fn base(self) -> Base {
-            Base::Mul(self.into()).base()
-        }
-    }
-
-    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-    pub struct Pow {
-        base: Base,
-        exp: Base,
-    }
-
-    impl CalcursType for Pow {
-        fn base(self) -> Base {
-            Base::Pow(self.into())
-        }
-    }
-
-    impl fmt::Display for Pow {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "({}^{})", self.base, self.exp)
-        }
-    }
-
-    impl Pow {
-        pub fn pow(b: impl CalcursType, e: impl CalcursType) -> Base {
-            use Base as B;
-
-            let base = b.base();
-            let exp = e.base();
-
-            match (base, exp) {
-                (B::Number(n1), B::Number(n2)) if n1.is_zero() && n2.is_zero() => Undefined.base(),
-
-                (_, B::Number(n)) if n.is_zero() => Rational::int_num(1).base(),
-                (base, B::Number(n)) if n.is_one() => base,
-
-                (B::Number(num), B::Number(n)) if n.is_neg_one() => {
-                    Rational::int_num(1).div_num(num).base()
-                }
-
-                (Base::Number(_n1), B::Number(_n2)) => {
-                    //TODO: pow_num
-                    todo!()
-                }
-
-                // (a^e)^n => a^(e * n)
-                (B::Pow(mut pow), B::Number(num)) => {
-                    pow.exp = Add::add(pow.exp, num.base());
-                    pow.base()
-                }
-
-                (base, exp) => Self { base, exp }.base(),
-            }
-        }
-    }
 
     /// Represents or in symbolic expressions
     ///
@@ -646,153 +813,6 @@ mod __ {
                     Self::new(b).base()
                 }
             }
-        }
-    }
-
-    #[cfg(test)]
-    mod op_test {
-        use crate::prelude::*;
-        use pretty_assertions::assert_eq;
-        use test_case::test_case;
-
-        macro_rules! c {
-            (+inf) => {
-                Infinity::pos().base()
-            };
-
-            (-inf) => {
-                Infinity::neg().base()
-            };
-
-            (inf) => {
-                Infinity::default().base()
-            };
-
-            (nan) => {
-                Undefined.base()
-            };
-
-            (false) => {
-                FALSE.clone()
-            };
-
-            (true) => {
-                TRUE.clone()
-            };
-
-            ($int: literal) => {
-                Rational::int_num($int).base()
-            };
-
-            ($val: literal / $denom: literal) => {
-                Rational::frac_num($val, $denom).base()
-            };
-
-            (v: $var: tt) => {
-                Variable::new(stringify!($var)).base()
-            };
-        }
-
-        #[test_case(c!(2), c!(3), c!(5))]
-        #[test_case(c!(1 / 2), c!(1 / 2), c!(1))]
-        // #[test_case(c!(v: x), c!(v: x), c!(v: x) * c!(2))]
-        fn add(x: Base, y: Base, z: Base) {
-            assert_eq!(x + y, z);
-        }
-
-        #[test]
-        fn add_test() {
-            assert_eq!(c!(v: x) + c!(v: x), c!(2) * c!(v: x));
-        }
-
-        // #[test]
-        // fn add() {
-        //     assert_eq!(c!(2) + c!(3), c!(5));
-        //     assert_eq!(c!(v: x) + c!(v: x) + c!(3), c!(3) + c!(v: x) + c!(v: x));
-        //     assert_eq!(c!(-1) + c!(3), c!(2));
-        //     assert_eq!(c!(-3) + c!(1 / 2), c!(-5 / 2));
-        //     assert_eq!(c!(1 / 2) + c!(1 / 2), c!(1));
-        //     assert_eq!(c!(inf) + c!(4), c!(inf));
-        //     assert_eq!(c!(-inf) + c!(4), c!(-inf));
-        //     assert_eq!(c!(+inf) + c!(+inf), c!(+inf));
-        //     assert_eq!(c!(-inf) + c!(+inf), c!(nan));
-        //     assert_eq!(c!(nan) + c!(inf), c!(nan));
-        //     assert_eq!(c!(4 / 2), c!(2));
-        // }
-
-        #[test]
-        fn mul() {
-            assert_eq!(c!(-1) * c!(3), c!(-3));
-            assert_eq!(c!(-1) * c!(0), c!(0));
-            assert_eq!(c!(-1) * c!(3) * c!(0), c!(0));
-            assert_eq!(c!(-3) * c!(1 / 2), c!(-3 / 2));
-            assert_eq!(c!(1 / 2) * c!(1 / 2), c!(1 / 4));
-            assert_eq!(c!(inf) * c!(4), c!(inf));
-            assert_eq!(c!(-inf) * c!(4 / 2), c!(-inf));
-            assert_eq!(c!(+inf) * c!(4), c!(+inf));
-            assert_eq!(c!(+inf) * c!(-1), c!(-inf));
-            assert_eq!(c!(+inf) * c!(+inf), c!(+inf));
-            assert_eq!(c!(-inf) * c!(+inf), c!(-inf));
-            assert_eq!(c!(nan) * c!(inf), c!(nan));
-        }
-
-        #[test]
-        fn div() {
-            assert_eq!(c!(1) / c!(3), c!(1 / 3));
-        }
-
-        #[test]
-        fn sub() {
-            assert_eq!(c!(-1) - c!(3), c!(-4));
-            assert_eq!(c!(-3) - c!(1 / 2), c!(-7 / 2));
-            assert_eq!(c!(1 / 2) - c!(1 / 2), c!(0));
-            assert_eq!(c!(inf) - c!(4), c!(inf));
-            assert_eq!(c!(-inf) - c!(4 / 2), c!(-inf));
-            assert_eq!(c!(+inf) - c!(4), c!(+inf));
-            assert_eq!(c!(+inf) - c!(+inf), c!(nan));
-            assert_eq!(c!(-inf) - c!(+inf), c!(-inf));
-            assert_eq!(c!(nan) - c!(inf), c!(nan));
-        }
-
-        #[test]
-        fn and() {
-            assert_eq!(c!(false) & c!(true), c!(false));
-            assert_eq!(c!(true) & c!(true), c!(true));
-            assert_eq!(c!(false) & c!(v: x), c!(false));
-            assert_eq!(c!(true) & c!(v: x), c!(v: x));
-            assert_eq!(c!(v: y) & c!(v: x), c!(v: x) & c!(v: y));
-
-            assert_eq!(c!(false) & c!(3), c!(false));
-            assert_eq!(c!(true) & c!(0), c!(false));
-            assert_eq!(c!(true) & c!(10), c!(true));
-        }
-
-        #[test]
-        fn or() {
-            assert_eq!(c!(false) | c!(true), c!(true));
-            assert_eq!(c!(true) | c!(v: x), c!(true));
-            assert_eq!(c!(false) | c!(v: x), c!(v: x));
-            assert_eq!(c!(v: y) | c!(v: x), c!(v: x) | c!(v: y));
-
-            assert_eq!(c!(false) | c!(3), c!(true));
-            assert_eq!(c!(true) | c!(0), c!(true));
-            assert_eq!(c!(false) | c!(0), c!(false));
-        }
-
-        #[test]
-        fn not() {
-            assert_eq!(!c!(false), c!(true));
-            assert_eq!(!c!(true), c!(false));
-            assert_eq!(!c!(v: x), !c!(v: x));
-            assert!(!c!(v: x) != c!(v: x));
-        }
-
-        #[test]
-        fn bool_expr() {
-            assert_eq!(c!(false) & c!(false) | c!(true), c!(true));
-            assert_eq!(c!(false) | c!(false) & c!(true), c!(false));
-            assert_eq!(c!(false) & c!(true) | c!(false), c!(false));
-            assert_eq!(c!(true) & (c!(false) | c!(true)), c!(true));
         }
     }
 }

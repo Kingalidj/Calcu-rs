@@ -2,16 +2,17 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use derive_more::Display;
 
-use crate::boolean::BooleanAtom;
-use crate::numeric::Number;
-//use crate::operator::{Add, And, Div, Mul, Not, Or, Pow, Sub};
-use crate::operator2::{Add, Mul, Pow};
-use crate::traits::CalcursType;
+use crate::{
+    boolean::BooleanAtom,
+    numeric::Number,
+    operator::{Add, Div, Mul, Pow, Sub},
+    traits::CalcursType,
+};
 
 pub type PTR<T> = Box<T>;
 pub type SubsDict = Rc<RefCell<HashMap<Variable, Base>>>;
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Hash, Display)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Ord, Eq, Hash, Display)]
 pub struct Variable {
     pub name: String,
 }
@@ -33,7 +34,7 @@ impl CalcursType for Variable {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Display)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Display)]
 pub enum Base {
     Var(Variable),
     //TODO: move to numeric?
@@ -49,6 +50,45 @@ pub enum Base {
     //Not(Not),
 }
 
+#[macro_export]
+macro_rules! base {
+    (pos_inf) => {
+        Infinity::pos().base()
+    };
+
+    (neg_inf) => {
+        Infinity::neg().base()
+    };
+
+    (inf) => {
+        Infinity::default().base()
+    };
+
+    (nan) => {
+        Undefined.base()
+    };
+
+    (false) => {
+        FALSE.clone()
+    };
+
+    (true) => {
+        TRUE.clone()
+    };
+
+    ($int: literal) => {
+        Rational::int_num($int).base()
+    };
+
+    ($val: literal / $denom: literal) => {
+        Rational::frac_num($val, $denom).base()
+    };
+
+    (v: $var: tt) => {
+        Variable::new(stringify!($var)).base()
+    };
+}
+
 impl CalcursType for Base {
     #[inline]
     fn base(self) -> Self {
@@ -62,46 +102,76 @@ impl<T: Into<String>> From<T> for Variable {
     }
 }
 
-//impl std::ops::Add for Base {
-//    type Output = Base;
-//
-//    fn add(self, rhs: Self) -> Self::Output {
-//        Add::add(self, rhs)
-//    }
-//}
-//
-//impl std::ops::Mul for Base {
-//    type Output = Base;
-//
-//    fn mul(self, rhs: Self) -> Self::Output {
-//        Mul::mul(self, rhs)
-//    }
-//}
-//
-//impl std::ops::Div for Base {
-//    type Output = Base;
-//
-//    fn div(self, rhs: Self) -> Self::Output {
-//        Div::div(self, rhs)
-//    }
-//}
-//
-//impl std::ops::Sub for Base {
-//    type Output = Base;
-//
-//    fn sub(self, rhs: Self) -> Self::Output {
-//        Sub::sub(self, rhs)
-//    }
-//}
-//
-//impl std::ops::BitXor for Base {
-//    type Output = Base;
-//
-//    fn bitxor(self, rhs: Self) -> Self::Output {
-//        Pow::pow(self, rhs)
-//    }
-//}
-//
+impl std::ops::Add for Base {
+    type Output = Base;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Add::add(self, rhs)
+    }
+}
+
+impl std::ops::AddAssign for Base {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = Add::add(self.clone(), rhs);
+    }
+}
+
+impl std::ops::Sub for Base {
+    type Output = Base;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Sub::sub(self, rhs)
+    }
+}
+
+impl std::ops::SubAssign for Base {
+    fn sub_assign(&mut self, rhs: Self) {
+        *self = Sub::sub(self.clone(), rhs);
+    }
+}
+
+impl std::ops::Mul for Base {
+    type Output = Base;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        Mul::mul(self, rhs)
+    }
+}
+
+impl std::ops::MulAssign for Base {
+    fn mul_assign(&mut self, rhs: Self) {
+        *self = Mul::mul(self.clone(), rhs);
+    }
+}
+
+impl std::ops::Div for Base {
+    type Output = Base;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        Div::div(self, rhs)
+    }
+}
+
+impl std::ops::DivAssign for Base {
+    fn div_assign(&mut self, rhs: Self) {
+        *self = Div::div(self.clone(), rhs);
+    }
+}
+
+impl std::ops::BitXor for Base {
+    type Output = Base;
+
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        Pow::pow(self, rhs)
+    }
+}
+
+impl std::ops::BitXorAssign for Base {
+    fn bitxor_assign(&mut self, rhs: Self) {
+        *self = Pow::pow(self.clone(), rhs);
+    }
+}
+
 //impl std::ops::BitOr for Base {
 //    type Output = Base;
 //

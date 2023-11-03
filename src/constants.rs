@@ -7,10 +7,6 @@ use crate::{
     rational::NonZeroUInt,
 };
 
-// pub const FALSE: Base = BooleanAtom::False;
-
-// pub const TRUE: Base = BooleanAtom::True;
-
 pub const ONE: Number = Number::Rational(Rational {
     is_neg: false,
     numer: 1,

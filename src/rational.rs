@@ -22,7 +22,7 @@ impl NonZeroUInt {
     }
 
     /// panics if n is not 0
-    pub const fn set(&mut self, n: UInt) {
+    pub fn set(&mut self, n: UInt) {
         if n == 0 {
             panic!("NonZeroUInt::set: found 0");
         }
@@ -49,11 +49,11 @@ impl NonZeroUInt {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy, Hash)]
 pub struct Rational {
-    is_neg: bool,
-    numer: UInt,
-    denom: NonZeroUInt,
+    pub is_neg: bool,
+    pub numer: UInt,
+    pub denom: NonZeroUInt,
 }
 
 impl std::fmt::Display for Rational {
@@ -65,7 +65,7 @@ impl std::fmt::Display for Rational {
         if self.denom() == 1 {
             write!(f, "{}", self.numer)
         } else {
-            write!(f, "{} / {}", self.numer, self.denom)
+            write!(f, "({} / {})", self.numer, self.denom)
         }
     }
 }
@@ -77,18 +77,22 @@ impl CalcursType for Rational {
 }
 
 impl Num for Rational {
+    #[inline]
     fn is_zero(&self) -> bool {
         self.numer == 0
     }
 
+    #[inline]
     fn is_one(&self) -> bool {
         self.numer == 1 && self.denom() == 1 && !self.is_neg
     }
 
+    #[inline]
     fn is_neg_one(&self) -> bool {
         self.numer == 1 && self.denom() == 1 && self.is_neg
     }
 
+    #[inline]
     fn sign(&self) -> Sign {
         match self.is_neg {
             true => Sign::Negative,
@@ -325,6 +329,7 @@ impl std::ops::Mul for Rational {
         self.numer *= rhs.numer / gcd_bc;
         self.denom.div(gcd_bc);
         self.denom.mul(rhs.denom() / gcd_ad);
+        self.is_neg = self.is_neg && (self.numer != 0);
         self
     }
 }
@@ -340,6 +345,7 @@ impl std::ops::Div for Rational {
         self.numer *= rhs.denom() / gcd_bd;
         self.denom.div(gcd_bd);
         self.denom.mul(rhs.numer / gcd_ac);
+        self.is_neg = self.is_neg && (self.numer != 0);
         self
     }
 }
@@ -380,5 +386,9 @@ mod rational_test {
         assert_eq!(r!(1 / 3) + r!(2 / 3), r!(1));
         assert_eq!(r!(1 / 3) - r!(2 / 3), r!(-1 / 3));
         assert_eq!(r!(1 / -3) * r!(3), r!(-1));
+        assert!(r!(2) > r!(1));
+        assert!(r!(2) >= r!(2));
+        assert!(r!(2 / 4) <= r!(4 / 8));
+        assert!(r!(5 / 128) > r!(11 / 2516));
     }
 }
