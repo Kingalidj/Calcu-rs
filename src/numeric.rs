@@ -1,26 +1,29 @@
 use calcurs_macros::Procagate;
 
-pub use crate::{
+pub use crate::rational::Rational;
+use crate::{
     base::Base,
-    rational::Rational,
     traits::{CalcursType, Num},
 };
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, derive_more::Display, Copy, Default)]
+#[derive(
+    Debug, Clone, Hash, PartialEq, PartialOrd, Ord, Eq, derive_more::Display, Copy, Default,
+)]
 pub enum Sign {
     #[display(fmt = "+")]
     Positive,
     #[display(fmt = "-")]
-    Negitive,
+    Negative,
     #[display(fmt = "")]
     #[default]
     UnSigned,
+    //TODO: remove Unsigned
 }
 
 impl Sign {
     pub fn from_sign<I: num::Signed + std::fmt::Debug>(v: I) -> Self {
         if v.is_negative() {
-            Sign::Negitive
+            Sign::Negative
         } else if v.is_positive() {
             Sign::Positive
         } else {
@@ -31,8 +34,8 @@ impl Sign {
     pub fn neg(&self) -> Self {
         use Sign as D;
         match self {
-            D::Positive => D::Negitive,
-            D::Negitive => D::Positive,
+            D::Positive => D::Negative,
+            D::Negative => D::Positive,
             D::UnSigned => D::UnSigned,
         }
     }
@@ -42,7 +45,7 @@ impl Sign {
     }
 
     pub fn is_neg(&self) -> bool {
-        matches!(self, Sign::Negitive)
+        matches!(self, Sign::Negative)
     }
 
     pub fn is_unsign(&self) -> bool {
@@ -68,7 +71,9 @@ impl std::ops::MulAssign for Sign {
     }
 }
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, derive_more::Display, Default)]
+#[derive(
+    Debug, Clone, Copy, Hash, PartialOrd, Ord, PartialEq, Eq, derive_more::Display, Default,
+)]
 #[display(fmt = "{sign}oo")]
 pub struct Infinity {
     sign: Sign,
@@ -116,7 +121,7 @@ impl Infinity {
 
     pub fn neg() -> Self {
         Self {
-            sign: Sign::Negitive,
+            sign: Sign::Negative,
         }
     }
 
@@ -154,7 +159,7 @@ impl Infinity {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, derive_more::Display, Copy)]
+#[derive(Debug, Clone, Hash, PartialOrd, Ord, PartialEq, Eq, derive_more::Display, Copy)]
 pub struct Undefined;
 
 impl Num for Undefined {
@@ -188,7 +193,9 @@ impl Undefined {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, derive_more::Display, Procagate)]
+#[derive(
+    Debug, Clone, Copy, Hash, PartialOrd, Ord, PartialEq, Eq, derive_more::Display, Procagate,
+)]
 pub enum Number {
     Rational(Rational),
 
@@ -197,6 +204,7 @@ pub enum Number {
 }
 
 impl CalcursType for Number {
+    #[inline]
     fn base(self) -> Base {
         Base::Number(self)
     }
@@ -280,5 +288,61 @@ impl Number {
             N::Infinity(i) => i.div_num(inf.into()),
             N::Undefined(_) => self,
         }
+    }
+}
+
+impl std::ops::Add for Number {
+    type Output = Number;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        self.add_num(rhs)
+    }
+}
+
+impl std::ops::AddAssign for Number {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = self.add_num(rhs);
+    }
+}
+
+impl std::ops::Sub for Number {
+    type Output = Number;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        self.sub_num(rhs)
+    }
+}
+
+impl std::ops::SubAssign for Number {
+    fn sub_assign(&mut self, rhs: Self) {
+        *self = self.sub_num(rhs);
+    }
+}
+
+impl std::ops::Mul for Number {
+    type Output = Number;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        self.mul_num(rhs)
+    }
+}
+
+impl std::ops::MulAssign for Number {
+    fn mul_assign(&mut self, rhs: Self) {
+        *self = self.mul_num(rhs);
+    }
+}
+
+impl std::ops::Div for Number {
+    type Output = Number;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        self.div_num(rhs)
+    }
+}
+
+impl std::ops::DivAssign for Number {
+    fn div_assign(&mut self, rhs: Self) {
+        *self = self.div_num(rhs);
     }
 }

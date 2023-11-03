@@ -9,11 +9,11 @@ type UInt = u64;
 
 #[repr(transparent)]
 #[derive(Debug, derive_more::Display, Copy, Clone, PartialEq, Eq, Hash)]
-struct NonZeroUInt(UInt);
+pub struct NonZeroUInt(UInt);
 
 impl NonZeroUInt {
     #[inline]
-    fn new(n: UInt) -> Self {
+    pub const fn new(n: UInt) -> Self {
         if n == 0 {
             panic!("NonZeroUInt::new: found 0");
         } else {
@@ -22,7 +22,7 @@ impl NonZeroUInt {
     }
 
     /// panics if n is not 0
-    fn set(&mut self, n: UInt) {
+    pub const fn set(&mut self, n: UInt) {
         if n == 0 {
             panic!("NonZeroUInt::set: found 0");
         }
@@ -91,7 +91,7 @@ impl Num for Rational {
 
     fn sign(&self) -> Sign {
         match self.is_neg {
-            true => Sign::Negitive,
+            true => Sign::Negative,
             false => Sign::Positive,
         }
     }

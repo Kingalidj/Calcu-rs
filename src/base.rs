@@ -4,13 +4,14 @@ use derive_more::Display;
 
 use crate::boolean::BooleanAtom;
 use crate::numeric::Number;
-use crate::operator::{Add, And, Div, Mul, Not, Or, Pow, Sub};
+//use crate::operator::{Add, And, Div, Mul, Not, Or, Pow, Sub};
+use crate::operator2::{Add, Mul, Pow};
 use crate::traits::CalcursType;
 
 pub type PTR<T> = Box<T>;
 pub type SubsDict = Rc<RefCell<HashMap<Variable, Base>>>;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Display)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Hash, Display)]
 pub struct Variable {
     pub name: String,
 }
@@ -35,6 +36,7 @@ impl CalcursType for Variable {
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Display)]
 pub enum Base {
     Var(Variable),
+    //TODO: move to numeric?
     BooleanAtom(BooleanAtom),
     Number(Number),
     Dummy,
@@ -42,9 +44,9 @@ pub enum Base {
     Add(PTR<Add>),
     Mul(PTR<Mul>),
     Pow(PTR<Pow>),
-    Or(Or),
-    And(And),
-    Not(Not),
+    //Or(Or),
+    //And(And),
+    //Not(Not),
 }
 
 impl CalcursType for Base {
@@ -60,66 +62,66 @@ impl<T: Into<String>> From<T> for Variable {
     }
 }
 
-impl std::ops::Add for Base {
-    type Output = Base;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Add::add(self, rhs)
-    }
-}
-
-impl std::ops::Mul for Base {
-    type Output = Base;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        Mul::mul(self, rhs)
-    }
-}
-
-impl std::ops::Div for Base {
-    type Output = Base;
-
-    fn div(self, rhs: Self) -> Self::Output {
-        Div::div(self, rhs)
-    }
-}
-
-impl std::ops::Sub for Base {
-    type Output = Base;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        Sub::sub(self, rhs)
-    }
-}
-
-impl std::ops::BitXor for Base {
-    type Output = Base;
-
-    fn bitxor(self, rhs: Self) -> Self::Output {
-        Pow::pow(self, rhs)
-    }
-}
-
-impl std::ops::BitOr for Base {
-    type Output = Base;
-
-    fn bitor(self, rhs: Self) -> Self::Output {
-        Or::or(self, rhs)
-    }
-}
-
-impl std::ops::BitAnd for Base {
-    type Output = Base;
-
-    fn bitand(self, rhs: Self) -> Self::Output {
-        And::and(self, rhs)
-    }
-}
-
-impl std::ops::Not for Base {
-    type Output = Base;
-
-    fn not(self) -> Self::Output {
-        Not::not(self)
-    }
-}
+//impl std::ops::Add for Base {
+//    type Output = Base;
+//
+//    fn add(self, rhs: Self) -> Self::Output {
+//        Add::add(self, rhs)
+//    }
+//}
+//
+//impl std::ops::Mul for Base {
+//    type Output = Base;
+//
+//    fn mul(self, rhs: Self) -> Self::Output {
+//        Mul::mul(self, rhs)
+//    }
+//}
+//
+//impl std::ops::Div for Base {
+//    type Output = Base;
+//
+//    fn div(self, rhs: Self) -> Self::Output {
+//        Div::div(self, rhs)
+//    }
+//}
+//
+//impl std::ops::Sub for Base {
+//    type Output = Base;
+//
+//    fn sub(self, rhs: Self) -> Self::Output {
+//        Sub::sub(self, rhs)
+//    }
+//}
+//
+//impl std::ops::BitXor for Base {
+//    type Output = Base;
+//
+//    fn bitxor(self, rhs: Self) -> Self::Output {
+//        Pow::pow(self, rhs)
+//    }
+//}
+//
+//impl std::ops::BitOr for Base {
+//    type Output = Base;
+//
+//    fn bitor(self, rhs: Self) -> Self::Output {
+//        Or::or(self, rhs)
+//    }
+//}
+//
+//impl std::ops::BitAnd for Base {
+//    type Output = Base;
+//
+//    fn bitand(self, rhs: Self) -> Self::Output {
+//        And::and(self, rhs)
+//    }
+//}
+//
+//impl std::ops::Not for Base {
+//    type Output = Base;
+//
+//    fn not(self) -> Self::Output {
+//        Not::not(self)
+//    }
+//}
