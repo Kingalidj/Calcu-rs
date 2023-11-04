@@ -1,55 +1,79 @@
-use calcurs_macros::Procagate;
+use std::fmt;
 
 pub use crate::rational::Rational;
 use crate::{
-    base::Base,
-    traits::{CalcursType, Num},
+    base::{Base, CalcursType, Num},
+    numeric::constants::UNDEF,
+    rational::NonZeroUInt,
 };
 
-#[derive(
-    Debug, Clone, Hash, PartialEq, PartialOrd, Ord, Eq, derive_more::Display, Copy, Default,
-)]
+pub mod constants {
+    pub use super::*;
+
+    /// + (1 / 1)
+    pub const ONE: Number = Number::Rational(Rational {
+        is_neg: false,
+        numer: 1,
+        denom: NonZeroUInt::new(1),
+    });
+
+    /// - (1 / 1)
+    pub const MINUS_ONE: Number = Number::Rational(Rational {
+        is_neg: true,
+        numer: 1,
+        denom: NonZeroUInt::new(1),
+    });
+
+    /// + (0 / 1)
+    pub const ZERO: Number = Number::Rational(Rational {
+        is_neg: false,
+        numer: 0,
+        denom: NonZeroUInt::new(1),
+    });
+
+    /// undefined
+    pub const UNDEF: Number = Number::Undefined(Undefined);
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Ord, Eq, Copy)]
 pub enum Sign {
-    #[display(fmt = "+")]
-    Positive,
-    #[display(fmt = "-")]
-    Negative,
-    #[display(fmt = "")]
-    #[default]
-    UnSigned,
-    //TODO: remove Unsigned
+    Pos,
+    Neg,
+}
+
+impl fmt::Display for Sign {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use Sign as S;
+        let s = match self {
+            S::Pos => "",
+            S::Neg => "-",
+        };
+        write!(f, "{s}")
+    }
 }
 
 impl Sign {
-    pub fn from_sign<I: num::Signed + std::fmt::Debug>(v: I) -> Self {
-        if v.is_negative() {
-            Sign::Negative
-        } else if v.is_positive() {
-            Sign::Positive
-        } else {
-            Sign::UnSigned
-        }
-    }
-
     pub fn neg(&self) -> Self {
         use Sign as D;
         match self {
-            D::Positive => D::Negative,
-            D::Negative => D::Positive,
-            D::UnSigned => D::UnSigned,
+            D::Pos => D::Neg,
+            D::Neg => D::Pos,
         }
     }
 
     pub fn is_pos(&self) -> bool {
-        matches!(self, Sign::Positive)
+        matches!(self, Sign::Pos)
     }
 
     pub fn is_neg(&self) -> bool {
-        matches!(self, Sign::Negative)
+        matches!(self, Sign::Neg)
     }
 
-    pub fn is_unsign(&self) -> bool {
-        matches!(self, Sign::UnSigned)
+    pub fn mul_opt(mut self, other: Option<Self>) -> Self {
+        if let Some(other) = other {
+            self *= other
+        }
+        self
     }
 }
 
@@ -71,12 +95,15 @@ impl std::ops::MulAssign for Sign {
     }
 }
 
-#[derive(
-    Debug, Clone, Copy, Hash, PartialOrd, Ord, PartialEq, Eq, derive_more::Display, Default,
-)]
-#[display(fmt = "{sign}oo")]
+#[derive(Debug, Clone, Copy, Hash, PartialOrd, Ord, PartialEq, Eq)]
 pub struct Infinity {
     sign: Sign,
+}
+
+impl fmt::Display for Infinity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}oo", self.sign)
+    }
 }
 
 impl Num for Infinity {
@@ -96,8 +123,8 @@ impl Num for Infinity {
     }
 
     #[inline]
-    fn sign(&self) -> Sign {
-        self.sign
+    fn sign(&self) -> Option<Sign> {
+        Some(self.sign)
     }
 }
 
@@ -121,16 +148,12 @@ impl Infinity {
 
     #[inline]
     pub fn pos() -> Self {
-        Self {
-            sign: Sign::Positive,
-        }
+        Self { sign: Sign::Pos }
     }
 
     #[inline]
     pub fn neg() -> Self {
-        Self {
-            sign: Sign::Negative,
-        }
+        Self { sign: Sign::Neg }
     }
 
     pub fn add_num(self, n: Number) -> Number {
@@ -139,9 +162,9 @@ impl Infinity {
             N::Rational(_) => self.into(),
             N::Infinity(inf) => match self.sign == inf.sign {
                 true => self.into(),
-                false => Undefined.into(),
+                false => UNDEF,
             },
-            N::Undefined(_) => n,
+            UNDEF => n,
         }
     }
 
@@ -149,16 +172,16 @@ impl Infinity {
         use Number as N;
         match n {
             N::Rational(_) | N::Infinity(_) => self.into(),
-            N::Undefined(_) => n,
+            UNDEF => n,
         }
     }
 
     pub fn mul_num(self, n: Number) -> Number {
         use Number as N;
         match n {
-            N::Rational(r) => Infinity::new(self.sign * r.sign()).into(),
+            N::Rational(r) => Infinity::new(self.sign.mul_opt(r.sign())).into(),
             N::Infinity(inf) => Infinity::new(self.sign * inf.sign).into(),
-            N::Undefined(_) => n,
+            UNDEF => n,
         }
     }
 
@@ -167,8 +190,14 @@ impl Infinity {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialOrd, Ord, PartialEq, Eq, derive_more::Display, Copy)]
+#[derive(Debug, Clone, Hash, PartialOrd, Ord, PartialEq, Eq, Copy)]
 pub struct Undefined;
+
+impl fmt::Display for Undefined {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Undefined")
+    }
+}
 
 impl Num for Undefined {
     #[inline]
@@ -187,8 +216,8 @@ impl Num for Undefined {
     }
 
     #[inline]
-    fn sign(&self) -> Sign {
-        Sign::UnSigned
+    fn sign(&self) -> Option<Sign> {
+        None
     }
 }
 
@@ -205,14 +234,46 @@ impl Undefined {
     }
 }
 
-#[derive(
-    Debug, Clone, Copy, Hash, PartialOrd, Ord, PartialEq, Eq, derive_more::Display, Procagate,
-)]
+#[derive(Debug, Clone, Copy, Hash, PartialOrd, Ord, PartialEq, Eq)]
 pub enum Number {
     Rational(Rational),
 
     Infinity(Infinity),
     Undefined(Undefined),
+}
+
+macro_rules! for_each_number {
+    ($self: ident, $v:ident => $bod: tt) => {
+        match $self {
+            Number::Rational($v) => $bod,
+            Number::Infinity($v) => $bod,
+            Number::Undefined($v) => $bod,
+        }
+    };
+}
+
+impl From<Rational> for Number {
+    fn from(value: Rational) -> Self {
+        Number::Rational(value)
+    }
+}
+
+impl From<Infinity> for Number {
+    fn from(value: Infinity) -> Self {
+        Number::Infinity(value)
+    }
+}
+
+impl From<Undefined> for Number {
+    fn from(value: Undefined) -> Self {
+        Number::Undefined(value)
+    }
+}
+
+impl fmt::Display for Number {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for_each_number!(self, v => { write!(f, "{v}")})
+    }
 }
 
 impl CalcursType for Number {
@@ -225,22 +286,22 @@ impl CalcursType for Number {
 impl Num for Number {
     #[inline]
     fn is_zero(&self) -> bool {
-        procagate_number!(self, v => { v.is_zero() })
+        for_each_number!(self, v => { v.is_zero() })
     }
 
     #[inline]
     fn is_one(&self) -> bool {
-        procagate_number!(self, v => { v.is_one() })
+        for_each_number!(self, v => { v.is_one() })
     }
 
     #[inline]
     fn is_neg_one(&self) -> bool {
-        procagate_number!(self, v => { v.is_neg_one() })
+        for_each_number!(self, v => { v.is_neg_one() })
     }
 
     #[inline]
-    fn sign(&self) -> Sign {
-        procagate_number!(self, v => { v.sign() })
+    fn sign(&self) -> Option<Sign> {
+        for_each_number!(self, v => { v.sign() })
     }
 }
 
@@ -248,39 +309,39 @@ impl Number {
     pub fn add_num(self, n: Number) -> Number {
         use Number as N;
         match (self, n) {
-            (N::Undefined(_), _) | (_, N::Undefined(_)) => Undefined.into(),
+            (UNDEF, _) | (_, UNDEF) => UNDEF,
             (N::Infinity(inf), n) | (n, N::Infinity(inf)) => inf.add_num(n),
-            (N::Rational(r1), N::Rational(r2)) => r1.add_ratio(r2),
+            (N::Rational(r1), N::Rational(r2)) => r1.add_ratio(r2).into(),
         }
     }
 
     pub fn sub_num(self, n: Number) -> Number {
         use Number as N;
         match (self, n) {
-            (N::Undefined(_), _) | (_, N::Undefined(_)) => Undefined.into(),
+            (UNDEF, _) | (_, UNDEF) => UNDEF,
             (N::Infinity(inf), n) => inf.sub_num(n),
             (n, N::Infinity(inf)) => n.sub_inf(inf),
-            (N::Rational(r1), N::Rational(r2)) => r1.sub_ratio(r2),
+            (N::Rational(r1), N::Rational(r2)) => r1.sub_ratio(r2).into(),
         }
     }
 
     pub fn mul_num(self, n: Number) -> Number {
         use Number as N;
         match (self, n) {
-            (N::Undefined(_), _) | (_, N::Undefined(_)) => Undefined.into(),
+            (UNDEF, _) | (_, UNDEF) => UNDEF,
             (N::Infinity(inf), n) | (n, N::Infinity(inf)) => inf.mul_num(n),
-            (N::Rational(r1), N::Rational(r2)) => r1.mul_ratio(r2),
+            (N::Rational(r1), N::Rational(r2)) => r1.mul_ratio(r2).into(),
         }
     }
 
     pub fn div_num(self, n: Number) -> Number {
         use Number as N;
         match (self, n) {
-            (N::Undefined(_), _) | (_, N::Undefined(_)) => Undefined.into(),
+            (UNDEF, _) | (_, UNDEF) => UNDEF,
             (N::Infinity(inf), n) => inf.div_num(n),
             (n, N::Infinity(inf)) => n.div_inf(inf),
 
-            (N::Rational(r1), N::Rational(r2)) => r1.div_ratio(r2),
+            (N::Rational(r1), N::Rational(r2)) => r1.div_ratio(r2).into(),
         }
     }
 
@@ -289,7 +350,7 @@ impl Number {
         match self {
             N::Rational(_) => inf.into(),
             N::Infinity(i) => i.sub_num(inf.into()),
-            N::Undefined(_) => self,
+            UNDEF => self,
         }
     }
 
@@ -298,11 +359,11 @@ impl Number {
         match self {
             N::Rational(r) => {
                 let sign = r.sign();
-                inf.sign *= sign;
+                inf.sign = inf.sign.mul_opt(sign);
                 inf.into()
             }
             N::Infinity(i) => i.div_num(inf.into()),
-            N::Undefined(_) => self,
+            UNDEF => self,
         }
     }
 }

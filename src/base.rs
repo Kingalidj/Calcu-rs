@@ -1,18 +1,41 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
-
-use derive_more::Display;
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    fmt::{Debug, Display},
+    ops,
+    rc::Rc,
+};
 
 use crate::{
-    boolean::BooleanAtom,
-    numeric::Number,
+    numeric::{Number, Sign},
     operator::{Add, Div, Mul, Pow, Sub},
-    traits::CalcursType,
 };
+
+/// implemented by every symbolic math type
+pub trait CalcursType: Clone + Debug + Display {
+    fn base(self) -> Base;
+}
+
+/// implemented by every struct that represenets a numeric type
+pub trait Num {
+    fn is_zero(&self) -> bool;
+    fn is_one(&self) -> bool;
+    fn is_neg_one(&self) -> bool;
+    fn sign(&self) -> Option<Sign>;
+
+    fn is_pos(&self) -> bool {
+        self.sign().map_or_else(|| false, |s| s.is_pos())
+    }
+
+    fn is_neg(&self) -> bool {
+        self.sign().map_or_else(|| false, |s| s.is_neg())
+    }
+}
 
 pub type PTR<T> = Box<T>;
 pub type SubsDict = Rc<RefCell<HashMap<Variable, Base>>>;
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Ord, Eq, Hash, Display)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Ord, Eq, Hash)]
 pub struct Variable {
     pub name: String,
 }
@@ -27,6 +50,12 @@ impl Variable {
     }
 }
 
+impl Display for Variable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
 impl CalcursType for Variable {
     #[inline]
     fn base(self) -> Base {
@@ -34,20 +63,15 @@ impl CalcursType for Variable {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Display)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Base {
     Var(Variable),
-    //TODO: move to numeric?
-    BooleanAtom(BooleanAtom),
     Number(Number),
     Dummy,
 
-    Add(PTR<Add>),
-    Mul(PTR<Mul>),
+    Add(Add),
+    Mul(Mul),
     Pow(PTR<Pow>),
-    //Or(Or),
-    //And(And),
-    //Not(Not),
 }
 
 #[macro_export]
@@ -61,19 +85,11 @@ macro_rules! base {
     };
 
     (inf) => {
-        Infinity::default().base()
+        Infinity::pos().base()
     };
 
     (nan) => {
         Undefined.base()
-    };
-
-    (false) => {
-        FALSE.clone()
-    };
-
-    (true) => {
-        TRUE.clone()
     };
 
     ($int: literal) => {
@@ -89,6 +105,19 @@ macro_rules! base {
     };
 }
 
+impl Display for Base {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Base::Var(v) => write!(f, "{v}"),
+            Base::Number(n) => write!(f, "{n}"),
+            Base::Dummy => write!(f, "Dummy"),
+            Base::Add(a) => write!(f, "{a}"),
+            Base::Mul(m) => write!(f, "{m}"),
+            Base::Pow(p) => write!(f, "{p}"),
+        }
+    }
+}
+
 impl CalcursType for Base {
     #[inline]
     fn base(self) -> Self {
@@ -102,7 +131,7 @@ impl<T: Into<String>> From<T> for Variable {
     }
 }
 
-impl std::ops::Add for Base {
+impl ops::Add for Base {
     type Output = Base;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -110,13 +139,13 @@ impl std::ops::Add for Base {
     }
 }
 
-impl std::ops::AddAssign for Base {
+impl ops::AddAssign for Base {
     fn add_assign(&mut self, rhs: Self) {
         *self = Add::add(self.clone(), rhs);
     }
 }
 
-impl std::ops::Sub for Base {
+impl ops::Sub for Base {
     type Output = Base;
 
     fn sub(self, rhs: Self) -> Self::Output {
@@ -124,13 +153,13 @@ impl std::ops::Sub for Base {
     }
 }
 
-impl std::ops::SubAssign for Base {
+impl ops::SubAssign for Base {
     fn sub_assign(&mut self, rhs: Self) {
         *self = Sub::sub(self.clone(), rhs);
     }
 }
 
-impl std::ops::Mul for Base {
+impl ops::Mul for Base {
     type Output = Base;
 
     fn mul(self, rhs: Self) -> Self::Output {
@@ -138,13 +167,13 @@ impl std::ops::Mul for Base {
     }
 }
 
-impl std::ops::MulAssign for Base {
+impl ops::MulAssign for Base {
     fn mul_assign(&mut self, rhs: Self) {
         *self = Mul::mul(self.clone(), rhs);
     }
 }
 
-impl std::ops::Div for Base {
+impl ops::Div for Base {
     type Output = Base;
 
     fn div(self, rhs: Self) -> Self::Output {
@@ -152,13 +181,13 @@ impl std::ops::Div for Base {
     }
 }
 
-impl std::ops::DivAssign for Base {
+impl ops::DivAssign for Base {
     fn div_assign(&mut self, rhs: Self) {
         *self = Div::div(self.clone(), rhs);
     }
 }
 
-impl std::ops::BitXor for Base {
+impl ops::BitXor for Base {
     type Output = Base;
 
     fn bitxor(self, rhs: Self) -> Self::Output {
@@ -166,32 +195,8 @@ impl std::ops::BitXor for Base {
     }
 }
 
-impl std::ops::BitXorAssign for Base {
+impl ops::BitXorAssign for Base {
     fn bitxor_assign(&mut self, rhs: Self) {
         *self = Pow::pow(self.clone(), rhs);
     }
 }
-
-//impl std::ops::BitOr for Base {
-//    type Output = Base;
-//
-//    fn bitor(self, rhs: Self) -> Self::Output {
-//        Or::or(self, rhs)
-//    }
-//}
-//
-//impl std::ops::BitAnd for Base {
-//    type Output = Base;
-//
-//    fn bitand(self, rhs: Self) -> Self::Output {
-//        And::and(self, rhs)
-//    }
-//}
-//
-//impl std::ops::Not for Base {
-//    type Output = Base;
-//
-//    fn not(self) -> Self::Output {
-//        Not::not(self)
-//    }
-//}

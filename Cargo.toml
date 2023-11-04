@@ -6,9 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-calcurs_macros = {package = "macros", path = "./macros"}
-derive_more = "0.99.17"
-lazy_static = "1.4.0"
 num = "0.4.1"
 
 [dev-dependencies]
