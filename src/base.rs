@@ -33,14 +33,14 @@ pub trait Num {
 }
 
 pub type PTR<T> = Box<T>;
-pub type SubsDict = Rc<RefCell<HashMap<Variable, Base>>>;
+pub type SubsDict = Rc<RefCell<HashMap<Symbol, Base>>>;
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Ord, Eq, Hash)]
-pub struct Variable {
+pub struct Symbol {
     pub name: String,
 }
 
-impl Variable {
+impl Symbol {
     pub fn new<I: Into<String>>(name: I) -> Self {
         Self { name: name.into() }
     }
@@ -50,25 +50,24 @@ impl Variable {
     }
 }
 
-impl Display for Variable {
+impl Display for Symbol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)
     }
 }
 
-impl CalcursType for Variable {
+impl CalcursType for Symbol {
     #[inline]
     fn base(self) -> Base {
-        Base::Var(self).base()
+        Base::Symbol(self).base()
     }
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Base {
-    Var(Variable),
+    Symbol(Symbol),
     Number(Number),
-    Dummy,
-
+    // Dummy,
     Add(Add),
     Mul(Mul),
     Pow(PTR<Pow>),
@@ -101,16 +100,16 @@ macro_rules! base {
     };
 
     (v: $var: tt) => {
-        Variable::new(stringify!($var)).base()
+        Symbol::new(stringify!($var)).base()
     };
 }
 
 impl Display for Base {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Base::Var(v) => write!(f, "{v}"),
+            Base::Symbol(v) => write!(f, "{v}"),
             Base::Number(n) => write!(f, "{n}"),
-            Base::Dummy => write!(f, "Dummy"),
+            // Base::Dummy => write!(f, "Dummy"),
             Base::Add(a) => write!(f, "{a}"),
             Base::Mul(m) => write!(f, "{m}"),
             Base::Pow(p) => write!(f, "{p}"),
@@ -125,9 +124,9 @@ impl CalcursType for Base {
     }
 }
 
-impl<T: Into<String>> From<T> for Variable {
+impl<T: Into<String>> From<T> for Symbol {
     fn from(value: T) -> Self {
-        Variable { name: value.into() }
+        Symbol { name: value.into() }
     }
 }
 

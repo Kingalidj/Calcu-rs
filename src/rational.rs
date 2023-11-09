@@ -1,3 +1,9 @@
+use std::{
+    fmt::{self, Display},
+    hash::Hash,
+    ops::{Add, Deref, Div, Mul, Neg, Sub},
+};
+
 use crate::{
     base::{Base, CalcursType, Num},
     numeric::{Number, Sign, Undefined},
@@ -11,7 +17,7 @@ type UInt = u64;
 /// will panic otherwise
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct NonZeroUInt(UInt);
+pub(crate) struct NonZeroUInt(pub(crate) UInt);
 
 impl NonZeroUInt {
     #[inline]
@@ -52,7 +58,7 @@ impl NonZeroUInt {
     }
 }
 
-impl std::ops::Deref for NonZeroUInt {
+impl Deref for NonZeroUInt {
     type Target = UInt;
 
     #[inline]
@@ -65,11 +71,21 @@ impl std::ops::Deref for NonZeroUInt {
 ///
 /// implemented with two [UInt]: numer and a denom, where denom is of type [NonZeroUInt] \
 /// Sign defined with a boolean field
-#[derive(Debug, Clone, Eq, Copy, Hash)]
+#[derive(Debug, Clone, Eq, Copy)]
 pub struct Rational {
-    pub(crate) is_neg: bool,
+    pub(crate) sign: Sign,
     pub(crate) numer: UInt,
     pub(crate) denom: NonZeroUInt,
+}
+
+impl Hash for Rational {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        if !self.is_zero() {
+            self.sign.hash(state);
+        }
+        self.numer.hash(state);
+        self.denom.hash(state);
+    }
 }
 
 impl PartialEq for Rational {
@@ -77,7 +93,7 @@ impl PartialEq for Rational {
         if self.numer == 0 && other.numer == 0 {
             true
         } else {
-            self.is_neg == other.is_neg && self.numer == other.numer && self.denom == other.denom
+            self.sign == other.sign && self.numer == other.numer && self.denom == other.denom
         }
     }
 }
@@ -96,60 +112,60 @@ impl Num for Rational {
 
     #[inline]
     fn is_one(&self) -> bool {
-        self.numer == 1 && *self.denom == 1 && !self.is_neg
+        self.numer == 1 && *self.denom == 1 && self.sign.is_pos()
     }
 
     #[inline]
     fn is_neg_one(&self) -> bool {
-        self.numer == 1 && *self.denom == 1 && self.is_neg
+        self.numer == 1 && *self.denom == 1 && self.sign.is_neg()
     }
 
     #[inline]
     fn sign(&self) -> Option<Sign> {
-        Some(match self.is_neg {
-            true => Sign::Neg,
-            false => Sign::Pos,
-        })
+        Some(self.sign)
     }
 }
 
 impl Rational {
+    pub const fn one() -> Self {
+        Self {
+            numer: 1,
+            denom: NonZeroUInt::new(1),
+            sign: Sign::Positive,
+        }
+    }
+
     pub fn new(num: i32, den: i32) -> Self {
-        match (num, den) {
-            (_, 0) => panic!("Rational::new: found 0 denominator"),
-            _ => (),
+        if let (_, 0) = (num, den) {
+            panic!("Rational::new: found 0 denominator")
         }
 
-        let is_neg = (num * den).is_negative();
+        let sign = match (num * den).is_positive() {
+            true => Sign::Positive,
+            false => Sign::Negative,
+        };
+
         let numer = num.unsigned_abs() as UInt;
         let denom = NonZeroUInt::new(den.unsigned_abs() as UInt);
 
-        Self {
-            is_neg,
-            numer,
-            denom,
-        }
-        .reduce()
-        .into()
+        Self { sign, numer, denom }.reduce()
     }
 
     pub fn frac_num(num: i32, den: i32) -> Number {
         match (num, den) {
-            (_, 0) => return Undefined.into(),
+            (_, 0) => Undefined.into(),
             _ => Self::new(num, den).into(),
         }
     }
 
     pub fn int_num(n: i32) -> Number {
-        let is_neg = n.is_negative();
+        let sign = match n.is_positive() {
+            true => Sign::Positive,
+            false => Sign::Negative,
+        };
         let numer = n.unsigned_abs() as UInt;
         let denom = NonZeroUInt::new(1);
-        Self {
-            is_neg,
-            numer,
-            denom,
-        }
-        .into()
+        Self { sign, numer, denom }.into()
     }
 
     #[inline]
@@ -158,7 +174,7 @@ impl Rational {
     }
 
     #[inline]
-    pub fn denom(&self) -> UInt {
+    pub const fn denom(&self) -> UInt {
         self.denom.0
     }
 
@@ -169,7 +185,7 @@ impl Rational {
             // 0 / x => 0 / 1
             (0, _) => {
                 self.denom.set(1);
-                self.is_neg = false;
+                self.sign = Sign::Positive;
             }
 
             // x / x => 1
@@ -196,7 +212,7 @@ impl Rational {
         let lhs_numer = f1.0 * (lcm / f1.1);
         let rhs_numer = f2.0 * (lcm / f2.1);
         Rational {
-            is_neg: false,
+            sign: Sign::Positive,
             numer: lhs_numer + rhs_numer,
             denom: NonZeroUInt::new(lcm),
         }
@@ -212,7 +228,7 @@ impl Rational {
         let lhs_numer = f1.0 * (lcm / f1.1);
         let rhs_numer = f2.0 * (lcm / f2.1);
         Rational {
-            is_neg: false,
+            sign: Sign::Positive,
             numer: lhs_numer - rhs_numer,
             denom: NonZeroUInt::new(lcm),
         }
@@ -221,46 +237,44 @@ impl Rational {
 
     pub fn abs(&self) -> Self {
         let mut res = *self;
-        res.is_neg = false;
+        res.sign = Sign::Positive;
         res
     }
 
     pub fn div_ratio(self, other: Self) -> Self {
         let (mut lhs, rhs) = (self, other);
-        lhs.is_neg = lhs.is_neg || rhs.is_neg;
+        lhs.sign *= rhs.sign;
         let gcd_ac = lhs.numer.gcd(&rhs.numer);
         let gcd_bd = lhs.denom.gcd(&rhs.denom);
         lhs.numer /= gcd_ac;
         lhs.numer *= *rhs.denom / gcd_bd;
         lhs.denom.div(gcd_bd);
         lhs.denom.mul(rhs.numer / gcd_ac);
-        lhs.is_neg = lhs.is_neg && (lhs.numer != 0);
         lhs
     }
 
     pub fn mul_ratio(self, other: Self) -> Self {
         let (mut lhs, rhs) = (self, other);
-        lhs.is_neg = lhs.is_neg || rhs.is_neg;
+        lhs.sign *= rhs.sign;
         let gcd_ad = lhs.numer.gcd(&rhs.denom);
         let gcd_bc = lhs.denom.gcd(&rhs.numer);
         lhs.numer /= gcd_ad;
         lhs.numer *= rhs.numer / gcd_bc;
         lhs.denom.div(gcd_bc);
         lhs.denom.mul(*rhs.denom / gcd_ad);
-        lhs.is_neg = lhs.is_neg && (lhs.numer != 0);
         lhs
     }
 
     pub fn sub_ratio(self, other: Self) -> Self {
         let mut rhs = other;
-        rhs.is_neg = !rhs.is_neg;
-        self.add_ratio(rhs).into()
+        rhs.sign = rhs.sign * Sign::Negative;
+        self.add_ratio(rhs)
     }
 
     pub fn add_ratio(self, other: Self) -> Self {
         let (mut lhs, rhs) = (self, other);
 
-        if lhs.denom == rhs.denom && lhs.is_neg == rhs.is_neg {
+        if lhs.denom == rhs.denom && lhs.sign == rhs.sign {
             lhs.numer += rhs.numer;
             return lhs.reduce();
         }
@@ -268,7 +282,7 @@ impl Rational {
         match (lhs.is_pos(), rhs.is_pos()) {
             (true, true) | (false, false) => {
                 let mut res = Self::unsigned_add((lhs.numer, *lhs.denom), (rhs.numer, *rhs.denom));
-                res.is_neg = lhs.is_neg;
+                res.sign = lhs.sign;
                 res
             }
 
@@ -281,7 +295,7 @@ impl Rational {
                     // lhs >= rhs => -(lhs - rhs)
                     let mut res =
                         Self::unsigned_sub((lhs.numer, *lhs.denom), (rhs.numer, *rhs.denom));
-                    res.is_neg = true;
+                    res.sign = Sign::Negative;
                     res
                 } else {
                     // rhs > lhs => rhs - lhs
@@ -301,7 +315,7 @@ impl Rational {
                     // rhs > lhs => -(lhs + rhs)
                     let mut res =
                         Self::unsigned_sub((rhs.numer, *rhs.denom), (lhs.numer, *lhs.denom));
-                    res.is_neg = true;
+                    res.sign = Sign::Negative;
                     res
                 }
             }
@@ -309,17 +323,17 @@ impl Rational {
     }
 }
 
-impl std::ops::Neg for Rational {
+impl Neg for Rational {
     type Output = Self;
 
     fn neg(mut self) -> Self::Output {
-        self.is_neg = !self.is_neg;
+        self.sign *= Sign::Negative;
         self
     }
 }
 
 //TODO: checked add
-impl std::ops::Add for Rational {
+impl Add for Rational {
     type Output = Rational;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -327,7 +341,7 @@ impl std::ops::Add for Rational {
     }
 }
 
-impl std::ops::Sub for Rational {
+impl Sub for Rational {
     type Output = Rational;
 
     fn sub(self, rhs: Self) -> Self::Output {
@@ -335,7 +349,7 @@ impl std::ops::Sub for Rational {
     }
 }
 
-impl std::ops::Mul for Rational {
+impl Mul for Rational {
     type Output = Rational;
 
     fn mul(self, rhs: Self) -> Self::Output {
@@ -343,7 +357,7 @@ impl std::ops::Mul for Rational {
     }
 }
 
-impl std::ops::Div for Rational {
+impl Div for Rational {
     type Output = Rational;
 
     fn div(self, rhs: Self) -> Self::Output {
@@ -353,21 +367,21 @@ impl std::ops::Div for Rational {
 
 impl PartialOrd for Rational {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        let v1 = self.numer * *other.denom;
-        let v2 = other.numer * *self.denom;
-        v1.partial_cmp(&v2)
+        Some(self.cmp(other))
     }
 }
 
 impl Ord for Rational {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap()
+        let v1 = self.numer * *other.denom;
+        let v2 = other.numer * *self.denom;
+        v1.cmp(&v2)
     }
 }
 
-impl std::fmt::Display for Rational {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.is_neg {
+impl Display for Rational {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_neg() {
             write!(f, "-")?;
         }
 
@@ -379,8 +393,8 @@ impl std::fmt::Display for Rational {
     }
 }
 
-impl std::fmt::Display for NonZeroUInt {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for NonZeroUInt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }

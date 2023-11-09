@@ -1,4 +1,7 @@
-use std::fmt;
+use std::{
+    fmt::{self, Display},
+    ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign},
+};
 
 pub use crate::rational::Rational;
 use crate::{
@@ -12,21 +15,21 @@ pub mod constants {
 
     /// + (1 / 1)
     pub const ONE: Number = Number::Rational(Rational {
-        is_neg: false,
+        sign: Sign::Positive,
         numer: 1,
         denom: NonZeroUInt::new(1),
     });
 
     /// - (1 / 1)
     pub const MINUS_ONE: Number = Number::Rational(Rational {
-        is_neg: true,
+        sign: Sign::Negative,
         numer: 1,
         denom: NonZeroUInt::new(1),
     });
 
     /// + (0 / 1)
     pub const ZERO: Number = Number::Rational(Rational {
-        is_neg: false,
+        sign: Sign::Positive,
         numer: 0,
         denom: NonZeroUInt::new(1),
     });
@@ -37,16 +40,16 @@ pub mod constants {
 
 #[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Ord, Eq, Copy)]
 pub enum Sign {
-    Pos,
-    Neg,
+    Positive,
+    Negative,
 }
 
-impl fmt::Display for Sign {
+impl Display for Sign {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Sign as S;
         let s = match self {
-            S::Pos => "",
-            S::Neg => "-",
+            S::Positive => "",
+            S::Negative => "-",
         };
         write!(f, "{s}")
     }
@@ -56,17 +59,19 @@ impl Sign {
     pub fn neg(&self) -> Self {
         use Sign as D;
         match self {
-            D::Pos => D::Neg,
-            D::Neg => D::Pos,
+            D::Positive => D::Negative,
+            D::Negative => D::Positive,
         }
     }
 
-    pub fn is_pos(&self) -> bool {
-        matches!(self, Sign::Pos)
+    #[inline]
+    pub const fn is_pos(&self) -> bool {
+        matches!(self, Sign::Positive)
     }
 
-    pub fn is_neg(&self) -> bool {
-        matches!(self, Sign::Neg)
+    #[inline]
+    pub const fn is_neg(&self) -> bool {
+        matches!(self, Sign::Negative)
     }
 
     pub fn mul_opt(mut self, other: Option<Self>) -> Self {
@@ -77,7 +82,7 @@ impl Sign {
     }
 }
 
-impl std::ops::Mul for Sign {
+impl Mul for Sign {
     type Output = Sign;
 
     fn mul(self, rhs: Self) -> Self::Output {
@@ -89,7 +94,7 @@ impl std::ops::Mul for Sign {
     }
 }
 
-impl std::ops::MulAssign for Sign {
+impl MulAssign for Sign {
     fn mul_assign(&mut self, rhs: Self) {
         *self = *self * rhs;
     }
@@ -97,10 +102,10 @@ impl std::ops::MulAssign for Sign {
 
 #[derive(Debug, Clone, Copy, Hash, PartialOrd, Ord, PartialEq, Eq)]
 pub struct Infinity {
-    sign: Sign,
+    pub(crate) sign: Sign,
 }
 
-impl fmt::Display for Infinity {
+impl Display for Infinity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}oo", self.sign)
     }
@@ -148,12 +153,16 @@ impl Infinity {
 
     #[inline]
     pub fn pos() -> Self {
-        Self { sign: Sign::Pos }
+        Self {
+            sign: Sign::Positive,
+        }
     }
 
     #[inline]
     pub fn neg() -> Self {
-        Self { sign: Sign::Neg }
+        Self {
+            sign: Sign::Negative,
+        }
     }
 
     pub fn add_num(self, n: Number) -> Number {
@@ -193,7 +202,7 @@ impl Infinity {
 #[derive(Debug, Clone, Hash, PartialOrd, Ord, PartialEq, Eq, Copy)]
 pub struct Undefined;
 
-impl fmt::Display for Undefined {
+impl Display for Undefined {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Undefined")
     }
@@ -270,7 +279,7 @@ impl From<Undefined> for Number {
     }
 }
 
-impl fmt::Display for Number {
+impl Display for Number {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for_each_number!(self, v => { write!(f, "{v}")})
     }
@@ -368,7 +377,7 @@ impl Number {
     }
 }
 
-impl std::ops::Add for Number {
+impl Add for Number {
     type Output = Number;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -376,13 +385,13 @@ impl std::ops::Add for Number {
     }
 }
 
-impl std::ops::AddAssign for Number {
+impl AddAssign for Number {
     fn add_assign(&mut self, rhs: Self) {
         *self = self.add_num(rhs);
     }
 }
 
-impl std::ops::Sub for Number {
+impl Sub for Number {
     type Output = Number;
 
     fn sub(self, rhs: Self) -> Self::Output {
@@ -390,13 +399,13 @@ impl std::ops::Sub for Number {
     }
 }
 
-impl std::ops::SubAssign for Number {
+impl SubAssign for Number {
     fn sub_assign(&mut self, rhs: Self) {
         *self = self.sub_num(rhs);
     }
 }
 
-impl std::ops::Mul for Number {
+impl Mul for Number {
     type Output = Number;
 
     fn mul(self, rhs: Self) -> Self::Output {
@@ -404,13 +413,13 @@ impl std::ops::Mul for Number {
     }
 }
 
-impl std::ops::MulAssign for Number {
+impl MulAssign for Number {
     fn mul_assign(&mut self, rhs: Self) {
         *self = self.mul_num(rhs);
     }
 }
 
-impl std::ops::Div for Number {
+impl Div for Number {
     type Output = Number;
 
     fn div(self, rhs: Self) -> Self::Output {
@@ -418,7 +427,7 @@ impl std::ops::Div for Number {
     }
 }
 
-impl std::ops::DivAssign for Number {
+impl DivAssign for Number {
     fn div_assign(&mut self, rhs: Self) {
         *self = self.div_num(rhs);
     }
