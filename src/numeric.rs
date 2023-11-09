@@ -3,11 +3,11 @@ use std::{
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
-pub use crate::rational::Rational;
 use crate::{
-    base::{Base, CalcursType, Num},
+    base::{Base, CalcursType},
     numeric::constants::UNDEF,
-    rational::NonZeroUInt,
+    pattern::pat,
+    rational::{NonZeroUInt, Rational},
 };
 
 pub mod constants {
@@ -111,28 +111,6 @@ impl Display for Infinity {
     }
 }
 
-impl Num for Infinity {
-    #[inline]
-    fn is_zero(&self) -> bool {
-        false
-    }
-
-    #[inline]
-    fn is_one(&self) -> bool {
-        false
-    }
-
-    #[inline]
-    fn is_neg_one(&self) -> bool {
-        false
-    }
-
-    #[inline]
-    fn sign(&self) -> Option<Sign> {
-        Some(self.sign)
-    }
-}
-
 impl CalcursType for Infinity {
     #[inline]
     fn base(self) -> Base {
@@ -188,7 +166,7 @@ impl Infinity {
     pub fn mul_num(self, n: Number) -> Number {
         use Number as N;
         match n {
-            N::Rational(r) => Infinity::new(self.sign.mul_opt(r.sign())).into(),
+            N::Rational(r) => Infinity::new(self.sign * r.sign).into(),
             N::Infinity(inf) => Infinity::new(self.sign * inf.sign).into(),
             UNDEF => n,
         }
@@ -208,38 +186,10 @@ impl Display for Undefined {
     }
 }
 
-impl Num for Undefined {
-    #[inline]
-    fn is_zero(&self) -> bool {
-        false
-    }
-
-    #[inline]
-    fn is_one(&self) -> bool {
-        false
-    }
-
-    #[inline]
-    fn is_neg_one(&self) -> bool {
-        false
-    }
-
-    #[inline]
-    fn sign(&self) -> Option<Sign> {
-        None
-    }
-}
-
 impl CalcursType for Undefined {
     #[inline]
     fn base(self) -> Base {
         Number::Undefined(self).base()
-    }
-}
-
-impl Undefined {
-    pub fn is_zero(&self) -> bool {
-        false
     }
 }
 
@@ -259,6 +209,48 @@ macro_rules! for_each_number {
             Number::Undefined($v) => $bod,
         }
     };
+}
+
+impl Number {
+    pub const fn is_zero(&self) -> bool {
+        if let pat!(Number: 0) = self {
+            true
+        } else {
+            false
+        }
+    }
+
+    pub const fn is_one(&self) -> bool {
+        if let pat!(Number: 1) = self {
+            true
+        } else {
+            false
+        }
+    }
+
+    pub const fn is_minus_one(&self) -> bool {
+        if let pat!(Number: -1) = self {
+            true
+        } else {
+            false
+        }
+    }
+
+    pub const fn is_negative(&self) -> bool {
+        if let pat!(Number: -) = self {
+            true
+        } else {
+            false
+        }
+    }
+
+    pub const fn is_positive(&self) -> bool {
+        if let pat!(Number: +) = self {
+            true
+        } else {
+            false
+        }
+    }
 }
 
 impl From<Rational> for Number {
@@ -289,28 +281,6 @@ impl CalcursType for Number {
     #[inline]
     fn base(self) -> Base {
         Base::Number(self)
-    }
-}
-
-impl Num for Number {
-    #[inline]
-    fn is_zero(&self) -> bool {
-        for_each_number!(self, v => { v.is_zero() })
-    }
-
-    #[inline]
-    fn is_one(&self) -> bool {
-        for_each_number!(self, v => { v.is_one() })
-    }
-
-    #[inline]
-    fn is_neg_one(&self) -> bool {
-        for_each_number!(self, v => { v.is_neg_one() })
-    }
-
-    #[inline]
-    fn sign(&self) -> Option<Sign> {
-        for_each_number!(self, v => { v.sign() })
     }
 }
 
@@ -367,8 +337,7 @@ impl Number {
         use Number as N;
         match self {
             N::Rational(r) => {
-                let sign = r.sign();
-                inf.sign = inf.sign.mul_opt(sign);
+                inf.sign *= r.sign;
                 inf.into()
             }
             N::Infinity(i) => i.div_num(inf.into()),

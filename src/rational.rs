@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    base::{Base, CalcursType, Num},
+    base::{Base, CalcursType},
     numeric::{Number, Sign, Undefined},
 };
 use num::Integer;
@@ -80,7 +80,7 @@ pub struct Rational {
 
 impl Hash for Rational {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        if !self.is_zero() {
+        if self.numer != 0 {
             self.sign.hash(state);
         }
         self.numer.hash(state);
@@ -101,28 +101,6 @@ impl PartialEq for Rational {
 impl CalcursType for Rational {
     fn base(self) -> Base {
         Base::Number(self.into())
-    }
-}
-
-impl Num for Rational {
-    #[inline]
-    fn is_zero(&self) -> bool {
-        self.numer == 0
-    }
-
-    #[inline]
-    fn is_one(&self) -> bool {
-        self.numer == 1 && *self.denom == 1 && self.sign.is_pos()
-    }
-
-    #[inline]
-    fn is_neg_one(&self) -> bool {
-        self.numer == 1 && *self.denom == 1 && self.sign.is_neg()
-    }
-
-    #[inline]
-    fn sign(&self) -> Option<Sign> {
-        Some(self.sign)
     }
 }
 
@@ -279,7 +257,7 @@ impl Rational {
             return lhs.reduce();
         }
 
-        match (lhs.is_pos(), rhs.is_pos()) {
+        match (lhs.sign.is_pos(), rhs.sign.is_pos()) {
             (true, true) | (false, false) => {
                 let mut res = Self::unsigned_add((lhs.numer, *lhs.denom), (rhs.numer, *rhs.denom));
                 res.sign = lhs.sign;
@@ -381,7 +359,7 @@ impl Ord for Rational {
 
 impl Display for Rational {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.is_neg() {
+        if self.sign.is_neg() {
             write!(f, "-")?;
         }
 

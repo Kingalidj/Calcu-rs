@@ -7,29 +7,13 @@ use std::{
 };
 
 use crate::{
-    numeric::{Number, Sign},
+    numeric::Number,
     operator::{Add, Div, Mul, Pow, Sub},
 };
 
 /// implemented by every symbolic math type
 pub trait CalcursType: Clone + Debug + Display {
     fn base(self) -> Base;
-}
-
-/// implemented by every struct that represenets a numeric type
-pub trait Num {
-    fn is_zero(&self) -> bool;
-    fn is_one(&self) -> bool;
-    fn is_neg_one(&self) -> bool;
-    fn sign(&self) -> Option<Sign>;
-
-    fn is_pos(&self) -> bool {
-        self.sign().map_or_else(|| false, |s| s.is_pos())
-    }
-
-    fn is_neg(&self) -> bool {
-        self.sign().map_or_else(|| false, |s| s.is_neg())
-    }
 }
 
 pub type PTR<T> = Box<T>;

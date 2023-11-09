@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    base::{CalcursType, Num},
+    base::CalcursType,
     numeric::constants::{MINUS_ONE, ONE, UNDEF, ZERO},
     pattern::pat,
 };
@@ -24,14 +24,15 @@ pub(crate) struct AddArgs {
 
 impl AddArgs {
     pub fn insert_mul(&mut self, mul: Mul) {
-        if mul.coeff.is_zero() {
+        if let pat!(Number: 0) = mul.coeff {
             return;
         }
 
         if let Some(coeff) = self.args.get_mut(&mul.args) {
             // 2x + 3x => 5x
             *coeff += mul.coeff;
-            if coeff.is_zero() {
+
+            if let pat!(Number: 0) = coeff {
                 self.args.remove(&mul.args);
             }
         } else {
@@ -159,9 +160,10 @@ impl Display for Add {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.args)?;
 
-        if !self.coeff.is_zero() {
+        if let pat!(Number: 0) = self.coeff {
+        } else {
             write!(f, " + {}", self.coeff)?;
-        };
+        }
 
         Ok(())
     }
