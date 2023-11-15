@@ -4,14 +4,14 @@ use std::{
 };
 
 use crate::{
-    base::CalcursType,
-    numeric::constants::{MINUS_ONE, ONE, UNDEF, ZERO},
+    base::{Base, CalcursType},
+    numeric::{
+        constants::{MINUS_ONE, ONE, UNDEF, ZERO},
+        Number, Undefined,
+    },
     pattern::pat,
+    rational::Rational,
 };
-
-pat!(use);
-
-use Base as B;
 
 /// helper container for [Add]
 ///
@@ -19,42 +19,44 @@ use Base as B;
 /// <=> n1 * {pow_1_1 * pow_1_2 * ... } + n2 * { pow_2_1 * pow_2_2 * ...} + ...
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub(crate) struct AddArgs {
-    pub(crate) args: BTreeMap<MulArgs, Number>,
+    __args: BTreeMap<MulArgs, Number>,
 }
 
 impl AddArgs {
     pub fn insert_mul(&mut self, mul: Mul) {
+        pat!(use);
+
         if let pat!(Number: 0) = mul.coeff {
             return;
         }
 
-        if let Some(coeff) = self.args.get_mut(&mul.args) {
+        if let Some(coeff) = self.__args.get_mut(&mul.args) {
             // 2x + 3x => 5x
             *coeff += mul.coeff;
 
-            if let pat!(Number: 0) = coeff {
-                self.args.remove(&mul.args);
+            if coeff.is_zero() {
+                self.__args.remove(&mul.args);
             }
         } else {
-            self.args.insert(mul.args, mul.coeff);
+            self.__args.insert(mul.args, mul.coeff);
         }
     }
 
     #[inline]
     pub fn into_mul_iter(self) -> impl Iterator<Item = Mul> {
-        self.args
+        self.__args
             .into_iter()
             .map(|(args, coeff)| Mul { coeff, args })
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        self.args.len()
+        self.__args.len()
     }
 
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.args.is_empty()
+        self.__args.is_empty()
     }
 
     #[inline]
@@ -65,7 +67,7 @@ impl AddArgs {
     #[inline]
     pub fn into_mul(mut self) -> Option<Mul> {
         if self.is_mul() {
-            let (args, coeff) = self.args.pop_first().unwrap();
+            let (args, coeff) = self.__args.pop_first().unwrap();
             Some(Mul { args, coeff })
         } else {
             None
@@ -75,7 +77,7 @@ impl AddArgs {
 
 impl Display for AddArgs {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut iter = self.args.iter().rev();
+        let mut iter = self.__args.iter().rev();
 
         if let Some((args, coeff)) = iter.next() {
             Mul::fmt_parts(args, coeff, f)?;
@@ -121,23 +123,32 @@ impl Add {
     }
 
     fn arg(mut self, b: Base) -> Self {
+        use Base as B;
         match b {
             B::Number(num) => self.coeff += num,
             B::Mul(mul) => self.args.insert_mul(mul),
-            B::Add(add) => {
+            B::Add(mut add) => {
+                if add.args.len() > self.args.len() {
+                    (add, self) = (self, add);
+                }
+
                 self.coeff += add.coeff;
                 add.args
                     .into_mul_iter()
                     .for_each(|mul| self.args.insert_mul(mul));
             }
 
-            base @ (B::Symbol(_) | B::Pow(_)) => self.args.insert_mul(Mul::from_base(base)),
+            base @ (B::Symbol(_) | B::Pow(_) | B::Derivative(_)) => {
+                self.args.insert_mul(Mul::from_base(base))
+            }
         };
 
         self
     }
 
     fn reduce(self) -> Base {
+        pat!(use);
+
         match (self.coeff, self.args) {
             // x + {} => x
             (x, args) if args.is_empty() => x.base(),
@@ -150,9 +161,9 @@ impl Add {
 }
 
 impl CalcursType for Add {
-    #[inline]
+    #[inline(always)]
     fn base(self) -> Base {
-        B::Add(self)
+        Base::Add(self)
     }
 }
 
@@ -160,8 +171,7 @@ impl Display for Add {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.args)?;
 
-        if let pat!(Number: 0) = self.coeff {
-        } else {
+        if !self.coeff.is_zero() {
             write!(f, " + {}", self.coeff)?;
         }
 
@@ -174,38 +184,38 @@ impl Display for Add {
 /// k1 ^ v1 * k2 ^ v2 * k3 ^ v3 * ...
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct MulArgs {
-    pub(crate) args: BTreeMap<Base, Base>,
+    __args: BTreeMap<Base, Base>,
 }
 
 impl MulArgs {
     pub fn insert_pow(&mut self, mut pow: Pow) {
-        if let Some(exp) = self.args.remove(&pow.base) {
+        if let Some(exp) = self.__args.remove(&pow.base) {
             pow.exp = Add::add(exp, pow.exp);
-            self.args.insert(pow.base, pow.exp);
+            self.__args.insert(pow.base, pow.exp);
         } else {
-            self.args.insert(pow.base, pow.exp);
+            self.__args.insert(pow.base, pow.exp);
         }
     }
 
     #[inline]
     pub fn into_pow_iter(self) -> impl Iterator<Item = Pow> {
-        self.args.into_iter().map(|(base, exp)| Pow { base, exp })
+        self.__args.into_iter().map(|(base, exp)| Pow { base, exp })
     }
 
     #[inline]
     pub fn is_pow(&self) -> bool {
-        self.args.len() == 1
+        self.__args.len() == 1
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        self.args.len()
+        self.__args.len()
     }
 
     #[inline]
     pub fn into_pow(mut self) -> Option<Pow> {
         if self.is_pow() {
-            let (base, exp) = self.args.pop_first().unwrap();
+            let (base, exp) = self.__args.pop_first().unwrap();
             Some(Pow { base, exp })
         } else {
             None
@@ -214,20 +224,20 @@ impl MulArgs {
 
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.args.is_empty()
+        self.__args.is_empty()
     }
 
     #[inline]
     pub fn from_base(b: Base) -> Self {
         let pow = Pow::from_base(b);
-        let args = BTreeMap::from([(pow.base, pow.exp)]);
-        Self { args }
+        let __args = BTreeMap::from([(pow.base, pow.exp)]);
+        Self { __args }
     }
 }
 
 impl Display for MulArgs {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut iter = self.args.iter();
+        let mut iter = self.__args.iter();
 
         if let Some((base, exp)) = iter.next() {
             Pow::fmt_parts(base, exp, f)?;
@@ -273,6 +283,8 @@ impl Mul {
     }
 
     fn arg(mut self, b: Base) -> Self {
+        use Base as B;
+
         if B::Number(UNDEF) == b {
             self.coeff = Undefined.into();
             return self;
@@ -283,19 +295,27 @@ impl Mul {
         match b {
             B::Number(num) => self.coeff *= num,
             B::Pow(pow) => self.args.insert_pow(*pow),
-            B::Mul(mul) => {
+            B::Mul(mut mul) => {
+                if mul.args.len() > self.args.len() {
+                    (self, mul) = (mul, self);
+                }
+
                 self.coeff *= mul.coeff;
                 mul.args
                     .into_pow_iter()
                     .for_each(|pow| self.args.insert_pow(pow))
             }
-            base @ (B::Symbol(_) | B::Add(_)) => self.args.insert_pow(Pow::from_base(base)),
+            base @ (B::Symbol(_) | B::Add(_) | B::Derivative(_)) => {
+                self.args.insert_pow(Pow::from_base(base))
+            }
         }
 
         self
     }
 
     fn reduce(self) -> Base {
+        pat!(use);
+
         match (self.coeff, self.args) {
             (pat!(Number: undef), _) => Undefined.base(),
 
@@ -314,7 +334,7 @@ impl Mul {
 
     fn fmt_parts(args: &MulArgs, coeff: &Number, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if args.len() == 1 {
-            if let pat!(Number: 1) = coeff {
+            if coeff.is_one() {
                 write!(f, "{args}")?;
             } else {
                 write!(f, "{coeff}{args}")?;
@@ -335,8 +355,9 @@ impl Mul {
 }
 
 impl CalcursType for Mul {
+    #[inline(always)]
     fn base(self) -> Base {
-        B::Mul(self)
+        Base::Mul(self)
     }
 }
 
@@ -363,6 +384,8 @@ impl Pow {
     }
 
     fn reduce(self) -> Base {
+        pat!(use);
+
         match (self.base, self.exp) {
             (pat!(undef), _) | (_, pat!(undef)) => Undefined.base(),
 
@@ -394,18 +417,18 @@ impl Pow {
 
     #[inline]
     fn from_base(b: Base) -> Self {
-        if let B::Pow(pow) = b {
+        if let Base::Pow(pow) = b {
             *pow
         } else {
             Pow {
                 base: b,
-                exp: B::Number(ONE),
+                exp: Base::Number(ONE),
             }
         }
     }
 
     fn fmt_parts(base: &Base, exp: &Base, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if &B::Number(ONE) == exp {
+        if &Base::Number(ONE) == exp {
             write!(f, "{base}")
         } else {
             write!(f, "{base}^{exp}")
@@ -414,8 +437,9 @@ impl Pow {
 }
 
 impl CalcursType for Pow {
+    #[inline(always)]
     fn base(self) -> Base {
-        B::Pow(self.into())
+        Base::Pow(self.into())
     }
 }
 

@@ -57,10 +57,10 @@ impl Display for Sign {
 
 impl Sign {
     pub fn neg(&self) -> Self {
-        use Sign as D;
+        use Sign as S;
         match self {
-            D::Positive => D::Negative,
-            D::Negative => D::Positive,
+            S::Positive => S::Negative,
+            S::Negative => S::Positive,
         }
     }
 
@@ -112,7 +112,7 @@ impl Display for Infinity {
 }
 
 impl CalcursType for Infinity {
-    #[inline]
+    #[inline(always)]
     fn base(self) -> Base {
         Number::Infinity(self).base()
     }
@@ -187,7 +187,7 @@ impl Display for Undefined {
 }
 
 impl CalcursType for Undefined {
-    #[inline]
+    #[inline(always)]
     fn base(self) -> Base {
         Number::Undefined(self).base()
     }
@@ -197,6 +197,7 @@ impl CalcursType for Undefined {
 pub enum Number {
     Rational(Rational),
 
+    // TODO: move to base?
     Infinity(Infinity),
     Undefined(Undefined),
 }
@@ -213,43 +214,28 @@ macro_rules! for_each_number {
 
 impl Number {
     pub const fn is_zero(&self) -> bool {
-        if let pat!(Number: 0) = self {
-            true
-        } else {
-            false
-        }
+        pat!(use);
+        matches!(self, pat!(Number: 0))
     }
 
     pub const fn is_one(&self) -> bool {
-        if let pat!(Number: 1) = self {
-            true
-        } else {
-            false
-        }
+        pat!(use);
+        matches!(self, pat!(Number: 1))
     }
 
     pub const fn is_minus_one(&self) -> bool {
-        if let pat!(Number: -1) = self {
-            true
-        } else {
-            false
-        }
+        pat!(use);
+        matches!(self, pat!(Number: -1))
     }
 
     pub const fn is_negative(&self) -> bool {
-        if let pat!(Number: -) = self {
-            true
-        } else {
-            false
-        }
+        pat!(use);
+        matches!(self, pat!(Number: -))
     }
 
     pub const fn is_positive(&self) -> bool {
-        if let pat!(Number: +) = self {
-            true
-        } else {
-            false
-        }
+        pat!(use);
+        matches!(self, pat!(Number: +))
     }
 }
 
@@ -278,7 +264,7 @@ impl Display for Number {
 }
 
 impl CalcursType for Number {
-    #[inline]
+    #[inline(always)]
     fn base(self) -> Base {
         Base::Number(self)
     }

@@ -1,68 +1,121 @@
-macro_rules! pat {
-    (use) => {
+pub(crate) mod __ {
+    pub(crate) mod p {
         #[allow(unused_imports)]
-        use crate::{base::Base, numeric::{Number, Infinity, Undefined, Sign}, rational::{Rational, NonZeroUInt}};
-    };
+        pub(crate) use crate::{
+            base::Base,
+            numeric::{Infinity, Number, Sign, Undefined},
+            pattern::num_pat,
+            rational::{NonZeroUInt, Rational},
+        };
+    }
+}
 
-    (Number: 0) => {
-        Number::Rational(Rational { numer: 0, .. })
-    };
-
-    (Number: 1) => {
-        Number::Rational(Rational { numer: 1, denom: NonZeroUInt(1), sign: Sign::Positive })
-    };
-
-    (Number: -1) => {
-        Number::Rational(Rational { numer: 1, denom: NonZeroUInt(1), sign: Sign::Negative })
-    };
-
-    (Number: undef) => {
-        Number::Undefined(_)
-    };
-
-    (Number: +) => {
-        Number::Infinity(Infinity { sign: Sign::Positive })
-        | Number::Rational(Rational { sign: Sign::Positive, ..})
-    };
-
-    (Number: -) => {
-        Number::Infinity(Infinity { sign: Sign::Negative })
-        | Number::Rational(Rational { sign: Sign::Negative, ..})
+macro_rules! num_pat {
+    (base: $($n: tt)*) => {
+        p::Base::Number(p::num_pat!($($n)*))
     };
 
     (0) => {
-        Base::Number(pat!(Number: 0))
+        p::Number::Rational(p::Rational { numer: 0, .. })
     };
 
     (1) => {
-        Base::Number(pat!(Number: 1))
+        p::Number::Rational(p::Rational {
+            numer: 1,
+            denom: p::NonZeroUInt { non_zero_val: 1 },
+            sign: p::Sign::Positive,
+        })
     };
 
     (-1) => {
-        Base::Number(pat!(Number: -1))
+        p::Number::Rational(p::Rational {
+            numer: 1,
+            denom: p::NonZeroUInt { non_zero_val: 1 },
+            sign: p::Sign::Negative,
+        })
     };
 
     (undef) => {
-        Base::Number(pat!(Number: undef))
+        p::Number::Undefined(_)
+    };
+
+    //TODO: +oo?
+    (+) => {
+        Number::Rational(p::Rational {
+            sign: p::Sign::Positive,
+            ..
+        })
+    };
+
+    (-) => {
+        Number::Rational(p::Rational {
+            sign: p::Sign::Negative,
+            ..
+        })
+    };
+
+    ($n: ident) => {
+        p::Base::Number($n)
+    };
+
+    () => {
+        p::Base::Number(_)
     };
 
     (Rational: $r: ident) => {
-        Base::Number(Number::Rational($r))
+        p::Number::Rational($r)
+    }
+}
+
+macro_rules! pat {
+    (use) => {
+        use crate::pattern::__::p;
     };
 
-    (Number: $n: ident) => {
-        Base::Number($n)
+    // --- types ---
+
+    (Symbol: $s: ident) => {
+        p::Base::Symbol($s)
     };
 
-    // +Inf, +rational
+    (Number) => {
+        p::num_pat!()
+    };
+
+    (Number: $($n: tt)+) => {
+        p::num_pat!($($n)+)
+    };
+
+    (Rational: $r: ident) => {
+        p::num_pat!(base: Rational: $r)
+    };
+
+    // --- values ---
+
+    (0) => {
+        p::num_pat!(base: 0)
+    };
+
+    (1) => {
+        p::num_pat!(base: 1)
+    };
+
+    (-1) => {
+        p::num_pat!(base: -1)
+    };
+
+    (undef) => {
+        p::num_pat!(base: undef)
+    };
+
     (+) => {
-        Base::Number(pat!(Number: +))
+        p::num_pat!(base: +)
     };
 
-    // -Inf, -rational
     (-) => {
-        Base::Number(pat!(Number: -))
+        p::num_pat!(base: -)
     };
 }
 
+pub(crate) use num_pat;
 pub(crate) use pat;

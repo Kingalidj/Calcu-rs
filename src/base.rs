@@ -7,12 +7,13 @@ use std::{
 };
 
 use crate::{
+    derivative::Derivative,
     numeric::Number,
     operator::{Add, Div, Mul, Pow, Sub},
 };
 
 /// implemented by every symbolic math type
-pub trait CalcursType: Clone + Debug + Display {
+pub trait CalcursType: Clone + Debug {
     fn base(self) -> Base;
 }
 
@@ -41,7 +42,7 @@ impl Display for Symbol {
 }
 
 impl CalcursType for Symbol {
-    #[inline]
+    #[inline(always)]
     fn base(self) -> Base {
         Base::Symbol(self).base()
     }
@@ -51,10 +52,12 @@ impl CalcursType for Symbol {
 pub enum Base {
     Symbol(Symbol),
     Number(Number),
-    // Dummy,
+
     Add(Add),
     Mul(Mul),
     Pow(PTR<Pow>),
+
+    Derivative(Derivative),
 }
 
 #[macro_export]
@@ -83,26 +86,28 @@ macro_rules! base {
         Rational::frac_num($val, $denom).base()
     };
 
-    (v: $var: tt) => {
+    (v: $var: ident) => {
         Symbol::new(stringify!($var)).base()
     };
 }
 
 impl Display for Base {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use Base as B;
         match self {
-            Base::Symbol(v) => write!(f, "{v}"),
-            Base::Number(n) => write!(f, "{n}"),
-            // Base::Dummy => write!(f, "Dummy"),
-            Base::Add(a) => write!(f, "{a}"),
-            Base::Mul(m) => write!(f, "{m}"),
-            Base::Pow(p) => write!(f, "{p}"),
+            B::Symbol(v) => write!(f, "{v}"),
+            B::Number(n) => write!(f, "{n}"),
+
+            B::Add(a) => write!(f, "{a}"),
+            B::Mul(m) => write!(f, "{m}"),
+            B::Pow(p) => write!(f, "{p}"),
+            B::Derivative(d) => write!(f, "{:?}", d),
         }
     }
 }
 
 impl CalcursType for Base {
-    #[inline]
+    #[inline(always)]
     fn base(self) -> Self {
         self
     }
@@ -122,6 +127,7 @@ impl ops::Add for Base {
     }
 }
 
+// TODO: support add assign without clone
 impl ops::AddAssign for Base {
     fn add_assign(&mut self, rhs: Self) {
         *self = Add::add(self.clone(), rhs);
@@ -150,6 +156,7 @@ impl ops::Mul for Base {
     }
 }
 
+// TODO: support mul assign without clone
 impl ops::MulAssign for Base {
     fn mul_assign(&mut self, rhs: Self) {
         *self = Mul::mul(self.clone(), rhs);

@@ -17,7 +17,9 @@ type UInt = u64;
 /// will panic otherwise
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct NonZeroUInt(pub(crate) UInt);
+pub(crate) struct NonZeroUInt {
+    pub(crate) non_zero_val: UInt,
+}
 
 impl NonZeroUInt {
     #[inline]
@@ -26,7 +28,7 @@ impl NonZeroUInt {
         if n == 0 {
             panic!("NonZeroUInt::new: found 0");
         } else {
-            NonZeroUInt(n)
+            NonZeroUInt { non_zero_val: n }
         }
     }
 
@@ -36,7 +38,7 @@ impl NonZeroUInt {
             panic!("NonZeroUInt::set: found 0");
         }
 
-        self.0 = n;
+        self.non_zero_val = n;
     }
 
     /// panics if arg is 0
@@ -45,7 +47,7 @@ impl NonZeroUInt {
             panic!("NonZeroUInt::div: found 0");
         }
 
-        self.0 /= n;
+        self.non_zero_val /= n;
     }
 
     /// panics if arg is 0
@@ -54,7 +56,7 @@ impl NonZeroUInt {
             panic!("NonZeroUInt::div: found 0");
         }
 
-        self.0 *= n;
+        self.non_zero_val *= n;
     }
 }
 
@@ -63,7 +65,7 @@ impl Deref for NonZeroUInt {
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.non_zero_val
     }
 }
 
@@ -99,6 +101,7 @@ impl PartialEq for Rational {
 }
 
 impl CalcursType for Rational {
+    #[inline(always)]
     fn base(self) -> Base {
         Base::Number(self.into())
     }
@@ -147,13 +150,17 @@ impl Rational {
     }
 
     #[inline]
-    pub fn numer(&self) -> UInt {
+    pub const fn numer(&self) -> UInt {
         self.numer
     }
 
     #[inline]
     pub const fn denom(&self) -> UInt {
-        self.denom.0
+        self.denom.non_zero_val
+    }
+
+    pub const fn is_zero(&self) -> bool {
+        self.numer == 0
     }
 
     fn reduce(mut self) -> Self {
@@ -245,7 +252,7 @@ impl Rational {
 
     pub fn sub_ratio(self, other: Self) -> Self {
         let mut rhs = other;
-        rhs.sign = rhs.sign * Sign::Negative;
+        rhs.sign *= Sign::Negative;
         self.add_ratio(rhs)
     }
 
@@ -373,7 +380,7 @@ impl Display for Rational {
 
 impl Display for NonZeroUInt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}", self.non_zero_val)
     }
 }
 
@@ -381,6 +388,7 @@ impl Display for NonZeroUInt {
 mod rational_test {
 
     use crate::prelude::*;
+    use crate::rational::NonZeroUInt;
     use pretty_assertions::assert_eq;
 
     macro_rules! r {
@@ -403,5 +411,11 @@ mod rational_test {
         assert!(r!(2) >= r!(2));
         assert!(r!(2 / 4) <= r!(4 / 8));
         assert!(r!(5 / 128) > r!(11 / 2516));
+    }
+
+    #[test]
+    #[should_panic]
+    fn non_zero() {
+        NonZeroUInt::new(0);
     }
 }
