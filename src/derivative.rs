@@ -26,7 +26,7 @@ impl Derivative {
 
         match f {
             // d(n) / d(x) => 0
-            B::Number(_) => ZERO.base(),
+            B::Numeric(_) => ZERO.base(),
 
             // d(x) / d(x) => 1
             // d(y) / d(x) => 0
@@ -55,10 +55,15 @@ impl Derivative {
         }
     }
 
+    pub fn subs(self, _dict: &crate::base::SubsDict) -> Base {
+        //TODO: subs in derivative?
+        self.base()
+    }
+
     /// d(f + g) / d(x) => d(f) / d(x) + d(g) / d(x)
     ///
     /// apply summation rule
-    pub fn apply_sum(add: Add, x: &Symbol) -> Base {
+    fn apply_sum(add: Add, x: &Symbol) -> Base {
         let mut sum = ZERO.base();
         for mul in add.args.into_mul_iter() {
             sum += Derivative::apply_chain(mul, x);
@@ -69,7 +74,7 @@ impl Derivative {
     /// d(f * g) / d(x) => g * d(f) / d(x) + f * d(g) / d(x)
     ///
     /// apply chain rule
-    pub fn apply_chain(mul: Mul, x: &Symbol) -> Base {
+    fn apply_chain(mul: Mul, x: &Symbol) -> Base {
         // d(n * f) / d(x) => n * d(f) / d(x)
         let coeff = mul.coeff;
         let args: Vec<_> = mul.args.into_pow_iter().collect();
@@ -103,12 +108,12 @@ impl Derivative {
     // d(f^g) / d(x)
     //
     // apply power rule
-    pub fn apply_pow(p: Pow, x: &Symbol) -> Base {
+    fn apply_pow(p: Pow, x: &Symbol) -> Base {
         pat!(use);
 
         match (p.base, p.exp) {
             // n^m => 0
-            (pat!(Number), pat!(Number)) => ZERO.base(),
+            (pat!(Numeric), pat!(Numeric)) => ZERO.base(),
 
             // f^n => n * f^(n - 1)
             (f, pat!(Rational: n)) if !n.is_zero() => {

@@ -1,11 +1,12 @@
 use std::{
+    cmp::Ordering,
     fmt::{self, Display},
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
 use crate::{
-    base::{Base, CalcursType},
-    numeric::constants::UNDEF,
+    base::{Base, CalcursType, SubsDict},
+    numeric::constants::{ONE, UNDEF, ZERO},
     pattern::pat,
     rational::{NonZeroUInt, Rational},
 };
@@ -14,34 +15,44 @@ pub mod constants {
     pub use super::*;
 
     /// + (1 / 1)
-    pub const ONE: Number = Number::Rational(Rational {
+    pub const ONE: Numeric = Numeric::Rational(Rational {
         sign: Sign::Positive,
         numer: 1,
         denom: NonZeroUInt::new(1),
     });
 
     /// - (1 / 1)
-    pub const MINUS_ONE: Number = Number::Rational(Rational {
+    pub const MINUS_ONE: Numeric = Numeric::Rational(Rational {
         sign: Sign::Negative,
         numer: 1,
         denom: NonZeroUInt::new(1),
     });
 
     /// + (0 / 1)
-    pub const ZERO: Number = Number::Rational(Rational {
+    pub const ZERO: Numeric = Numeric::Rational(Rational {
         sign: Sign::Positive,
         numer: 0,
         denom: NonZeroUInt::new(1),
     });
 
     /// undefined
-    pub const UNDEF: Number = Number::Undefined(Undefined);
+    pub const UNDEF: Numeric = Numeric::Undefined(Undefined);
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Ord, Eq, Copy)]
+#[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Copy)]
 pub enum Sign {
     Positive,
     Negative,
+}
+
+impl Ord for Sign {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (Sign::Positive, Sign::Negative) => Ordering::Greater,
+            (Sign::Negative, Sign::Positive) => Ordering::Less,
+            (Sign::Negative, Sign::Negative) | (Sign::Positive, Sign::Positive) => Ordering::Equal,
+        }
+    }
 }
 
 impl Display for Sign {
@@ -114,7 +125,7 @@ impl Display for Infinity {
 impl CalcursType for Infinity {
     #[inline(always)]
     fn base(self) -> Base {
-        Number::Infinity(self).base()
+        Numeric::Infinity(self).base()
     }
 }
 
@@ -143,8 +154,8 @@ impl Infinity {
         }
     }
 
-    pub fn add_num(self, n: Number) -> Number {
-        use Number as N;
+    pub fn add_num(self, n: Numeric) -> Numeric {
+        use Numeric as N;
         match n {
             N::Rational(_) => self.into(),
             N::Infinity(inf) => match self.sign == inf.sign {
@@ -155,24 +166,24 @@ impl Infinity {
         }
     }
 
-    pub fn sub_num(self, n: Number) -> Number {
-        use Number as N;
+    pub fn sub_num(self, n: Numeric) -> Numeric {
+        use Numeric as N;
         match n {
             N::Rational(_) | N::Infinity(_) => self.into(),
             UNDEF => n,
         }
     }
 
-    pub fn mul_num(self, n: Number) -> Number {
-        use Number as N;
+    pub fn mul_num(self, n: Numeric) -> Numeric {
+        use Numeric as N;
         match n {
             N::Rational(r) => Infinity::new(self.sign * r.sign).into(),
             N::Infinity(inf) => Infinity::new(self.sign * inf.sign).into(),
-            UNDEF => n,
+            N::Undefined(_) => n,
         }
     }
 
-    pub fn div_num(self, n: Number) -> Number {
+    pub fn div_num(self, n: Numeric) -> Numeric {
         self.mul_num(n)
     }
 }
@@ -189,90 +200,122 @@ impl Display for Undefined {
 impl CalcursType for Undefined {
     #[inline(always)]
     fn base(self) -> Base {
-        Number::Undefined(self).base()
+        Numeric::Undefined(self).base()
     }
 }
 
-#[derive(Debug, Clone, Copy, Hash, PartialOrd, Ord, PartialEq, Eq)]
-pub enum Number {
+/// defines all numeric types
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub enum Numeric {
     Rational(Rational),
 
-    // TODO: move to base?
     Infinity(Infinity),
+
+    /// only used if the calculation itself is undefined, e.g 0 / 0
+    /// not the same as [f64::NAN]
     Undefined(Undefined),
+}
+
+impl Ord for Numeric {
+    fn cmp(&self, other: &Self) -> Ordering {
+        pat!(use);
+        match (self, other) {
+            (num_pat!(Rational: r1), num_pat!(Rational: r2)) => r1.cmp(r2),
+            (num_pat!(Infinity: i1), num_pat!(Infinity: i2)) => i1.cmp(i2),
+            (num_pat!(undef), num_pat!(undef)) => Ordering::Equal,
+
+            (_, num_pat!(undef)) => Ordering::Greater,
+            (num_pat!(undef), _) => Ordering::Less,
+
+            (num_pat!(Rational: _), num_pat!(+oo)) => Ordering::Less,
+            (num_pat!(+oo), num_pat!(Rational: _)) => Ordering::Greater,
+            (num_pat!(Rational: _), num_pat!(-oo)) => Ordering::Greater,
+            (num_pat!(-oo), num_pat!(Rational: _)) => Ordering::Less,
+        }
+    }
+}
+
+impl PartialOrd for Numeric {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 macro_rules! for_each_number {
     ($self: ident, $v:ident => $bod: tt) => {
         match $self {
-            Number::Rational($v) => $bod,
-            Number::Infinity($v) => $bod,
-            Number::Undefined($v) => $bod,
+            Numeric::Rational($v) => $bod,
+            Numeric::Infinity($v) => $bod,
+            Numeric::Undefined($v) => $bod,
         }
     };
 }
 
-impl Number {
+impl Numeric {
     pub const fn is_zero(&self) -> bool {
         pat!(use);
-        matches!(self, pat!(Number: 0))
+        matches!(self, pat!(Numeric: 0))
     }
 
     pub const fn is_one(&self) -> bool {
         pat!(use);
-        matches!(self, pat!(Number: 1))
+        matches!(self, pat!(Numeric: 1))
     }
 
     pub const fn is_minus_one(&self) -> bool {
         pat!(use);
-        matches!(self, pat!(Number: -1))
+        matches!(self, pat!(Numeric: -1))
     }
 
     pub const fn is_negative(&self) -> bool {
         pat!(use);
-        matches!(self, pat!(Number: -))
+        matches!(self, pat!(Numeric: -))
     }
 
     pub const fn is_positive(&self) -> bool {
         pat!(use);
-        matches!(self, pat!(Number: +))
+        matches!(self, pat!(Numeric: +))
+    }
+
+    pub fn subs(self, _dict: &SubsDict) -> Self {
+        self
     }
 }
 
-impl From<Rational> for Number {
+impl From<Rational> for Numeric {
     fn from(value: Rational) -> Self {
-        Number::Rational(value)
+        Numeric::Rational(value)
     }
 }
 
-impl From<Infinity> for Number {
+impl From<Infinity> for Numeric {
     fn from(value: Infinity) -> Self {
-        Number::Infinity(value)
+        Numeric::Infinity(value)
     }
 }
 
-impl From<Undefined> for Number {
+impl From<Undefined> for Numeric {
     fn from(value: Undefined) -> Self {
-        Number::Undefined(value)
+        Numeric::Undefined(value)
     }
 }
 
-impl Display for Number {
+impl Display for Numeric {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for_each_number!(self, v => { write!(f, "{v}")})
     }
 }
 
-impl CalcursType for Number {
+impl CalcursType for Numeric {
     #[inline(always)]
     fn base(self) -> Base {
-        Base::Number(self)
+        Base::Numeric(self)
     }
 }
 
-impl Number {
-    pub fn add_num(self, n: Number) -> Number {
-        use Number as N;
+impl Numeric {
+    pub fn add_num(self, n: Numeric) -> Numeric {
+        use Numeric as N;
         match (self, n) {
             (UNDEF, _) | (_, UNDEF) => UNDEF,
             (N::Infinity(inf), n) | (n, N::Infinity(inf)) => inf.add_num(n),
@@ -280,8 +323,8 @@ impl Number {
         }
     }
 
-    pub fn sub_num(self, n: Number) -> Number {
-        use Number as N;
+    pub fn sub_num(self, n: Numeric) -> Numeric {
+        use Numeric as N;
         match (self, n) {
             (UNDEF, _) | (_, UNDEF) => UNDEF,
             (N::Infinity(inf), n) => inf.sub_num(n),
@@ -290,8 +333,8 @@ impl Number {
         }
     }
 
-    pub fn mul_num(self, n: Number) -> Number {
-        use Number as N;
+    pub fn mul_num(self, n: Numeric) -> Numeric {
+        use Numeric as N;
         match (self, n) {
             (UNDEF, _) | (_, UNDEF) => UNDEF,
             (N::Infinity(inf), n) | (n, N::Infinity(inf)) => inf.mul_num(n),
@@ -299,8 +342,8 @@ impl Number {
         }
     }
 
-    pub fn div_num(self, n: Number) -> Number {
-        use Number as N;
+    pub fn div_num(self, n: Numeric) -> Numeric {
+        use Numeric as N;
         match (self, n) {
             (UNDEF, _) | (_, UNDEF) => UNDEF,
             (N::Infinity(inf), n) => inf.div_num(n),
@@ -310,8 +353,48 @@ impl Number {
         }
     }
 
-    fn sub_inf(self, inf: Infinity) -> Number {
-        use Number as N;
+    pub fn checked_pow_num(self, n: Numeric) -> Option<Numeric> {
+        pat!(use);
+
+        Some(match (self, n) {
+            (_, num_pat!(undef)) | (num_pat!(undef), _) => UNDEF,
+
+            // 0^0 = undefined
+            (num_pat!(0), num_pat!(0)) => UNDEF,
+
+            // x^(-oo) = 0
+            (num_pat!(Rational: _), num_pat!(-oo)) => ZERO,
+
+            // x^(+oo) = +oo
+            (num_pat!(Rational: _), num_pat!(+oo)) => Infinity::pos().into(),
+
+            // 1^x = 1
+            (num_pat!(1), _) => ONE,
+
+            // x^0 = 1 | x != 0
+            (n, num_pat!(0)) if !n.is_zero() => ONE,
+
+            // 0^x = undefined | x < 0
+            (num_pat!(0), num_pat!(-)) => UNDEF,
+
+            // 0^x = 0 | x > 0
+            (num_pat!(0), num_pat!(+)) => ZERO,
+
+            // n^-1 = 1/n | n != 0
+            (num_pat!(Rational: r), num_pat!(-1)) => (Rational::one() / r).into(),
+
+            (num_pat!(Rational: r1), num_pat!(Rational: r2)) => {
+                let exp = r2.numer;
+
+                todo!()
+            }
+
+            _ => todo!(),
+        })
+    }
+
+    fn sub_inf(self, inf: Infinity) -> Numeric {
+        use Numeric as N;
         match self {
             N::Rational(_) => inf.into(),
             N::Infinity(i) => i.sub_num(inf.into()),
@@ -319,8 +402,8 @@ impl Number {
         }
     }
 
-    fn div_inf(self, mut inf: Infinity) -> Number {
-        use Number as N;
+    fn div_inf(self, mut inf: Infinity) -> Numeric {
+        use Numeric as N;
         match self {
             N::Rational(r) => {
                 inf.sign *= r.sign;
@@ -332,57 +415,57 @@ impl Number {
     }
 }
 
-impl Add for Number {
-    type Output = Number;
+impl Add for Numeric {
+    type Output = Numeric;
 
     fn add(self, rhs: Self) -> Self::Output {
         self.add_num(rhs)
     }
 }
 
-impl AddAssign for Number {
+impl AddAssign for Numeric {
     fn add_assign(&mut self, rhs: Self) {
         *self = self.add_num(rhs);
     }
 }
 
-impl Sub for Number {
-    type Output = Number;
+impl Sub for Numeric {
+    type Output = Numeric;
 
     fn sub(self, rhs: Self) -> Self::Output {
         self.sub_num(rhs)
     }
 }
 
-impl SubAssign for Number {
+impl SubAssign for Numeric {
     fn sub_assign(&mut self, rhs: Self) {
         *self = self.sub_num(rhs);
     }
 }
 
-impl Mul for Number {
-    type Output = Number;
+impl Mul for Numeric {
+    type Output = Numeric;
 
     fn mul(self, rhs: Self) -> Self::Output {
         self.mul_num(rhs)
     }
 }
 
-impl MulAssign for Number {
+impl MulAssign for Numeric {
     fn mul_assign(&mut self, rhs: Self) {
         *self = self.mul_num(rhs);
     }
 }
 
-impl Div for Number {
-    type Output = Number;
+impl Div for Numeric {
+    type Output = Numeric;
 
     fn div(self, rhs: Self) -> Self::Output {
         self.div_num(rhs)
     }
 }
 
-impl DivAssign for Number {
+impl DivAssign for Numeric {
     fn div_assign(&mut self, rhs: Self) {
         *self = self.div_num(rhs);
     }

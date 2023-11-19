@@ -7,7 +7,7 @@ use crate::{
     base::{Base, CalcursType},
     numeric::{
         constants::{MINUS_ONE, ONE, UNDEF, ZERO},
-        Number, Undefined,
+        Numeric, Undefined,
     },
     pattern::pat,
     rational::Rational,
@@ -19,14 +19,14 @@ use crate::{
 /// <=> n1 * {pow_1_1 * pow_1_2 * ... } + n2 * { pow_2_1 * pow_2_2 * ...} + ...
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub(crate) struct AddArgs {
-    __args: BTreeMap<MulArgs, Number>,
+    __args: BTreeMap<MulArgs, Numeric>,
 }
 
 impl AddArgs {
     pub fn insert_mul(&mut self, mul: Mul) {
         pat!(use);
 
-        if let pat!(Number: 0) = mul.coeff {
+        if let pat!(Numeric: 0) = mul.coeff {
             return;
         }
 
@@ -98,7 +98,7 @@ impl Display for AddArgs {
 /// coeff + mul1 + mul2 + mul3...
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Add {
-    pub(crate) coeff: Number,
+    pub(crate) coeff: Numeric,
     pub(crate) args: AddArgs,
 }
 
@@ -122,10 +122,18 @@ impl Add {
         Add::add(n1, Mul::mul(MINUS_ONE, n2))
     }
 
+    pub fn subs(self, dict: &crate::base::SubsDict) -> Base {
+        let mut sum = self.coeff.base();
+        for mul in self.args.into_mul_iter() {
+            sum += mul.subs(dict);
+        }
+        sum
+    }
+
     fn arg(mut self, b: Base) -> Self {
         use Base as B;
         match b {
-            B::Number(num) => self.coeff += num,
+            B::Numeric(num) => self.coeff += num,
             B::Mul(mul) => self.args.insert_mul(mul),
             B::Add(mut add) => {
                 if add.args.len() > self.args.len() {
@@ -153,7 +161,7 @@ impl Add {
             // x + {} => x
             (x, args) if args.is_empty() => x.base(),
             // 0 + x * y => x * y
-            (pat!(Number: 0), x) if x.is_mul() => x.into_mul().unwrap().base(),
+            (pat!(Numeric: 0), x) if x.is_mul() => x.into_mul().unwrap().base(),
 
             (coeff, args) => Self { coeff, args }.base(),
         }
@@ -258,7 +266,7 @@ impl Display for MulArgs {
 /// coeff * pow1 * pow2 * pow3...
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Mul {
-    pub(crate) coeff: Number,
+    pub(crate) coeff: Numeric,
     pub(crate) args: MulArgs,
 }
 
@@ -282,18 +290,26 @@ impl Mul {
         Mul::mul(n1, Pow::pow(n2, MINUS_ONE))
     }
 
+    pub fn subs(self, dict: &crate::base::SubsDict) -> Base {
+        let mut prod = self.coeff.base();
+        for pow in self.args.into_pow_iter() {
+            prod *= pow.subs(dict);
+        }
+        prod
+    }
+
     fn arg(mut self, b: Base) -> Self {
         use Base as B;
 
-        if B::Number(UNDEF) == b {
+        if B::Numeric(UNDEF) == b {
             self.coeff = Undefined.into();
             return self;
-        } else if self.coeff == ZERO || B::Number(ONE) == b {
+        } else if self.coeff == ZERO || B::Numeric(ONE) == b {
             return self;
         }
 
         match b {
-            B::Number(num) => self.coeff *= num,
+            B::Numeric(num) => self.coeff *= num,
             B::Pow(pow) => self.args.insert_pow(*pow),
             B::Mul(mut mul) => {
                 if mul.args.len() > self.args.len() {
@@ -317,13 +333,13 @@ impl Mul {
         pat!(use);
 
         match (self.coeff, self.args) {
-            (pat!(Number: undef), _) => Undefined.base(),
+            (pat!(Numeric: undef), _) => Undefined.base(),
 
             // 0 * x => 0
-            (pat!(Number: 0), _) => ZERO.base(),
+            (pat!(Numeric: 0), _) => ZERO.base(),
 
             // 1 * x => x
-            (pat!(Number: 1), args) if args.is_pow() => args.into_pow().unwrap().base(),
+            (pat!(Numeric: 1), args) if args.is_pow() => args.into_pow().unwrap().base(),
 
             // x * {} => x
             (coeff, args) if args.is_empty() => coeff.base(),
@@ -332,7 +348,7 @@ impl Mul {
         }
     }
 
-    fn fmt_parts(args: &MulArgs, coeff: &Number, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_parts(args: &MulArgs, coeff: &Numeric, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if args.len() == 1 {
             if coeff.is_one() {
                 write!(f, "{args}")?;
@@ -367,6 +383,7 @@ impl Display for Mul {
     }
 }
 
+// TODO: pow of number
 /// base^exp
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Pow {
@@ -381,6 +398,12 @@ impl Pow {
             exp: n2.base(),
         }
         .reduce()
+    }
+
+    pub fn subs(self, dict: &crate::base::SubsDict) -> Base {
+        let base = self.base.subs(dict);
+        let exp = self.exp.subs(dict);
+        Pow::pow(base, exp)
     }
 
     fn reduce(self) -> Base {
@@ -399,7 +422,7 @@ impl Pow {
             (x, pat!(1)) => x,
 
             // x^0 = 1 | x != 0
-            (pat!(Number: n), pat!(0)) if !n.is_zero() => ONE.base(),
+            (pat!(Numeric: n), pat!(0)) if !n.is_zero() => ONE.base(),
 
             // 0^x = undefined | x < 0
             (pat!(0), pat!(-)) => Undefined.base(),
@@ -422,13 +445,13 @@ impl Pow {
         } else {
             Pow {
                 base: b,
-                exp: Base::Number(ONE),
+                exp: Base::Numeric(ONE),
             }
         }
     }
 
     fn fmt_parts(base: &Base, exp: &Base, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if &Base::Number(ONE) == exp {
+        if &Base::Numeric(ONE) == exp {
             write!(f, "{base}")
         } else {
             write!(f, "{base}^{exp}")

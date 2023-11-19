@@ -1,14 +1,12 @@
 use std::{
-    cell::RefCell,
     collections::HashMap,
     fmt::{Debug, Display},
     ops,
-    rc::Rc,
 };
 
 use crate::{
     derivative::Derivative,
-    numeric::Number,
+    numeric::Numeric,
     operator::{Add, Div, Mul, Pow, Sub},
 };
 
@@ -18,7 +16,7 @@ pub trait CalcursType: Clone + Debug {
 }
 
 pub type PTR<T> = Box<T>;
-pub type SubsDict = Rc<RefCell<HashMap<Symbol, Base>>>;
+pub type SubsDict<'a> = HashMap<String, Base>;
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Ord, Eq, Hash)]
 pub struct Symbol {
@@ -32,6 +30,14 @@ impl Symbol {
 
     pub fn is_zero(&self) -> bool {
         false
+    }
+
+    pub fn subs(&self, dict: &SubsDict) -> Base {
+        if let Some(key) = dict.get(&self.name) {
+            key.clone()
+        } else {
+            self.clone().base()
+        }
     }
 }
 
@@ -51,7 +57,7 @@ impl CalcursType for Symbol {
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Base {
     Symbol(Symbol),
-    Number(Number),
+    Numeric(Numeric),
 
     Add(Add),
     Mul(Mul),
@@ -96,7 +102,7 @@ impl Display for Base {
         use Base as B;
         match self {
             B::Symbol(v) => write!(f, "{v}"),
-            B::Number(n) => write!(f, "{n}"),
+            B::Numeric(n) => write!(f, "{n}"),
 
             B::Add(a) => write!(f, "{a}"),
             B::Mul(m) => write!(f, "{m}"),
@@ -110,6 +116,19 @@ impl CalcursType for Base {
     #[inline(always)]
     fn base(self) -> Self {
         self
+    }
+}
+
+impl Base {
+    pub fn subs(self, dict: &SubsDict) -> Base {
+        match self {
+            Base::Symbol(s) => s.subs(dict),
+            Base::Numeric(n) => n.subs(dict).base(),
+            Base::Add(a) => a.subs(dict),
+            Base::Mul(m) => m.subs(dict),
+            Base::Pow(p) => p.subs(dict),
+            Base::Derivative(d) => d.subs(dict),
+        }
     }
 }
 
@@ -188,5 +207,21 @@ impl ops::BitXor for Base {
 impl ops::BitXorAssign for Base {
     fn bitxor_assign(&mut self, rhs: Self) {
         *self = Pow::pow(self.clone(), rhs);
+    }
+}
+
+#[cfg(test)]
+mod base_test {
+
+    use crate::prelude::*;
+    use pretty_assertions::assert_eq;
+    use std::collections::HashMap;
+
+    #[test]
+    fn subs() {
+        let dict = HashMap::from([("x".to_owned(), base!(2))]);
+
+        let expr = base!(v: x) ^ base!(2) + base!(4) * base!(v: x) + base!(3);
+        assert_eq!(expr.subs(&dict), base!(15));
     }
 }
