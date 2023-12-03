@@ -1,8 +1,8 @@
 use crate::{
     base::{Base, CalcursType, Symbol, PTR},
-    numeric::constants::{ONE, ZERO},
     operator::{Add, Mul, Pow, Sub},
-    pattern::pat,
+    pattern::itm,
+    rational::Rational,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -26,11 +26,16 @@ impl Derivative {
 
         match f {
             // d(n) / d(x) => 0
-            B::Numeric(_) => ZERO.base(),
+            B::Numeric(_) => Rational::one().base(),
 
             // d(x) / d(x) => 1
             // d(y) / d(x) => 0
-            B::Symbol(ref sym) => if sym == x { ONE } else { ZERO }.base(),
+            B::Symbol(ref sym) => if sym == x {
+                Rational::one()
+            } else {
+                Rational::zero()
+            }
+            .base(),
 
             // sum rule
             B::Add(add) => Self::apply_sum(add, x),
@@ -64,7 +69,7 @@ impl Derivative {
     ///
     /// apply summation rule
     fn apply_sum(add: Add, x: &Symbol) -> Base {
-        let mut sum = ZERO.base();
+        let mut sum = Rational::zero().base();
         for mul in add.args.into_mul_iter() {
             sum += Derivative::apply_chain(mul, x);
         }
@@ -86,7 +91,7 @@ impl Derivative {
             derivs.push(deriv);
         }
 
-        let mut sum = ZERO.base();
+        let mut sum = Rational::zero().base();
 
         // (f * g * h * ...)' => f' * g * h * ... + f * g' * h * ... + ...
         for (i, deriv) in derivs.into_iter().enumerate() {
@@ -109,15 +114,13 @@ impl Derivative {
     //
     // apply power rule
     fn apply_pow(p: Pow, x: &Symbol) -> Base {
-        pat!(use);
-
         match (p.base, p.exp) {
             // n^m => 0
-            (pat!(Numeric), pat!(Numeric)) => ZERO.base(),
+            (itm!(Numeric: _), itm!(Numeric: _)) => Rational::zero().base(),
 
             // f^n => n * f^(n - 1)
-            (f, pat!(Rational: n)) if !n.is_zero() => {
-                Mul::mul(n, Pow::pow(f, Sub::sub(n, ONE))).base()
+            (f, itm!(Rational: n)) if !n.is_zero() => {
+                Mul::mul(n, Pow::pow(f, Sub::sub(n, Rational::one()))).base()
             }
 
             // TODO: 1 / f

@@ -85,11 +85,11 @@ macro_rules! base {
     };
 
     ($int: literal) => {
-        Rational::int_num($int).base()
+        Rational::from($int).base()
     };
 
     ($val: literal / $denom: literal) => {
-        Rational::frac_num($val, $denom).base()
+        Rational::from(($val, $denom)).base()
     };
 
     (v: $var: ident) => {

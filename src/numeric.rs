@@ -1,3 +1,4 @@
+use num::integer::Roots;
 use std::{
     cmp::Ordering,
     fmt::{self, Display},
@@ -6,38 +7,9 @@ use std::{
 
 use crate::{
     base::{Base, CalcursType, SubsDict},
-    numeric::constants::{ONE, UNDEF, ZERO},
-    pattern::pat,
-    rational::{NonZeroUInt, Rational},
+    pattern::itm,
+    rational::{NonZero, Rational},
 };
-
-pub mod constants {
-    pub use super::*;
-
-    /// + (1 / 1)
-    pub const ONE: Numeric = Numeric::Rational(Rational {
-        sign: Sign::Positive,
-        numer: 1,
-        denom: NonZeroUInt::new(1),
-    });
-
-    /// - (1 / 1)
-    pub const MINUS_ONE: Numeric = Numeric::Rational(Rational {
-        sign: Sign::Negative,
-        numer: 1,
-        denom: NonZeroUInt::new(1),
-    });
-
-    /// + (0 / 1)
-    pub const ZERO: Numeric = Numeric::Rational(Rational {
-        sign: Sign::Positive,
-        numer: 0,
-        denom: NonZeroUInt::new(1),
-    });
-
-    /// undefined
-    pub const UNDEF: Numeric = Numeric::Undefined(Undefined);
-}
 
 #[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Copy)]
 pub enum Sign {
@@ -136,6 +108,11 @@ impl Infinity {
     }
 
     #[inline]
+    pub fn num(self) -> Numeric {
+        self.into()
+    }
+
+    #[inline]
     pub fn is_zero(&self) -> bool {
         false
     }
@@ -157,12 +134,12 @@ impl Infinity {
     pub fn add_num(self, n: Numeric) -> Numeric {
         use Numeric as N;
         match n {
-            N::Rational(_) => self.into(),
+            N::Rational(_) => self.num(),
             N::Infinity(inf) => match self.sign == inf.sign {
-                true => self.into(),
-                false => UNDEF,
+                true => self.num(),
+                false => Undefined.num(),
             },
-            UNDEF => n,
+            N::Undefined(_) => n,
         }
     }
 
@@ -170,7 +147,7 @@ impl Infinity {
         use Numeric as N;
         match n {
             N::Rational(_) | N::Infinity(_) => self.into(),
-            UNDEF => n,
+            N::Undefined(_) => n,
         }
     }
 
@@ -190,6 +167,12 @@ impl Infinity {
 
 #[derive(Debug, Clone, Hash, PartialOrd, Ord, PartialEq, Eq, Copy)]
 pub struct Undefined;
+
+impl Undefined {
+    pub fn num(self) -> Numeric {
+        self.into()
+    }
+}
 
 impl Display for Undefined {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -218,19 +201,18 @@ pub enum Numeric {
 
 impl Ord for Numeric {
     fn cmp(&self, other: &Self) -> Ordering {
-        pat!(use);
         match (self, other) {
-            (num_pat!(Rational: r1), num_pat!(Rational: r2)) => r1.cmp(r2),
-            (num_pat!(Infinity: i1), num_pat!(Infinity: i2)) => i1.cmp(i2),
-            (num_pat!(undef), num_pat!(undef)) => Ordering::Equal,
+            (itm!(num: Rational: r1), itm!(num: Rational: r2)) => r1.cmp(r2),
+            (itm!(num: Infinity: i1), itm!(num: Infinity: i2)) => i1.cmp(i2),
+            (itm!(num: undef), itm!(num: undef)) => Ordering::Equal,
 
-            (_, num_pat!(undef)) => Ordering::Greater,
-            (num_pat!(undef), _) => Ordering::Less,
+            (_, itm!(num: undef)) => Ordering::Greater,
+            (itm!(num: undef), _) => Ordering::Less,
 
-            (num_pat!(Rational: _), num_pat!(+oo)) => Ordering::Less,
-            (num_pat!(+oo), num_pat!(Rational: _)) => Ordering::Greater,
-            (num_pat!(Rational: _), num_pat!(-oo)) => Ordering::Greater,
-            (num_pat!(-oo), num_pat!(Rational: _)) => Ordering::Less,
+            (itm!(num: Rational: _), itm!(num: +oo)) => Ordering::Less,
+            (itm!(num: +oo), itm!(num: Rational: _)) => Ordering::Greater,
+            (itm!(num: Rational: _), itm!(num: -oo)) => Ordering::Greater,
+            (itm!(num: -oo), itm!(num: Rational: _)) => Ordering::Less,
         }
     }
 }
@@ -253,28 +235,23 @@ macro_rules! for_each_number {
 
 impl Numeric {
     pub const fn is_zero(&self) -> bool {
-        pat!(use);
-        matches!(self, pat!(Numeric: 0))
+        matches!(self, itm!(num: 0))
     }
 
     pub const fn is_one(&self) -> bool {
-        pat!(use);
-        matches!(self, pat!(Numeric: 1))
+        matches!(self, itm!(num: 1))
     }
 
     pub const fn is_minus_one(&self) -> bool {
-        pat!(use);
-        matches!(self, pat!(Numeric: -1))
+        matches!(self, itm!(num: -1))
     }
 
     pub const fn is_negative(&self) -> bool {
-        pat!(use);
-        matches!(self, pat!(Numeric: -))
+        matches!(self, itm!(num: -))
     }
 
     pub const fn is_positive(&self) -> bool {
-        pat!(use);
-        matches!(self, pat!(Numeric: +))
+        matches!(self, itm!(num: +))
     }
 
     pub fn subs(self, _dict: &SubsDict) -> Self {
@@ -317,7 +294,7 @@ impl Numeric {
     pub fn add_num(self, n: Numeric) -> Numeric {
         use Numeric as N;
         match (self, n) {
-            (UNDEF, _) | (_, UNDEF) => UNDEF,
+            (N::Undefined(_), _) | (_, N::Undefined(_)) => Undefined.into(),
             (N::Infinity(inf), n) | (n, N::Infinity(inf)) => inf.add_num(n),
             (N::Rational(r1), N::Rational(r2)) => r1.add_ratio(r2).into(),
         }
@@ -326,7 +303,7 @@ impl Numeric {
     pub fn sub_num(self, n: Numeric) -> Numeric {
         use Numeric as N;
         match (self, n) {
-            (UNDEF, _) | (_, UNDEF) => UNDEF,
+            (N::Undefined(_), _) | (_, N::Undefined(_)) => Undefined.into(),
             (N::Infinity(inf), n) => inf.sub_num(n),
             (n, N::Infinity(inf)) => n.sub_inf(inf),
             (N::Rational(r1), N::Rational(r2)) => r1.sub_ratio(r2).into(),
@@ -336,7 +313,7 @@ impl Numeric {
     pub fn mul_num(self, n: Numeric) -> Numeric {
         use Numeric as N;
         match (self, n) {
-            (UNDEF, _) | (_, UNDEF) => UNDEF,
+            (N::Undefined(_), _) | (_, N::Undefined(_)) => Undefined.into(),
             (N::Infinity(inf), n) | (n, N::Infinity(inf)) => inf.mul_num(n),
             (N::Rational(r1), N::Rational(r2)) => r1.mul_ratio(r2).into(),
         }
@@ -345,7 +322,7 @@ impl Numeric {
     pub fn div_num(self, n: Numeric) -> Numeric {
         use Numeric as N;
         match (self, n) {
-            (UNDEF, _) | (_, UNDEF) => UNDEF,
+            (N::Undefined(_), _) | (_, N::Undefined(_)) => Undefined.into(),
             (N::Infinity(inf), n) => inf.div_num(n),
             (n, N::Infinity(inf)) => n.div_inf(inf),
 
@@ -354,42 +331,66 @@ impl Numeric {
     }
 
     pub fn checked_pow_num(self, n: Numeric) -> Option<Numeric> {
-        pat!(use);
-
+        //let test: itm!(num: Undefined) = Undefined;
         Some(match (self, n) {
-            (_, num_pat!(undef)) | (num_pat!(undef), _) => UNDEF,
+            (_, itm!(num: undef)) | (itm!(num: undef), _) => Undefined.num(),
 
             // 0^0 = undefined
-            (num_pat!(0), num_pat!(0)) => UNDEF,
+            (itm!(num: 0), itm!(num: 0)) => Undefined.num(),
 
             // x^(-oo) = 0
-            (num_pat!(Rational: _), num_pat!(-oo)) => ZERO,
+            (itm!(num: Rational: _), itm!(num: -oo)) => Rational::zero().num(),
 
             // x^(+oo) = +oo
-            (num_pat!(Rational: _), num_pat!(+oo)) => Infinity::pos().into(),
+            (itm!(num: Rational: _), itm!(num: +oo)) => Infinity::pos().num(),
 
             // 1^x = 1
-            (num_pat!(1), _) => ONE,
+            (itm!(num: 1), _) => Rational::one().num(),
 
             // x^0 = 1 | x != 0
-            (n, num_pat!(0)) if !n.is_zero() => ONE,
+            (n, itm!(num: 0)) if !n.is_zero() => Rational::one().num(),
 
             // 0^x = undefined | x < 0
-            (num_pat!(0), num_pat!(-)) => UNDEF,
+            (itm!(num: 0), itm!(num: -)) => Undefined.num(),
 
             // 0^x = 0 | x > 0
-            (num_pat!(0), num_pat!(+)) => ZERO,
+            (itm!(num: 0), itm!(num: +)) => Rational::zero().num(),
 
             // n^-1 = 1/n | n != 0
-            (num_pat!(Rational: r), num_pat!(-1)) => (Rational::one() / r).into(),
+            (itm!(num: Rational: r), itm!(num: -1)) => (Rational::one() / r).num(),
 
-            (num_pat!(Rational: r1), num_pat!(Rational: r2)) => {
-                let exp = r2.numer;
+            (itm!(num: Rational: r1), itm!(num: Rational: r2)) => {
+                let exp = r2.try_apply_exp()?.reduce_frac();
+                let base = r1.try_apply_exp()?.reduce_frac();
 
-                todo!()
+                let mut root = base.numer;
+                if exp.denom() != 1 {
+                    root = base.numer.nth_root(exp.denom().try_into().ok()?);
+                    if root * root != base.numer {
+                        return None;
+                    };
+                }
+                let numer = root.pow(exp.numer.try_into().ok()?);
+
+                let mut root = base.denom();
+                if exp.denom() != 1 {
+                    root = base.denom().nth_root(exp.denom().try_into().ok()?);
+                    if root * root != base.denom() {
+                        return None;
+                    };
+                }
+                let denom = root.pow(exp.numer.try_into().ok()?);
+
+                let sign = if exp.numer() % 2 == 0 {
+                    Sign::Positive
+                } else {
+                    base.sign
+                };
+
+                Rational::reduced(sign, numer, NonZero::new(denom), 0).num()
             }
 
-            _ => todo!(),
+            _ => return None,
         })
     }
 
@@ -398,7 +399,7 @@ impl Numeric {
         match self {
             N::Rational(_) => inf.into(),
             N::Infinity(i) => i.sub_num(inf.into()),
-            UNDEF => self,
+            N::Undefined(_) => self,
         }
     }
 
@@ -410,7 +411,7 @@ impl Numeric {
                 inf.into()
             }
             N::Infinity(i) => i.div_num(inf.into()),
-            UNDEF => self,
+            N::Undefined(_) => self,
         }
     }
 }

@@ -5,11 +5,8 @@ use std::{
 
 use crate::{
     base::{Base, CalcursType},
-    numeric::{
-        constants::{MINUS_ONE, ONE, UNDEF, ZERO},
-        Numeric, Undefined,
-    },
-    pattern::pat,
+    numeric::{Numeric, Undefined},
+    pattern::itm,
     rational::Rational,
 };
 
@@ -19,14 +16,13 @@ use crate::{
 /// <=> n1 * {pow_1_1 * pow_1_2 * ... } + n2 * { pow_2_1 * pow_2_2 * ...} + ...
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub(crate) struct AddArgs {
+    // TODO: maybe Vec<(_, _)>?
     __args: BTreeMap<MulArgs, Numeric>,
 }
 
 impl AddArgs {
     pub fn insert_mul(&mut self, mul: Mul) {
-        pat!(use);
-
-        if let pat!(Numeric: 0) = mul.coeff {
+        if mul.coeff.is_zero() {
             return;
         }
 
@@ -108,7 +104,7 @@ impl Add {
     /// n1 + n2
     pub fn add(n1: impl CalcursType, n2: impl CalcursType) -> Base {
         Self {
-            coeff: ZERO,
+            coeff: Rational::zero().num(),
             args: Default::default(),
         }
         .arg(n1.base())
@@ -119,7 +115,7 @@ impl Add {
     /// n1 + (-1 * n2)
     #[inline]
     pub fn sub(n1: impl CalcursType, n2: impl CalcursType) -> Base {
-        Add::add(n1, Mul::mul(MINUS_ONE, n2))
+        Add::add(n1, Mul::mul(Rational::minus_one(), n2))
     }
 
     pub fn subs(self, dict: &crate::base::SubsDict) -> Base {
@@ -155,13 +151,11 @@ impl Add {
     }
 
     fn reduce(self) -> Base {
-        pat!(use);
-
         match (self.coeff, self.args) {
             // x + {} => x
             (x, args) if args.is_empty() => x.base(),
             // 0 + x * y => x * y
-            (pat!(Numeric: 0), x) if x.is_mul() => x.into_mul().unwrap().base(),
+            (itm!(num: 0), x) if x.is_mul() => x.into_mul().unwrap().base(),
 
             (coeff, args) => Self { coeff, args }.base(),
         }
@@ -221,7 +215,7 @@ impl MulArgs {
     }
 
     #[inline]
-    pub fn into_pow(mut self) -> Option<Pow> {
+    pub fn try_into_pow(mut self) -> Option<Pow> {
         if self.is_pow() {
             let (base, exp) = self.__args.pop_first().unwrap();
             Some(Pow { base, exp })
@@ -276,7 +270,7 @@ impl Mul {
     /// n1 * n2
     pub fn mul(n1: impl CalcursType, n2: impl CalcursType) -> Base {
         Self {
-            coeff: ONE,
+            coeff: Rational::one().num(),
             args: MulArgs::default(),
         }
         .arg(n1.base())
@@ -287,7 +281,7 @@ impl Mul {
     /// n1 * (1 / n2)
     #[inline]
     pub fn div(n1: impl CalcursType, n2: impl CalcursType) -> Base {
-        Mul::mul(n1, Pow::pow(n2, MINUS_ONE))
+        Mul::mul(n1, Pow::pow(n2, Rational::minus_one()))
     }
 
     pub fn subs(self, dict: &crate::base::SubsDict) -> Base {
@@ -301,10 +295,10 @@ impl Mul {
     fn arg(mut self, b: Base) -> Self {
         use Base as B;
 
-        if B::Numeric(UNDEF) == b {
+        if Undefined.base() == b {
             self.coeff = Undefined.into();
             return self;
-        } else if self.coeff == ZERO || B::Numeric(ONE) == b {
+        } else if self.coeff == Rational::zero().num() || Rational::one().base() == b {
             return self;
         }
 
@@ -330,16 +324,14 @@ impl Mul {
     }
 
     fn reduce(self) -> Base {
-        pat!(use);
-
         match (self.coeff, self.args) {
-            (pat!(Numeric: undef), _) => Undefined.base(),
+            (itm!(num: undef), _) => Undefined.base(),
 
             // 0 * x => 0
-            (pat!(Numeric: 0), _) => ZERO.base(),
+            (itm!(num: 0), _) => Rational::zero().base(),
 
             // 1 * x => x
-            (pat!(Numeric: 1), args) if args.is_pow() => args.into_pow().unwrap().base(),
+            (itm!(num: 1), args) if args.is_pow() => args.try_into_pow().unwrap().base(),
 
             // x * {} => x
             (coeff, args) if args.is_empty() => coeff.base(),
@@ -364,7 +356,7 @@ impl Mul {
     #[inline]
     fn from_base(b: Base) -> Self {
         Self {
-            coeff: ONE,
+            coeff: Rational::one().num(),
             args: MulArgs::from_base(b),
         }
     }
@@ -407,31 +399,39 @@ impl Pow {
     }
 
     fn reduce(self) -> Base {
-        pat!(use);
-
         match (self.base, self.exp) {
-            (pat!(undef), _) | (_, pat!(undef)) => Undefined.base(),
+            (itm!(undef), _) | (_, itm!(undef)) => Undefined.base(),
 
             // 0^0 = undefined
-            (pat!(0), pat!(0)) => Undefined.base(),
+            (itm!(0), itm!(0)) => Undefined.base(),
 
             // 1^x = 1
-            (pat!(1), _) => ONE.base(),
+            (itm!(1), _) => Rational::one().base(),
 
             // x^1 = x
-            (x, pat!(1)) => x,
+            (x, itm!(1)) => x,
 
             // x^0 = 1 | x != 0
-            (pat!(Numeric: n), pat!(0)) if !n.is_zero() => ONE.base(),
+            (itm!(Numeric: n), itm!(0)) if !n.is_zero() => Rational::one().base(),
 
             // 0^x = undefined | x < 0
-            (pat!(0), pat!(-)) => Undefined.base(),
+            (itm!(0), itm!(-)) => Undefined.base(),
 
             // 0^x = 0 | x > 0
-            (pat!(0), pat!(+)) => ZERO.base(),
+            (itm!(0), itm!(+)) => Rational::zero().base(),
 
             // n^-1 = 1/n | n != 0
-            (pat!(Rational: r), pat!(-1)) => (Rational::one() / r).base(),
+            (itm!(Rational: r), itm!(-1)) => (Rational::one() / r).base(),
+
+            (itm!(Numeric: n1), itm!(Numeric: n2)) => {
+                n1.checked_pow_num(n2).map(|n| n.base()).unwrap_or(
+                    Self {
+                        base: n1.base(),
+                        exp: n2.base(),
+                    }
+                    .base(),
+                )
+            }
 
             // (x^y)^z = x^(y*z)
             (base, exp) => Self { base, exp }.base(),
@@ -445,13 +445,13 @@ impl Pow {
         } else {
             Pow {
                 base: b,
-                exp: Base::Numeric(ONE),
+                exp: Rational::one().base(),
             }
         }
     }
 
     fn fmt_parts(base: &Base, exp: &Base, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if &Base::Numeric(ONE) == exp {
+        if let itm!(1) = exp {
             write!(f, "{base}")
         } else {
             write!(f, "{base}^{exp}")

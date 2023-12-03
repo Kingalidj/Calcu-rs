@@ -13,6 +13,7 @@ name = "calcu-rs"
 version = "0.1.0"
 dependencies = [
  "num",
+ "num-rational",
  "paste",
  "pretty_assertions",
  "test-case",
