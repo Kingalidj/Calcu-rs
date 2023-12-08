@@ -1,5 +1,5 @@
-use std::{
-    cmp::Ordering,
+use core::{
+    cmp,
     fmt::{self, Display},
     hash::Hash,
     ops,
@@ -16,7 +16,7 @@ use crate::{
 ///
 /// will panic if set to 0
 #[repr(transparent)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct NonZero<T> {
     pub(crate) non_zero_val: T,
 }
@@ -37,8 +37,13 @@ impl<T: Integer + Copy> NonZero<T> {
     }
 
     #[inline(always)]
-    pub fn val(&self) -> T {
+    pub const fn val(&self) -> T {
         self.non_zero_val
+    }
+
+    #[inline(always)]
+    pub fn is_one(&self) -> bool {
+        return self.non_zero_val == T::zero();
     }
 }
 
@@ -117,7 +122,7 @@ type UInt = u64;
 /// implemented with two [UInt]: numer and a denom, where denom is of type [NonZeroUInt] \
 /// the sign is given by [Sign]
 /// and the exponent is defined by a [i32]
-#[derive(Debug, Clone, Eq, Copy)]
+#[derive(Debug, Clone, Eq, Copy, Hash)]
 pub struct Rational {
     pub(crate) sign: Sign,
     pub(crate) numer: UInt,
@@ -177,17 +182,6 @@ impl From<(i32, i32)> for Rational {
     }
 }
 
-impl Hash for Rational {
-    //TODO: look at ratio hash
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        if self.numer != 0 {
-            self.sign.hash(state);
-        }
-        self.numer.hash(state);
-        self.denom.hash(state);
-    }
-}
-
 impl PartialEq for Rational {
     fn eq(&self, other: &Self) -> bool {
         if self.numer == 0 && other.numer == 0 {
@@ -200,7 +194,6 @@ impl PartialEq for Rational {
         }
     }
 }
-
 impl CalcursType for Rational {
     #[inline(always)]
     fn base(self) -> Base {
@@ -291,6 +284,10 @@ impl Rational {
         self.numer == 1 && self.denom() == 1 && self.sign.is_pos() && self.expon == 0
     }
 
+    pub fn is_int(&self) -> bool {
+        return self.denom.is_one();
+    }
+
     // reduces only the fraction part
     #[inline]
     pub(crate) fn reduce_frac(mut self) -> Self {
@@ -321,6 +318,10 @@ impl Rational {
 
     #[inline]
     pub(crate) fn reduce(mut self) -> Self {
+        if self.numer == 0 {
+            return Self::zero();
+        }
+
         if self.numer > self.denom() {
             let e = self.numer.ilog10() - self.denom().ilog10() + 1;
             self.denom *= 10u64.pow(e);
@@ -345,10 +346,13 @@ impl Rational {
     /// assume f1.1 != 0 and f2.1 != 0
     #[inline]
     fn unsigned_add(f1: (UInt, UInt), f2: (UInt, UInt)) -> Rational {
+        if f1.1 == f2.1 {
+            return Rational::reduced(Sign::Positive, f1.0 + f2.0, f1.1.into(), 0);
+        }
         let lcm = f1.1.lcm(&f2.1);
         let lhs_numer = f1.0 * lcm / f1.1;
         let rhs_numer = f2.0 * lcm / f2.1;
-        Rational::reduced(Sign::Positive, lhs_numer + rhs_numer, NonZero::new(lcm), 0)
+        Rational::reduced(Sign::Positive, lhs_numer + rhs_numer, lcm.into(), 0)
     }
 
     /// tuple acts as a fraction, e.g 1 / 3 => (1, 3)
@@ -356,10 +360,13 @@ impl Rational {
     /// assume f1.1 != 0 and f2.1 != 0 and f1 >= f2
     #[inline]
     fn unsigned_sub(f1: (UInt, UInt), f2: (UInt, UInt)) -> Rational {
+        if f1.1 == f2.1 {
+            return Rational::reduced(Sign::Positive, f1.0 - f2.0, f1.1.into(), 0);
+        }
         let lcm = f1.1.lcm(&f2.1);
         let lhs_numer = f1.0 * lcm / f1.1;
         let rhs_numer = f2.0 * lcm / f2.1;
-        Rational::reduced(Sign::Positive, lhs_numer - rhs_numer, NonZero::new(lcm), 0)
+        Rational::reduced(Sign::Positive, lhs_numer - rhs_numer, lcm.into(), 0)
     }
 
     pub fn abs(&self) -> Self {
@@ -402,7 +409,7 @@ impl Rational {
 
     /// helper function, will not reduce the resulting fraction
     #[inline]
-    fn apply_exp(&mut self) {
+    fn apply_expon(&mut self) {
         if self.expon > 0 {
             self.numer *= 10u32.pow(self.expon.unsigned_abs()) as UInt;
         } else {
@@ -412,7 +419,7 @@ impl Rational {
     }
 
     #[inline]
-    pub(crate) fn try_apply_exp(mut self) -> Option<Self> {
+    pub(crate) fn try_apply_expon(mut self) -> Option<Self> {
         if self.expon > 0 {
             self.numer *= 10u32.checked_pow(self.expon.try_into().ok()?)? as u64;
         } else {
@@ -422,65 +429,111 @@ impl Rational {
         Some(self)
     }
 
-    pub(crate) fn factor_and_apply_expon(mut lhs: Self, mut rhs: Self) -> (Self, Self, i32) {
+    #[inline]
+    fn factor_and_apply_expon(mut lhs: Self, mut rhs: Self) -> (Self, Self, i32) {
         let factor = (lhs.expon + rhs.expon) / 2;
         lhs.expon -= factor;
         rhs.expon -= factor;
-        lhs.apply_exp();
-        rhs.apply_exp();
+        lhs.apply_expon();
+        rhs.apply_expon();
         (lhs, rhs, factor)
     }
 
     pub fn add_ratio(self, other: Self) -> Self {
-        let (mut lhs, rhs) = (self, other);
+        let (lhs, rhs, factor) = Self::factor_and_apply_expon(self, other);
 
-        if lhs.denom == rhs.denom && lhs.sign == rhs.sign && lhs.expon == rhs.expon {
-            lhs.numer = lhs.numer + rhs.numer;
-            return lhs.reduce();
+        let lhs_f = (lhs.numer(), lhs.denom());
+        let rhs_f = (rhs.numer(), rhs.denom());
+
+        let mut res;
+        if lhs.sign == rhs.sign {
+            res = Self::unsigned_add(lhs_f, rhs_f);
+            res.sign = lhs.sign;
+            res.expon += factor;
+            return res;
         }
 
-        let (lhs, rhs, factor) = Self::factor_and_apply_expon(lhs, rhs);
-
-        use Sign as S;
-        let mut res;
-        match (lhs.sign, rhs.sign) {
-            (S::Positive, S::Positive) | (S::Negative, S::Negative) => {
-                res = Self::unsigned_add((lhs.numer, lhs.denom()), (rhs.numer, rhs.denom()));
-                res.sign = lhs.sign;
-            }
-
-            // -lhs + rhs
-            (S::Negative, S::Positive) => {
-                let lhs_abs = lhs.abs();
-                let rhs_abs = rhs.abs();
-
-                if lhs_abs >= rhs_abs {
-                    // lhs >= rhs => -(lhs - rhs)
-                    res = Self::unsigned_sub((lhs.numer, lhs.denom()), (rhs.numer, rhs.denom()));
-                    res.sign = Sign::Negative;
-                } else {
-                    // rhs > lhs => rhs - lhs
-                    res = Self::unsigned_sub((rhs.numer, rhs.denom()), (lhs.numer, lhs.denom()));
-                }
-            }
-
-            // lhs - rhs
-            (S::Positive, S::Negative) => {
-                let lhs_abs = lhs.abs();
-                let rhs_abs = rhs.abs();
-
-                if lhs_abs >= rhs_abs {
-                    // lhs >= rhs => lhs - rhs
-                    res = Self::unsigned_sub((lhs.numer, lhs.denom()), (rhs.numer, rhs.denom()));
-                } else {
-                    // rhs > lhs => -(lhs + rhs)
-                    res = Self::unsigned_sub((rhs.numer, rhs.denom()), (lhs.numer, lhs.denom()));
-                    res.sign = Sign::Negative;
-                }
-            }
+        // lhs.sign != rhs.sign
+        // -(lhs - rhs) or rhs - lhs
+        if lhs.abs() >= rhs.abs() {
+            res = Self::unsigned_sub(lhs_f, rhs_f);
+            res.sign = lhs.sign;
+        } else {
+            // -(lhs + rhs) or rhs - lhs
+            res = Self::unsigned_sub(rhs_f, lhs_f);
+            res.sign = rhs.sign;
         }
         res.expon += factor;
         res.reduce()
+    }
+}
+
+impl PartialOrd for Rational {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Rational {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        if self.sign != other.sign {
+            return self.sign.cmp(&other.sign);
+        } else if self.expon != other.expon {
+            return self.expon.cmp(&other.expon);
+        } else if self.denom == other.denom {
+            return self.numer.cmp(&other.numer);
+        } else if self.numer == other.numer {
+            return self.denom.cmp(&other.denom);
+        }
+
+        let (self_int, self_rem) = self.numer.div_mod_floor(&self.denom());
+        let (other_int, other_rem) = other.numer.div_mod_floor(&other.denom());
+
+        use cmp::Ordering as Ord;
+        match self_int.cmp(&other_int) {
+            Ord::Greater => Ord::Greater,
+            Ord::Less => Ord::Less,
+            Ord::Equal => match (self_rem == 0, other_rem == 0) {
+                (true, true) => Ord::Equal,
+                (true, false) => Ord::Less,
+                (false, true) => Ord::Greater,
+                (false, false) => {
+                    let self_recip =
+                        Rational::reduced(self.sign, self.denom(), NonZero::new(self_rem), 0);
+                    let other_recip =
+                        Rational::reduced(other.sign, other.denom(), NonZero::new(other_rem), 0);
+                    self_recip.cmp(&other_recip).reverse()
+                }
+            },
+        }
+    }
+}
+
+impl Display for Rational {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.sign.is_neg() {
+            write!(f, "-")?;
+        }
+
+        //if self.expon.abs() <= 2 {
+        //    let mut r = *self;
+        //    r.apply_expon();
+        //    r.reduce_frac();
+        //    if r.is_int() {
+        //        write!(f, "{}", self.numer)?;
+        //    } else {
+        //        write!(f, "{} / {}", self.numer, self.denom)?;
+        //    }
+        //} else {
+        if self.is_int() {
+            write!(f, "{}", self.numer)?;
+        } else {
+            write!(f, "{} / {}", self.numer, self.denom)?;
+        }
+        write!(f, " e{}", self.expon)?;
+        //}
+
+        Ok(())
     }
 }
 
@@ -523,82 +576,6 @@ impl ops::Div for Rational {
 
     fn div(self, rhs: Self) -> Self::Output {
         self.div_ratio(rhs)
-    }
-}
-
-impl PartialOrd for Rational {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Rational {
-    fn cmp(&self, other: &Self) -> Ordering {
-        if self.sign != other.sign {
-            return match self.sign {
-                Sign::Positive => Ordering::Greater,
-                Sign::Negative => Ordering::Less,
-            };
-        }
-
-        if self.expon != other.expon {
-            // TODO: factor out e
-            let lhs = self.try_apply_exp();
-            let rhs = other.try_apply_exp();
-            if let (Some(lhs), Some(rhs)) = (lhs, rhs) {
-                return lhs.cmp(&rhs);
-            } else {
-                todo!()
-            }
-        }
-
-        if self.denom() == other.denom() {
-            return self.numer.cmp(&other.numer);
-        }
-
-        if self.numer == other.numer {
-            return self.denom().cmp(&other.denom());
-        }
-
-        let (self_int, self_rem) = self.numer.div_mod_floor(&self.denom());
-        let (other_int, other_rem) = other.numer.div_mod_floor(&other.denom());
-
-        match self_int.cmp(&other_int) {
-            Ordering::Greater => Ordering::Greater,
-            Ordering::Less => Ordering::Less,
-            Ordering::Equal => match (self_rem == 0, other_rem == 0) {
-                (true, true) => Ordering::Equal,
-                (true, false) => Ordering::Less,
-                (false, true) => Ordering::Greater,
-                (false, false) => {
-                    let self_recip =
-                        Rational::reduced(self.sign, self.denom(), NonZero::new(self_rem), 0);
-                    let other_recip =
-                        Rational::reduced(other.sign, other.denom(), NonZero::new(other_rem), 0);
-                    self_recip.cmp(&other_recip).reverse()
-                }
-            },
-        }
-    }
-}
-
-impl Display for Rational {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.sign.is_neg() {
-            write!(f, "-")?;
-        }
-
-        if self.denom() == 1 {
-            write!(f, "{}", self.numer)?;
-        } else {
-            write!(f, "({} / {})", self.numer, self.denom)?;
-        }
-
-        if self.expon != 0 {
-            write!(f, "e{}", self.expon)?;
-        }
-
-        Ok(())
     }
 }
 

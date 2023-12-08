@@ -130,6 +130,10 @@ impl Base {
             Base::Derivative(d) => d.subs(dict),
         }
     }
+
+    pub fn pow(self, other: Self) -> Base {
+        Pow::pow(self, other).base()
+    }
 }
 
 impl<T: Into<String>> From<T> for Symbol {
@@ -196,19 +200,19 @@ impl ops::DivAssign for Base {
     }
 }
 
-impl ops::BitXor for Base {
-    type Output = Base;
+// impl ops::BitXor for Base {
+//     type Output = Base;
 
-    fn bitxor(self, rhs: Self) -> Self::Output {
-        Pow::pow(self, rhs)
-    }
-}
+//     fn bitxor(self, rhs: Self) -> Self::Output {
+//         Pow::pow(self, rhs)
+//     }
+// }
 
-impl ops::BitXorAssign for Base {
-    fn bitxor_assign(&mut self, rhs: Self) {
-        *self = Pow::pow(self.clone(), rhs);
-    }
-}
+// impl ops::BitXorAssign for Base {
+//     fn bitxor_assign(&mut self, rhs: Self) {
+//         *self = Pow::pow(self.clone(), rhs);
+//     }
+// }
 
 #[cfg(test)]
 mod base_test {
@@ -221,7 +225,7 @@ mod base_test {
     fn subs() {
         let dict = HashMap::from([("x".to_owned(), base!(2))]);
 
-        let expr = base!(v: x) ^ base!(2) + base!(4) * base!(v: x) + base!(3);
+        let expr = base!(v: x).pow(base!(2)) + base!(4) * base!(v: x) + base!(3);
         assert_eq!(expr.subs(&dict), base!(15));
     }
 }

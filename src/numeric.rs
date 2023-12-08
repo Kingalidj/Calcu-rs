@@ -371,8 +371,8 @@ impl Numeric {
             (itm!(num: Rational: r), itm!(num: -1)) => (Rational::one() / r).num(),
 
             (itm!(num: Rational: r1), itm!(num: Rational: r2)) => {
-                let exp = r2.try_apply_exp()?.reduce_frac();
-                let base = r1.try_apply_exp()?.reduce_frac();
+                let exp = r2.try_apply_expon()?.reduce_frac();
+                let base = r1.try_apply_expon()?.reduce_frac();
 
                 let mut root = base.numer;
                 if exp.denom() != 1 {

@@ -542,7 +542,7 @@ mod op_test {
     #[test_case(5, base!(0), base!(3 / 4), base!(0))]
     #[test_case(6, base!(1 / 2), base!(-1), base!(4 / 2))]
     fn pow(_case: u32, x: Base, y: Base, z: Base) {
-        let expr = x ^ y;
+        let expr = x.pow(y);
         assert_eq!(expr, z);
     }
 
@@ -550,7 +550,7 @@ mod op_test {
     fn polynom() {
         assert_eq!(
             base!(v: x) * base!(v: x) * base!(2) + base!(3) * base!(v: x) + base!(4 / 3),
-            base!(4 / 3) + (base!(v: x) ^ base!(2)) * base!(2) + base!(3) * base!(v: x)
+            base!(4 / 3) + (base!(v: x).pow(base!(2))) * base!(2) + base!(3) * base!(v: x)
         );
     }
 }
