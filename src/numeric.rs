@@ -38,6 +38,17 @@ impl Display for Sign {
     }
 }
 
+impl<I: num::Integer> From<I> for Sign {
+    // Positive for value >= 0
+    fn from(value: I) -> Self {
+        if value >= I::zero() {
+            Sign::Positive
+        } else {
+            Sign::Negative
+        }
+    }
+}
+
 impl Sign {
     pub fn neg(&self) -> Self {
         use Sign as S;

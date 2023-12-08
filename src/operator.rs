@@ -489,9 +489,8 @@ mod op_test {
     #[test_case(8, base!(neg_inf), base!(pos_inf), base!(nan))]
     #[test_case(9, base!(nan), base!(pos_inf), base!(nan))]
     #[test_case(10, base!(4 / 2), base!(0), base!(2))]
-    fn add(case: u32, x: Base, y: Base, z: Base) {
+    fn add(_case: u32, x: Base, y: Base, z: Base) {
         let expr = x + y;
-        eprintln!("case {case}: {expr} = {z}");
         assert_eq!(expr, z);
     }
 
@@ -504,9 +503,8 @@ mod op_test {
     #[test_case(7, base!(pos_inf), base!(pos_inf), base!(nan))]
     #[test_case(8, base!(neg_inf), base!(pos_inf), base!(neg_inf))]
     #[test_case(9, base!(nan), base!(inf), base!(nan))]
-    fn sub(case: u32, x: Base, y: Base, z: Base) {
+    fn sub(_case: u32, x: Base, y: Base, z: Base) {
         let expr = x - y;
-        eprintln!("case {case}: {expr} = {z}");
         assert_eq!(expr, z)
     }
 
@@ -522,9 +520,8 @@ mod op_test {
     #[test_case(10, base!(pos_inf), base!(pos_inf), base!(pos_inf))]
     #[test_case(11, base!(neg_inf), base!(pos_inf), base!(neg_inf))]
     #[test_case(12, base!(nan), base!(inf), base!(nan))]
-    fn mul(case: u32, x: Base, y: Base, z: Base) {
+    fn mul(_case: u32, x: Base, y: Base, z: Base) {
         let expr = x * y;
-        eprintln!("case {case}: {expr} = {z}");
         assert_eq!(expr, z);
     }
 
@@ -533,9 +530,8 @@ mod op_test {
     #[test_case(3, base!(5), base!(0), base!(nan))]
     #[test_case(4, base!(5), base!(5), base!(1))]
     #[test_case(5, base!(1), base!(3), base!(1 / 3))]
-    fn div(case: u32, x: Base, y: Base, z: Base) {
+    fn div(_case: u32, x: Base, y: Base, z: Base) {
         let div = x / y;
-        eprintln!("case {case}: {div} = {z}");
         assert_eq!(div, z);
     }
 
@@ -545,9 +541,8 @@ mod op_test {
     #[test_case(4, base!(0), base!(-3 / 4), base!(nan))]
     #[test_case(5, base!(0), base!(3 / 4), base!(0))]
     #[test_case(6, base!(1 / 2), base!(-1), base!(4 / 2))]
-    fn pow(case: u32, x: Base, y: Base, z: Base) {
+    fn pow(_case: u32, x: Base, y: Base, z: Base) {
         let expr = x ^ y;
-        eprintln!("case {case}: {expr} = {z}");
         assert_eq!(expr, z);
     }
 

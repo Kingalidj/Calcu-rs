@@ -3,5 +3,5 @@ extern crate calcu_rs;
 use calcu_rs::{base, prelude::*};
 
 fn main() {
-    println!("{}", base!(0) / base!(0));
+    println!("{}", base!(4) / base!(2) + base!(0));
 }

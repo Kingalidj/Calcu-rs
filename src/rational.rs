@@ -5,11 +5,12 @@ use std::{
     ops,
 };
 
+use num::Integer;
+
 use crate::{
     base::{Base, CalcursType},
     numeric::{Numeric, Sign},
 };
-use num::Integer;
 
 /// Nonzero integer value
 ///
@@ -103,7 +104,7 @@ impl<T: Integer + Copy + ops::DivAssign> ops::DivAssign<T> for NonZero<T> {
     }
 }
 
-impl<T: Display + num::Integer + Copy> Display for NonZero<T> {
+impl<T: Display + Integer + Copy> Display for NonZero<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.val())
     }
@@ -114,13 +115,14 @@ type UInt = u64;
 /// Represents a rational number
 ///
 /// implemented with two [UInt]: numer and a denom, where denom is of type [NonZeroUInt] \
-/// Sign defined with a boolean field
+/// the sign is given by [Sign]
+/// and the exponent is defined by a [i32]
 #[derive(Debug, Clone, Eq, Copy)]
 pub struct Rational {
     pub(crate) sign: Sign,
     pub(crate) numer: UInt,
-    pub(crate) denom: NonZero<UInt>, // TODO: also reduce denom?
-    pub(crate) e: i32,               // * 10^e
+    pub(crate) denom: NonZero<UInt>,
+    pub(crate) expon: i32, // * 10^e
 }
 
 impl From<UInt> for Rational {
@@ -137,12 +139,12 @@ impl From<i32> for Rational {
         if numer == 0 {
             return Self::zero();
         }
-        let sign = if numer > 0 {
-            Sign::Positive
-        } else {
-            Sign::Negative
-        };
-        Rational::reduced(sign, numer.unsigned_abs() as UInt, NonZero::new(1), 0)
+        Rational::reduced(
+            Sign::from(numer),
+            numer.unsigned_abs() as UInt,
+            NonZero::new(1),
+            0,
+        )
     }
 }
 
@@ -162,13 +164,13 @@ impl From<(i32, i32)> for Rational {
 
             let numer = num.unsigned_abs() as UInt;
             let denom = NonZero::from(den.unsigned_abs() as UInt);
-            let e = 0;
+            let expon = 0;
 
             Rational {
                 sign,
                 numer,
                 denom,
-                e,
+                expon,
             }
             .reduce()
         }
@@ -194,7 +196,7 @@ impl PartialEq for Rational {
             self.sign == other.sign
                 && self.numer == other.numer
                 && self.denom == other.denom
-                && self.e == other.e
+                && self.expon == other.expon
         }
     }
 }
@@ -212,7 +214,7 @@ impl Rational {
             numer: 1,
             denom: NonZero { non_zero_val: 1 },
             sign: Sign::Positive,
-            e: 0,
+            expon: 0,
         }
     }
 
@@ -221,7 +223,7 @@ impl Rational {
             numer: 0,
             denom: NonZero { non_zero_val: 1 },
             sign: Sign::Positive,
-            e: 0,
+            expon: 0,
         }
     }
 
@@ -230,7 +232,7 @@ impl Rational {
             numer: 1,
             denom: NonZero { non_zero_val: 1 },
             sign: Sign::Negative,
-            e: 0,
+            expon: 0,
         }
     }
 
@@ -246,23 +248,23 @@ impl Rational {
 
         let numer = num.unsigned_abs() as UInt;
         let denom = NonZero::new(den.unsigned_abs() as UInt);
-        let e = 0;
+        let expon = 0;
 
         Self {
             sign,
             numer,
             denom,
-            e,
+            expon,
         }
         .reduce()
     }
 
-    pub(crate) fn reduced(sign: Sign, numer: UInt, denom: NonZero<UInt>, e: i32) -> Self {
+    pub(crate) fn reduced(sign: Sign, numer: UInt, denom: NonZero<UInt>, expon: i32) -> Self {
         Self {
             sign,
             numer,
             denom,
-            e,
+            expon,
         }
         .reduce()
     }
@@ -286,7 +288,7 @@ impl Rational {
     }
 
     pub const fn is_one(&self) -> bool {
-        self.numer == 1 && self.denom() == 1 && self.sign.is_pos() && self.e == 0
+        self.numer == 1 && self.denom() == 1 && self.sign.is_pos() && self.expon == 0
     }
 
     // reduces only the fraction part
@@ -322,7 +324,7 @@ impl Rational {
         if self.numer > self.denom() {
             let e = self.numer.ilog10() - self.denom().ilog10() + 1;
             self.denom *= 10u64.pow(e);
-            self.e += e as i32;
+            self.expon += e as i32;
         }
 
         self = self.reduce_frac();
@@ -330,9 +332,9 @@ impl Rational {
         // reduce denom
         let mut den = self.denom();
         // reminder: den != 0
-        while den % 10 == 0 {
+        while den % 10 == 0 && den / 10 >= self.numer {
             den /= 10;
-            self.e -= 1;
+            self.expon -= 1;
         }
         self.denom.set(den);
         self
@@ -375,7 +377,7 @@ impl Rational {
         lhs.numer = lhs.numer * rhs.denom() / gcd_bd;
         lhs.denom /= gcd_bd;
         lhs.denom *= rhs.numer / gcd_ac;
-        lhs.e -= rhs.e;
+        lhs.expon -= rhs.expon;
         lhs.reduce()
     }
 
@@ -388,7 +390,7 @@ impl Rational {
         lhs.numer = lhs.numer * rhs.numer / gcd_bc;
         lhs.denom /= gcd_bc;
         lhs.denom *= rhs.denom() / gcd_ad;
-        lhs.e += rhs.e;
+        lhs.expon += rhs.expon;
         lhs.reduce()
     }
 
@@ -401,46 +403,29 @@ impl Rational {
     /// helper function, will not reduce the resulting fraction
     #[inline]
     fn apply_exp(&mut self) {
-        if self.e > 0 {
-            self.numer *= 10u32.pow(self.e as u32) as u64;
+        if self.expon > 0 {
+            self.numer *= 10u32.pow(self.expon.unsigned_abs()) as UInt;
         } else {
-            self.denom *= 10u32.pow(self.e.abs() as u32) as u64;
+            self.denom *= 10u32.pow(self.expon.unsigned_abs()) as UInt;
         }
-        self.e = 0;
+        self.expon = 0;
     }
 
     #[inline]
     pub(crate) fn try_apply_exp(mut self) -> Option<Self> {
-        if self.e > 0 {
-            self.numer *= 10u32.checked_pow(self.e.try_into().ok()?)? as u64;
+        if self.expon > 0 {
+            self.numer *= 10u32.checked_pow(self.expon.try_into().ok()?)? as u64;
         } else {
-            self.denom *= 10u32.checked_pow(self.e.abs().try_into().ok()?)? as u64;
+            self.denom *= 10u32.checked_pow(self.expon.abs().try_into().ok()?)? as u64;
         }
-        self.e = 0;
+        self.expon = 0;
         Some(self)
     }
 
     pub(crate) fn factor_and_apply_expon(mut lhs: Self, mut rhs: Self) -> (Self, Self, i32) {
-        let factor;
-        if lhs.e == rhs.e {
-            // _ * 10^n + _ * 10^n
-            factor = lhs.e;
-        } else if lhs.e >= 0 && rhs.e >= 0 {
-            // _ * 10^n + _ * 10^m  | n > 0 && m > 0
-            factor = std::cmp::min(lhs.e, rhs.e);
-        } else if lhs.e <= 0 && rhs.e <= 0 {
-            // _ * 10^n + _ * 10^m  | n < 0 && m < 0
-            factor = std::cmp::max(lhs.e, rhs.e);
-        } else {
-            // _ * 10^n + _ * 10^m  | n > 0 && m < 0
-            if lhs > rhs {
-                factor = rhs.e;
-            } else {
-                factor = lhs.e;
-            }
-        }
-        lhs.e -= factor;
-        rhs.e -= factor;
+        let factor = (lhs.expon + rhs.expon) / 2;
+        lhs.expon -= factor;
+        rhs.expon -= factor;
         lhs.apply_exp();
         rhs.apply_exp();
         (lhs, rhs, factor)
@@ -449,7 +434,7 @@ impl Rational {
     pub fn add_ratio(self, other: Self) -> Self {
         let (mut lhs, rhs) = (self, other);
 
-        if lhs.denom == rhs.denom && lhs.sign == rhs.sign && lhs.e == rhs.e {
+        if lhs.denom == rhs.denom && lhs.sign == rhs.sign && lhs.expon == rhs.expon {
             lhs.numer = lhs.numer + rhs.numer;
             return lhs.reduce();
         }
@@ -494,7 +479,7 @@ impl Rational {
                 }
             }
         }
-        res.e += factor;
+        res.expon += factor;
         res.reduce()
     }
 }
@@ -556,7 +541,7 @@ impl Ord for Rational {
             };
         }
 
-        if self.e != other.e {
+        if self.expon != other.expon {
             // TODO: factor out e
             let lhs = self.try_apply_exp();
             let rhs = other.try_apply_exp();
@@ -609,8 +594,8 @@ impl Display for Rational {
             write!(f, "({} / {})", self.numer, self.denom)?;
         }
 
-        if self.e != 0 {
-            write!(f, "e{}", self.e)?;
+        if self.expon != 0 {
+            write!(f, "e{}", self.expon)?;
         }
 
         Ok(())

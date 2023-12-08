@@ -1,11 +1,13 @@
 macro_rules! itm {
 
+    // Rational patterns
+
     (ratio: 1) => {
         itm!(ratio: Rational {
             numer: 1,
             denom: itm!(ratio: NonZero { non_zero_val: 1 }),
             sign: itm!(num: Sign::Positive),
-            e: 0
+            expon: 0
         })
     };
 
@@ -14,7 +16,7 @@ macro_rules! itm {
             numer: 1,
             denom: itm!(ratio: NonZero { non_zero_val: 1 }),
             sign: itm!(num: Sign::Negative),
-            e: 0
+            expon: 0
         })
     };
 
@@ -23,7 +25,7 @@ macro_rules! itm {
             numer: 0,
             denom: itm!(ratio: NonZero { non_zero_val: 1 }),
             sign: itm!(num: Sign::Positive),
-            e: 0
+            expon: 0
         })
     };
 
@@ -41,8 +43,12 @@ macro_rules! itm {
         })
     };
 
+    // Numeric patterns:
 
+    // Numeric::Rational(_)
     (num: Rational: $($n:tt)+) => { itm!(num: Numeric::Rational($($n)+))};
+
+    // Numeric::Infinity(_)
     (num: Infinity: $($n:tt)+) => {itm!(num: Numeric::Infinity($($n)+))};
 
     (num: 0) => { itm!(num: ratio: 0) };
@@ -55,6 +61,8 @@ macro_rules! itm {
     (num: undef) => { itm!(num: Numeric::Undefined(_) )};
     (num: +) => { itm!(num: ratio: +) };
     (num: -) => { itm!(num: ratio: -) };
+
+    // Base patterns:
 
     (Rational: $($n:tt)+) => { itm!(base: num: Rational: $($n)+ )};
     (Numeric: $($n:tt)+) => {itm!(base: Base::Numeric($($n)+))};
