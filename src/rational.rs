@@ -12,126 +12,199 @@ use crate::{
     numeric::{Numeric, Sign},
 };
 
+pub type RatioTyp = u64;
+
 /// Nonzero integer value
 ///
 /// will panic if set to 0
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(crate) struct NonZero<T> {
-    pub(crate) non_zero_val: T,
+pub(crate) struct NonZero {
+    pub(crate) non_zero_val: RatioTyp,
 }
 
-impl<T: Integer + Copy> NonZero<T> {
+impl NonZero {
     /// panics if arg is 0
     #[inline(always)]
-    pub fn new(n: T) -> Self {
-        debug_assert!(n != T::zero());
+    pub const fn new(n: RatioTyp) -> Self {
+        debug_assert!(n != 0);
         NonZero { non_zero_val: n }
     }
 
     /// panics if arg is 0
     #[inline(always)]
-    pub fn set(&mut self, n: T) {
-        debug_assert!(n != T::zero());
+    pub fn set(&mut self, n: RatioTyp) {
+        debug_assert!(n != 0);
         self.non_zero_val = n;
     }
 
     #[inline(always)]
-    pub const fn val(&self) -> T {
+    pub const fn val(&self) -> RatioTyp {
         self.non_zero_val
     }
 
     #[inline(always)]
-    pub fn is_one(&self) -> bool {
-        return self.non_zero_val == T::one();
+    pub const fn is_one(&self) -> bool {
+        self.non_zero_val == 1
     }
 }
 
-impl<T: Integer + Copy> From<T> for NonZero<T> {
-    fn from(value: T) -> Self {
+impl From<RatioTyp> for NonZero {
+    #[inline]
+    fn from(value: RatioTyp) -> Self {
         NonZero::new(value)
     }
 }
 
-impl<T: Integer + Copy> ops::Mul for NonZero<T> {
-    type Output = NonZero<T>;
+impl ops::Mul for NonZero {
+    type Output = NonZero;
 
     fn mul(self, rhs: Self) -> Self::Output {
         (self.val().mul(rhs.val())).into()
     }
 }
 
-impl<T: Integer + Copy + ops::MulAssign> ops::MulAssign for NonZero<T> {
+impl ops::MulAssign for NonZero {
     fn mul_assign(&mut self, rhs: Self) {
         self.non_zero_val *= rhs.val();
     }
 }
 
-impl<T: Integer + Copy> ops::Div for NonZero<T> {
-    type Output = NonZero<T>;
+impl ops::Div for NonZero {
+    type Output = NonZero;
 
     fn div(self, rhs: Self) -> Self::Output {
         (self.val().div(rhs.val())).into()
     }
 }
 
-impl<T: Integer + Copy + ops::DivAssign> ops::DivAssign for NonZero<T> {
+impl ops::DivAssign for NonZero {
     fn div_assign(&mut self, rhs: Self) {
         self.non_zero_val /= rhs.val();
     }
 }
 
-impl<T: Integer + Copy> ops::Mul<T> for NonZero<T> {
-    type Output = NonZero<T>;
+impl ops::Mul<RatioTyp> for NonZero {
+    type Output = NonZero;
 
-    fn mul(self, rhs: T) -> Self::Output {
+    fn mul(self, rhs: RatioTyp) -> Self::Output {
         (self.val().mul(rhs)).into()
     }
 }
 
-impl<T: Integer + Copy + ops::MulAssign> ops::MulAssign<T> for NonZero<T> {
-    fn mul_assign(&mut self, rhs: T) {
+impl ops::MulAssign<RatioTyp> for NonZero {
+    fn mul_assign(&mut self, rhs: RatioTyp) {
         self.non_zero_val *= rhs;
     }
 }
 
-impl<T: Integer + Copy> ops::Div<T> for NonZero<T> {
-    type Output = NonZero<T>;
+impl ops::Div<RatioTyp> for NonZero {
+    type Output = NonZero;
 
-    fn div(self, rhs: T) -> Self::Output {
+    fn div(self, rhs: RatioTyp) -> Self::Output {
         (self.val().div(rhs)).into()
     }
 }
 
-impl<T: Integer + Copy + ops::DivAssign> ops::DivAssign<T> for NonZero<T> {
-    fn div_assign(&mut self, rhs: T) {
+impl ops::DivAssign<RatioTyp> for NonZero {
+    fn div_assign(&mut self, rhs: RatioTyp) {
         self.non_zero_val /= rhs;
     }
 }
 
-impl<T: Display + Integer + Copy> Display for NonZero<T> {
+impl Display for NonZero {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.val())
     }
 }
 
-type UInt = u64;
+/// helper struct for [Rational], simple fraction without any reformatting
+#[derive(Debug, Clone, PartialEq, Eq, Copy, Hash)]
+struct Fraction {
+    numer: RatioTyp,
+    denom: RatioTyp,
+}
+
+impl From<(RatioTyp, RatioTyp)> for Fraction {
+    #[inline]
+    fn from(value: (RatioTyp, RatioTyp)) -> Self {
+        Fraction {
+            numer: value.0,
+            denom: value.1,
+        }
+    }
+}
+
+impl From<Fraction> for Rational {
+    #[inline]
+    fn from(value: Fraction) -> Self {
+        (value.numer, value.denom).into()
+    }
+}
+
+impl ops::Add for Fraction {
+    type Output = Fraction;
+
+    /// assume self.denom != 0 and rhs.denom != 0
+    #[inline]
+    fn add(self, rhs: Self) -> Self::Output {
+        if self.denom == rhs.denom {
+            let denom = self.denom;
+            let numer = self.numer + rhs.numer;
+            return Self { numer, denom };
+        }
+
+        let lcm = self.denom.lcm(&rhs.denom);
+        let lhs_numer = self.numer * lcm / self.denom;
+        let rhs_numer = rhs.numer * lcm / rhs.denom;
+
+        Self {
+            numer: lhs_numer + rhs_numer,
+            denom: lcm,
+        }
+    }
+}
+
+impl ops::Sub for Fraction {
+    type Output = Fraction;
+
+    /// assume self.denom != 0 and rhs.denom != 0 and self >= rhs
+    #[inline]
+    fn sub(self, rhs: Self) -> Self::Output {
+        if self.denom == rhs.denom {
+            let denom = self.denom;
+            let numer = self.numer - rhs.numer;
+            return Self { numer, denom };
+        }
+
+        let lcm = self.denom.lcm(&rhs.denom);
+        let lhs_numer = self.numer * lcm / self.denom;
+        let rhs_numer = rhs.numer * lcm / rhs.denom;
+
+        Self {
+            numer: lhs_numer - rhs_numer,
+            denom: lcm,
+        }
+    }
+}
 
 /// Represents a rational number
 ///
-/// implemented with two [UInt]: numer and a denom, where denom is of type [NonZeroUInt] \
-/// the sign is given by [Sign]
-/// and the exponent is defined by a [i32]
-#[derive(Debug, Clone, Eq, Copy, Hash)]
+/// DISCLAIMER: a rational numer should have a unique representation
+///
+/// sign * numer / denom * 10^(expon): \
+/// (numer / denom) should always be between 1 and 0.1
+#[derive(Debug, Clone, PartialEq, Eq, Copy, Hash)]
 pub struct Rational {
     pub(crate) sign: Sign,
-    pub(crate) numer: UInt,
-    pub(crate) denom: NonZero<UInt>,
+    pub(crate) numer: RatioTyp,
+    pub(crate) denom: NonZero,
     pub(crate) expon: i32, // * 10^e
 }
 
-impl From<UInt> for Rational {
-    fn from(numer: UInt) -> Self {
+impl From<RatioTyp> for Rational {
+    #[inline]
+    fn from(numer: RatioTyp) -> Self {
         if numer == 0 {
             return Self::zero();
         }
@@ -140,13 +213,14 @@ impl From<UInt> for Rational {
 }
 
 impl From<i32> for Rational {
+    #[inline]
     fn from(numer: i32) -> Self {
         if numer == 0 {
             return Self::zero();
         }
         Rational::reduced(
             Sign::from(numer),
-            numer.unsigned_abs() as UInt,
+            numer.unsigned_abs() as RatioTyp,
             NonZero::new(1),
             0,
         )
@@ -167,8 +241,8 @@ impl From<(i32, i32)> for Rational {
                 true => Sign::Negative,
             };
 
-            let numer = num.unsigned_abs() as UInt;
-            let denom = NonZero::from(den.unsigned_abs() as UInt);
+            let numer = num.unsigned_abs() as RatioTyp;
+            let denom = NonZero::from(den.unsigned_abs() as RatioTyp);
             let expon = 0;
 
             Rational {
@@ -182,18 +256,13 @@ impl From<(i32, i32)> for Rational {
     }
 }
 
-impl PartialEq for Rational {
-    fn eq(&self, other: &Self) -> bool {
-        if self.numer == 0 && other.numer == 0 {
-            true
-        } else {
-            self.sign == other.sign
-                && self.numer == other.numer
-                && self.denom == other.denom
-                && self.expon == other.expon
-        }
+impl From<(RatioTyp, RatioTyp)> for Rational {
+    #[inline]
+    fn from(value: (RatioTyp, RatioTyp)) -> Self {
+        Rational::reduced(Sign::Positive, value.0, value.1.into(), 0)
     }
 }
+
 impl CalcursType for Rational {
     #[inline(always)]
     fn base(self) -> Base {
@@ -239,8 +308,8 @@ impl Rational {
             true => Sign::Negative,
         };
 
-        let numer = num.unsigned_abs() as UInt;
-        let denom = NonZero::new(den.unsigned_abs() as UInt);
+        let numer = num.unsigned_abs() as RatioTyp;
+        let denom = NonZero::new(den.unsigned_abs() as RatioTyp);
         let expon = 0;
 
         Self {
@@ -252,7 +321,7 @@ impl Rational {
         .reduce()
     }
 
-    pub(crate) fn reduced(sign: Sign, numer: UInt, denom: NonZero<UInt>, expon: i32) -> Self {
+    pub(crate) fn reduced(sign: Sign, numer: RatioTyp, denom: NonZero, expon: i32) -> Self {
         Self {
             sign,
             numer,
@@ -267,12 +336,12 @@ impl Rational {
     }
 
     #[inline]
-    pub const fn numer(&self) -> UInt {
+    pub const fn numer(&self) -> RatioTyp {
         self.numer
     }
 
     #[inline]
-    pub const fn denom(&self) -> UInt {
+    pub const fn denom(&self) -> RatioTyp {
         self.denom.non_zero_val
     }
 
@@ -285,7 +354,7 @@ impl Rational {
     }
 
     pub fn is_int(&self) -> bool {
-        return self.denom.is_one();
+        self.denom.is_one()
     }
 
     // reduces only the fraction part
@@ -340,79 +409,19 @@ impl Rational {
         self
     }
 
-    /// tuple acts as a fraction, e.g 1 / 3 => (1, 3)
-    ///
-    /// assume f1.1 != 0 and f2.1 != 0
-    #[inline]
-    fn unsigned_add(f1: (UInt, UInt), f2: (UInt, UInt)) -> Rational {
-        if f1.1 == f2.1 {
-            return Rational::reduced(Sign::Positive, f1.0 + f2.0, f1.1.into(), 0);
-        }
-        let lcm = f1.1.lcm(&f2.1);
-        let lhs_numer = f1.0 * lcm / f1.1;
-        let rhs_numer = f2.0 * lcm / f2.1;
-        Rational::reduced(Sign::Positive, lhs_numer + rhs_numer, lcm.into(), 0)
-    }
-
-    /// tuple acts as a fraction, e.g 1 / 3 => (1, 3)
-    ///
-    /// assume f1.1 != 0 and f2.1 != 0 and f1 >= f2
-    #[inline]
-    fn unsigned_sub(f1: (UInt, UInt), f2: (UInt, UInt)) -> Rational {
-        if f1.1 == f2.1 {
-            return Rational::reduced(Sign::Positive, f1.0 - f2.0, f1.1.into(), 0);
-        }
-        let lcm = f1.1.lcm(&f2.1);
-        let lhs_numer = f1.0 * lcm / f1.1;
-        let rhs_numer = f2.0 * lcm / f2.1;
-        Rational::reduced(Sign::Positive, lhs_numer - rhs_numer, lcm.into(), 0)
-    }
-
     pub fn abs(&self) -> Self {
         let mut res = *self;
         res.sign = Sign::Positive;
         res
     }
 
-    pub fn div_ratio(self, other: Self) -> Self {
-        let (mut lhs, rhs) = (self, other);
-        lhs.sign *= rhs.sign;
-        let gcd_ac = lhs.numer.gcd(&rhs.numer);
-        let gcd_bd = lhs.denom().gcd(&rhs.denom());
-        lhs.numer /= gcd_ac;
-        lhs.numer = lhs.numer * rhs.denom() / gcd_bd;
-        lhs.denom /= gcd_bd;
-        lhs.denom *= rhs.numer / gcd_ac;
-        lhs.expon -= rhs.expon;
-        lhs.reduce()
-    }
-
-    pub fn mul_ratio(self, other: Self) -> Self {
-        let (mut lhs, rhs) = (self, other);
-        lhs.sign *= rhs.sign;
-        let gcd_ad = lhs.numer.gcd(&rhs.denom());
-        let gcd_bc = lhs.denom().gcd(&rhs.numer);
-        lhs.numer /= gcd_ad;
-        lhs.numer = lhs.numer * rhs.numer / gcd_bc;
-        lhs.denom /= gcd_bc;
-        lhs.denom *= rhs.denom() / gcd_ad;
-        lhs.expon += rhs.expon;
-        lhs.reduce()
-    }
-
-    pub fn sub_ratio(self, other: Self) -> Self {
-        let mut rhs = other;
-        rhs.sign *= Sign::Negative;
-        self.add_ratio(rhs)
-    }
-
     /// helper function, will not reduce the resulting fraction
     #[inline]
     fn apply_expon(&mut self) {
         if self.expon > 0 {
-            self.numer *= 10u32.pow(self.expon.unsigned_abs()) as UInt;
+            self.numer *= 10u32.pow(self.expon.unsigned_abs()) as RatioTyp;
         } else {
-            self.denom *= 10u32.pow(self.expon.unsigned_abs()) as UInt;
+            self.denom *= 10u32.pow(self.expon.unsigned_abs()) as RatioTyp;
         }
         self.expon = 0;
     }
@@ -436,34 +445,6 @@ impl Rational {
         lhs.apply_expon();
         rhs.apply_expon();
         (lhs, rhs, factor)
-    }
-
-    pub fn add_ratio(self, other: Self) -> Self {
-        let (lhs, rhs, factor) = Self::factor_and_apply_expon(self, other);
-
-        let lhs_f = (lhs.numer(), lhs.denom());
-        let rhs_f = (rhs.numer(), rhs.denom());
-
-        let mut res;
-        if lhs.sign == rhs.sign {
-            res = Self::unsigned_add(lhs_f, rhs_f);
-            res.sign = lhs.sign;
-            res.expon += factor;
-            return res;
-        }
-
-        // lhs.sign != rhs.sign
-        // -(lhs - rhs) or rhs - lhs
-        if lhs.abs() >= rhs.abs() {
-            res = Self::unsigned_sub(lhs_f, rhs_f);
-            res.sign = lhs.sign;
-        } else {
-            // -(lhs + rhs) or rhs - lhs
-            res = Self::unsigned_sub(rhs_f, lhs_f);
-            res.sign = rhs.sign;
-        }
-        res.expon += factor;
-        res.reduce()
     }
 }
 
@@ -550,7 +531,31 @@ impl ops::Add for Rational {
     type Output = Rational;
 
     fn add(self, rhs: Self) -> Self::Output {
-        self.add_ratio(rhs)
+        let (lhs, rhs, factor) = Rational::factor_and_apply_expon(self, rhs);
+
+        let lhs_f = Fraction::from((lhs.numer(), lhs.denom()));
+        let rhs_f = Fraction::from((rhs.numer(), rhs.denom()));
+
+        let mut res;
+        if lhs.sign == rhs.sign {
+            res = Self::from(lhs_f + rhs_f);
+            res.sign = lhs.sign;
+            res.expon += factor;
+            return res;
+        }
+
+        // lhs.sign != rhs.sign
+        // -(lhs - rhs) or rhs - lhs
+        if lhs.abs() >= rhs.abs() {
+            res = Self::from(lhs_f - rhs_f);
+            res.sign = lhs.sign;
+        } else {
+            // -(lhs + rhs) or rhs - lhs
+            res = Self::from(rhs_f - lhs_f);
+            res.sign = rhs.sign;
+        }
+        res.expon += factor;
+        res.reduce()
     }
 }
 
@@ -558,23 +563,41 @@ impl ops::Sub for Rational {
     type Output = Rational;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        self.sub_ratio(rhs)
+        let mut rhs = rhs;
+        rhs.sign *= Sign::Negative;
+        self + rhs
     }
 }
 
 impl ops::Mul for Rational {
     type Output = Rational;
 
-    fn mul(self, rhs: Self) -> Self::Output {
-        self.mul_ratio(rhs)
+    fn mul(mut self, rhs: Self) -> Self::Output {
+        self.sign *= rhs.sign;
+        let gcd_ad = self.numer.gcd(&rhs.denom());
+        let gcd_bc = self.denom().gcd(&rhs.numer);
+        self.numer /= gcd_ad;
+        self.numer = self.numer * rhs.numer / gcd_bc;
+        self.denom /= gcd_bc;
+        self.denom *= rhs.denom() / gcd_ad;
+        self.expon += rhs.expon;
+        self.reduce()
     }
 }
 
 impl ops::Div for Rational {
     type Output = Rational;
 
-    fn div(self, rhs: Self) -> Self::Output {
-        self.div_ratio(rhs)
+    fn div(mut self, rhs: Self) -> Self::Output {
+        self.sign *= rhs.sign;
+        let gcd_ac = self.numer.gcd(&rhs.numer);
+        let gcd_bd = self.denom().gcd(&rhs.denom());
+        self.numer /= gcd_ac;
+        self.numer = self.numer * rhs.denom() / gcd_bd;
+        self.denom /= gcd_bd;
+        self.denom *= rhs.numer / gcd_ac;
+        self.expon -= rhs.expon;
+        self.reduce()
     }
 }
 

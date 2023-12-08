@@ -11,10 +11,16 @@ use crate::{
     rational::{NonZero, Rational},
 };
 
-#[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Copy)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Copy)]
 pub enum Sign {
     Positive,
     Negative,
+}
+
+impl PartialOrd for Sign {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl Ord for Sign {
@@ -307,7 +313,7 @@ impl Numeric {
         match (self, n) {
             (N::Undefined(_), _) | (_, N::Undefined(_)) => Undefined.into(),
             (N::Infinity(inf), n) | (n, N::Infinity(inf)) => inf.add_num(n),
-            (N::Rational(r1), N::Rational(r2)) => r1.add_ratio(r2).into(),
+            (N::Rational(r1), N::Rational(r2)) => r1.add(r2).into(),
         }
     }
 
@@ -317,7 +323,7 @@ impl Numeric {
             (N::Undefined(_), _) | (_, N::Undefined(_)) => Undefined.into(),
             (N::Infinity(inf), n) => inf.sub_num(n),
             (n, N::Infinity(inf)) => n.sub_inf(inf),
-            (N::Rational(r1), N::Rational(r2)) => r1.sub_ratio(r2).into(),
+            (N::Rational(r1), N::Rational(r2)) => r1.sub(r2).into(),
         }
     }
 
@@ -326,7 +332,7 @@ impl Numeric {
         match (self, n) {
             (N::Undefined(_), _) | (_, N::Undefined(_)) => Undefined.into(),
             (N::Infinity(inf), n) | (n, N::Infinity(inf)) => inf.mul_num(n),
-            (N::Rational(r1), N::Rational(r2)) => r1.mul_ratio(r2).into(),
+            (N::Rational(r1), N::Rational(r2)) => r1.mul(r2).into(),
         }
     }
 
@@ -337,7 +343,7 @@ impl Numeric {
             (N::Infinity(inf), n) => inf.div_num(n),
             (n, N::Infinity(inf)) => n.div_inf(inf),
 
-            (N::Rational(r1), N::Rational(r2)) => r1.div_ratio(r2).into(),
+            (N::Rational(r1), N::Rational(r2)) => r1.div(r2).into(),
         }
     }
 
