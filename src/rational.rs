@@ -43,7 +43,7 @@ impl<T: Integer + Copy> NonZero<T> {
 
     #[inline(always)]
     pub fn is_one(&self) -> bool {
-        return self.non_zero_val == T::zero();
+        return self.non_zero_val == T::one();
     }
 }
 
@@ -290,7 +290,7 @@ impl Rational {
 
     // reduces only the fraction part
     #[inline]
-    pub(crate) fn reduce_frac(mut self) -> Self {
+    pub(crate) fn reduce_frac(&mut self) {
         match (self.numer, self.denom()) {
             (_, 0) => unreachable!(),
 
@@ -313,7 +313,6 @@ impl Rational {
                 }
             }
         }
-        self
     }
 
     #[inline]
@@ -328,7 +327,7 @@ impl Rational {
             self.expon += e as i32;
         }
 
-        self = self.reduce_frac();
+        self.reduce_frac();
 
         // reduce denom
         let mut den = self.denom();
@@ -515,23 +514,23 @@ impl Display for Rational {
             write!(f, "-")?;
         }
 
-        //if self.expon.abs() <= 2 {
-        //    let mut r = *self;
-        //    r.apply_expon();
-        //    r.reduce_frac();
-        //    if r.is_int() {
-        //        write!(f, "{}", self.numer)?;
-        //    } else {
-        //        write!(f, "{} / {}", self.numer, self.denom)?;
-        //    }
-        //} else {
-        if self.is_int() {
-            write!(f, "{}", self.numer)?;
+        if self.expon.abs() <= 2 {
+            let mut r = *self;
+            r.apply_expon();
+            r.reduce_frac();
+            if r.is_int() {
+                write!(f, "{}", r.numer)?;
+            } else {
+                write!(f, "{} / {}", r.numer, r.denom)?;
+            }
         } else {
-            write!(f, "{} / {}", self.numer, self.denom)?;
+            if self.is_int() {
+                write!(f, "{}", self.numer)?;
+            } else {
+                write!(f, "{} / {}", self.numer, self.denom)?;
+            }
+            write!(f, " e{}", self.expon)?;
         }
-        write!(f, " e{}", self.expon)?;
-        //}
 
         Ok(())
     }
