@@ -310,15 +310,7 @@ impl Rational {
 
         let numer = num.unsigned_abs() as RatioTyp;
         let denom = NonZero::new(den.unsigned_abs() as RatioTyp);
-        let expon = 0;
-
-        Self {
-            sign,
-            numer,
-            denom,
-            expon,
-        }
-        .reduce()
+        Self::reduced(sign, numer, denom, 0)
     }
 
     pub(crate) fn reduced(sign: Sign, numer: RatioTyp, denom: NonZero, expon: i32) -> Self {
@@ -357,7 +349,7 @@ impl Rational {
         self.denom.is_one()
     }
 
-    // reduces only the fraction part
+    /// reduces only the fraction part
     #[inline]
     pub(crate) fn reduce_frac(&mut self) {
         match (self.numer, self.denom()) {
@@ -429,9 +421,9 @@ impl Rational {
     #[inline]
     pub(crate) fn try_apply_expon(mut self) -> Option<Self> {
         if self.expon > 0 {
-            self.numer *= 10u32.checked_pow(self.expon.try_into().ok()?)? as u64;
+            self.numer *= 10u32.checked_pow(self.expon.try_into().ok()?)? as RatioTyp;
         } else {
-            self.denom *= 10u32.checked_pow(self.expon.abs().try_into().ok()?)? as u64;
+            self.denom *= 10u32.checked_pow(self.expon.abs().try_into().ok()?)? as RatioTyp;
         }
         self.expon = 0;
         Some(self)
