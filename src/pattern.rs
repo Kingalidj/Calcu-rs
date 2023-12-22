@@ -3,104 +3,90 @@ macro_rules! itm {
     // Rational patterns
 
     (ratio: 1) => {
-        itm!(rational: Rational {
+        crate::rational::Rational {
             numer: 1,
-            denom: itm!(rational: NonZero { non_zero_val: 1 }),
-            sign: itm!(numeric: Sign::Positive),
+            denom: crate::rational::NonZero { non_zero_val: 1 },
+            sign: crate::numeric::Sign::Positive,
             expon: 0
-        })
+        }
     };
 
     (ratio: -1) => {
-        itm!(rational: Rational {
+        crate::rational::Rational {
             numer: 1,
-            denom: itm!(rational: NonZero { non_zero_val: 1 }),
-            sign: itm!(numeric: Sign::Negative),
+            denom: crate::rational::NonZero { non_zero_val: 1 },
+            sign: crate::numeric::Sign::Negative,
             expon: 0
-        })
+        }
     };
 
     (ratio: 0) => {
-        itm!(rational: Rational {
+        crate::rational::Rational {
             numer: 0,
-            denom: itm!(rational: NonZero { non_zero_val: 1 }),
-            sign: itm!(numeric: Sign::Positive),
+            denom: crate::rational::NonZero { non_zero_val: 1 },
+            sign: crate::numeric::Sign::Positive,
             expon: 0
-        })
+        }
     };
 
     (ratio: +) => {
-        itm!(rational: Rational {
-            sign: itm!(numeric: Sign::Positive),
+        crate::rational::Rational {
+            sign: crate::numeric::Sign::Positive,
             ..
-        })
+        }
     };
 
     (ratio: -) => {
-        itm!(rational: Rational {
-            sign: itm!(numeric: Sign::Negative),
+        crate::rational::Rational {
+            sign: crate::numeric::Sign::Negative,
             ..
-        })
+        }
     };
 
     // Numeric patterns:
 
     // Numeric::Rational(_)
-    (num: Rational: $($n:tt)+) => { itm!(numeric: Numeric::Rational($($n)+))};
+    (num: Rational: $($n:tt)+) => { crate::numeric::Numeric::Rational($($n)+)};
 
-   // Numeric::Infinity(_)
-   (num: Infinity: $($n:tt)+) => {itm!(numeric: Numeric::Infinity($($n)+))};
+    // Numeric::Infinity(_)
+    (num: Infinity: $($n:tt)+) => {crate::numeric::Numeric::Infinity($($n)+)};
 
-    (num: 0) => { itm!(num::ratio: 0) };
-    (num: 1) => { itm!(num::ratio: 1) };
-    (num: -1) => { itm!(num::ratio: -1) };
-    (num: +oo) => { itm!(numeric: Numeric::Infinity(itm!(numeric: Infinity { sign: itm!(numeric: Sign::Positive) }))) };
-    (num: -oo) => { itm!(numeric: Numeric::Infinity(itm!(numeric: Infinity { sign: itm!(numeric: Sign::Negative) }))) };
+    (num: 0) => { itm!(num_ratio: 0) };
+    (num: 1) => { itm!(num_ratio: 1) };
+    (num: -1) => { itm!(num_ratio: -1) };
+    (num: +) => { itm!(num_ratio: +) };
+    (num: -) => { itm!(num_ratio: -) };
 
-    (num: oo) => { itm!(num: Infinity { .. }) };
-    (num: undef) => { itm!(numeric: Numeric::Undefined(_) )};
-    (num: +) => { itm!(num::ratio: +) };
-    (num: -) => { itm!(num::ratio: -) };
+    (num: +oo) => { crate::numeric::Numeric::Infinity(crate::numeric::Infinity { sign: crate::numeric::Sign::Positive }) };
+    (num: -oo) => { crate::numeric::Numeric::Infinity(crate::numeric::Infinity { sign: crate::numeric::Sign::Negative }) };
+    (num: oo) => { crate::numeric::Infinity { .. } };
+    (num: undef) => { crate::numeric::Numeric::Undefined(_) };
 
     // Base patterns:
 
-    (Rational: $($n:tt)+) => { itm!(base::num: Rational: $($n)+ )};
+    (Rational: $($n:tt)+) => { itm!(base_num: Rational: $($n)+ )};
     (Numeric: $($n:tt)+) => {crate::base::Base::Numeric($($n)+)};
 
-    (0) => { itm!(base::num: 0) };
-    (1) => { itm!(base::num: 1) };
-    (-1) => { itm!(base::num: -1) };
-    (+) => { itm!(base::num: +) };
-    (-) => { itm!(base::num: -) };
-    (+oo) => { itm!(base::num: +oo) };
-    (-oo) => { itm!(base::num: -oo) };
-
+    (0) => { itm!(base_num: 0) };
+    (1) => { itm!(base_num: 1) };
+    (-1) => { itm!(base_num: -1) };
+    (+) => { itm!(base_num: +) };
+    (-) => { itm!(base_num: -) };
+    (+oo) => { itm!(base_num: +oo) };
+    (-oo) => { itm!(base_num: -oo) };
     (oo) => { itm!(base: num: oo) };
-    (undef) => {itm!(base::num: undef) };
+    (undef) => {itm!(base_num: undef) };
 
 
-
-    (rational: $($n: tt)+) => {
-        crate::rational::$($n)+
-    };
-
-    (num::ratio: $($n: tt)+) => {
+    // switch namespace
+    (num_ratio: $($n: tt)+) => {
         crate::numeric::Numeric::Rational(itm!(ratio: $($n)+))
     };
 
-    // numeric -> module crate::numeric
-    // num -> enum Numeric
-    (numeric: $($n: tt)+) => {
-        crate::numeric::$($n)+
-    };
 
-    (base::num: $($n: tt)+) => {
+    (base_num: $($n: tt)+) => {
         crate::base::Base::Numeric(itm!(num: $($n)+))
     };
-
-    //(base: $($n: tt)+) => {
-    //    crate::base::$($n)+
-    //};
 
 }
 

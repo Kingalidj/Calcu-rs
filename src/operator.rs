@@ -452,7 +452,16 @@ impl Pow {
 
     fn fmt_parts(base: &Base, exp: &Base, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let itm!(1) = exp {
-            write!(f, "{base}")
+            return write!(f, "{base}");
+        }
+
+        let use_paren = match base {
+            Base::Symbol(_) | Base::Numeric(_) => false,
+            _ => true,
+        };
+
+        if use_paren {
+            write!(f, "({base})^{exp}")
         } else {
             write!(f, "{base}^{exp}")
         }
