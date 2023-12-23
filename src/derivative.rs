@@ -1,7 +1,7 @@
 use crate::{
     base::{Base, CalcursType, Symbol, PTR},
     operator::{Add, Mul, Pow, Sub},
-    pattern::itm,
+    pattern::{get_itm, Item},
     rational::Rational,
 };
 
@@ -114,25 +114,26 @@ impl Derivative {
     //
     // apply power rule
     fn apply_pow(p: Pow, x: &Symbol) -> Base {
-        match (p.base, p.exp) {
+        let base = p.base.desc();
+        let exp = p.exp.desc();
+
+        // TODO: 1 / f
+        // TODO: (f / g)' => (g*f' - f*g') / g^2
+
+        if base.is(Item::Numeric) && exp.is(Item::Numeric) {
             // n^m => 0
-            (itm!(Numeric: _), itm!(Numeric: _)) => Rational::zero().base(),
-
+            Rational::zero().base()
+        } else if exp.is(Item::Rational) && !exp.is(Item::Zero) {
             // f^n => n * f^(n - 1)
-            (f, itm!(Rational: n)) if !n.is_zero() => {
-                Mul::mul(n, Pow::pow(f, Sub::sub(n, Rational::one()))).base()
-            }
-
-            // TODO: 1 / f
-            // TODO: (f / g)' => (g*f' - f*g') / g^2
-
-            //  no further rules...
-            (base, exp) => Derivative {
-                deriv: Pow { base, exp }.base().into(),
+            let n = get_itm!(Rational: p.exp);
+            Mul::mul(n, Pow::pow(p.base, Sub::sub(n, Rational::one()))).base()
+        } else {
+            Derivative {
+                deriv: p.base().into(),
                 indep: x.clone(),
                 degree: 1,
             }
-            .base(),
+            .base()
         }
     }
 }
