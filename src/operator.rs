@@ -189,10 +189,13 @@ impl Mul {
 
         if self.args.is_empty() {
             self.coeff.base()
+
         } else if coeff.is(Item::Undef) {
             Undefined.base()
+
         } else if coeff.is(Item::Zero) {
             Rational::zero().base()
+
         } else if coeff.is(Item::One) && self.args.is_pow() {
             self.args.into_pow().base()
         } else {
@@ -255,25 +258,32 @@ impl Pow {
         {
             // 0^0 / 0^-n => undef
             Undefined.base()
+
         } else if b.is(Item::One) {
             // 1^x => x
             self.base
+
         } else if b.is(Item::Numeric) && !b.is(Item::Zero) && e.is(Item::Zero) {
             // x^0 if x != 0 => 1
             Rational::one().base()
+
         } else if b.is(Item::Zero) && e.is(Item::Pos) {
             // 0^x if x > 0 => 0
             Rational::zero().base()
+
         } else if b.is(Item::Numeric) && e.is(Item::PosInf) {
             // x^(+oo) = +oo
             Infinity::pos().base()
+
         } else if b.is(Item::Numeric) && e.is(Item::NegInf) {
             // x^(-oo) = 0
             Rational::zero().base()
+
         } else if b.is(Item::Rational) && e.is(Item::MinusOne) {
             // n^-1 => 1 / n
             let r = get_itm!(Rational: self.base);
             (Rational::one() / r).base()
+
         } else if b.is(Item::Numeric) && e.is(Item::Numeric) {
             let n1 = get_itm!(Numeric: self.base);
             let n2 = get_itm!(Numeric: self.exp);
