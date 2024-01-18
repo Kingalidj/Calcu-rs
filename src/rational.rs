@@ -141,7 +141,7 @@ impl Rational {
         }
 
         if self.numer > self.denom() {
-            let e = self.numer.ilog10() - self.denom().ilog10() + 1;
+            let e = self.numer.ilog10() - self.denom().ilog10();
             self.denom *= 10u64.pow(e);
             self.expon += e as i32;
         }
