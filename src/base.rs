@@ -226,3 +226,27 @@ mod base_test {
         assert_eq!(expr.subs(&dict), base!(15));
     }
 }
+
+#[cfg(test)]
+mod display {
+    use crate::prelude::*;
+    use pretty_assertions::assert_eq;
+    use test_case::test_case;
+
+    macro_rules! b {
+        ($($x: tt)*) => {
+            base!($($x)*)
+        }
+    }
+
+    #[test_case(b!(1).pow(b!(2)), "1")]
+    #[test_case(b!(1 / 2).pow(b!(2)), "1/4")]
+    #[test_case(b!(1 / 3).pow(b!(1 / 100)), "(1/3)^(1/100)")]
+    #[test_case(b!(10).pow(b!(10)) + b!(1 / 1000), "10000000000001 e-3")]
+    #[test_case(b!(1 / 3).pow(b!(2 / 1000)), "(1/3)^(1/500)")]
+    fn disp_fractions(exp: Base, res: &str) {
+        let fmt = format!("{}", exp);
+        assert_eq!(fmt, res);
+        
+    }
+}

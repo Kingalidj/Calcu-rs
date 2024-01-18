@@ -10,6 +10,7 @@ use crate::{
 /// defines all numeric types
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum Numeric {
+    // F64(f64),
     Rational(Rational),
     Infinity(Infinity),
     Undefined(Undefined),

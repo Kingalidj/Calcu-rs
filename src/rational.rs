@@ -211,6 +211,26 @@ impl Rational {
             Item::Rational.union(sign)
         })
     }
+
+
+    fn format_for_print(&self) -> Self {
+        let mut r = *self;
+
+        while r.denom() % 10 == 0 {
+            r.expon -= 1;
+            r.denom /= 10;
+        }
+
+        let max_len = 3;
+        let max_num = 999;
+
+        if r.expon.abs() <= max_len && r.expon.abs() > 1 && r.numer < max_num {
+            r.apply_expon();
+            r.reduce_frac();
+        }
+
+        r
+    }
 }
 
 impl NonZero {
@@ -559,22 +579,16 @@ impl fmt::Display for Rational {
             write!(f, "-")?;
         }
 
-        if self.expon.abs() <= 2 {
-            let mut r = *self;
-            r.apply_expon();
-            r.reduce_frac();
-            if r.desc().is(Item::Int) {
-                write!(f, "{}", r.numer)?;
-            } else {
-                write!(f, "{} / {}", r.numer, r.denom)?;
-            }
+        let r = self.format_for_print();
+
+        if r.denom() == 1 {
+            write!(f, "{}", r.numer)?;
         } else {
-            if self.desc().is(Item::Int) {
-                write!(f, "{}", self.numer)?;
-            } else {
-                write!(f, "{} / {}", self.numer, self.denom)?;
-            }
-            write!(f, " e{}", self.expon)?;
+            write!(f, "{}/{}", r.numer, r.denom)?;
+        }
+
+        if r.expon != 0 {
+            write!(f, " e{}", r.expon)?;
         }
 
         Ok(())

@@ -325,14 +325,31 @@ impl Pow {
         }
 
         let use_paren = match base {
-            Base::Symbol(_) | Base::Numeric(_) => false,
+            Base::Numeric(n) => {
+                if n.desc().is(Item::Int) {
+                    false
+                } else {
+                    true
+                }
+            },
+            Base::Symbol(_) => false,
             _ => true,
         };
 
         if use_paren {
-            write!(f, "({base})^{exp}")
+            write!(f, "({base})")
         } else {
-            write!(f, "{base}^{exp}")
+            write!(f, "{base}")
+        }?;
+
+
+
+
+        if exp.desc().is(Item::Int) {
+            write!(f, "^{exp}")
+        }
+        else {
+            write!(f, "^({exp})")
         }
     }
 }
