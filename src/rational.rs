@@ -576,8 +576,8 @@ impl ops::Sub for Fraction {
         }
 
         let lcm = self.denom.lcm(&rhs.denom);
-        let lhs_numer = self.numer * lcm / self.denom;
-        let rhs_numer = rhs.numer * lcm / rhs.denom;
+        let lhs_numer = self.numer * (lcm / self.denom);
+        let rhs_numer = rhs.numer * (lcm / rhs.denom);
 
         Self {
             numer: lhs_numer - rhs_numer,
