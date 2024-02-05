@@ -28,18 +28,19 @@ bitflags! {
         const Undef    = bit!(3)  | bit!(Numeric);
         const Inf      = bit!(4)  | bit!(Numeric);
         const Rational = bit!(5)  | bit!(Numeric);
+        const Float    = bit!(6)  | bit!(Numeric);
 
-        const Int      = bit!(6)  | bit!(Rational);
-        const UOne     = bit!(7)  | bit!(Int);
+        const Int      = bit!(7)  | bit!(Rational);
+        const UOne     = bit!(8)  | bit!(Int);
 
-        const Binary   = bit!(8);
-        const Add      = bit!(9)  | bit!(Binary);
-        const Mul      = bit!(10) | bit!(Binary);
-        const Pow      = bit!(11) | bit!(Binary);
+        const Binary   = bit!(9);
+        const Add      = bit!(10) | bit!(Binary);
+        const Mul      = bit!(11) | bit!(Binary);
+        const Pow      = bit!(12) | bit!(Binary);
 
-        const Zero     = bit!(12);
-        const Pos      = bit!(13);
-        const Neg      = bit!(14);
+        const Zero     = bit!(13);
+        const Pos      = bit!(14);
+        const Neg      = bit!(15);
 
         //const AtomicBinary = bit!(Atom) | bit!(Binary);
         //const AtomicAdd    = bit!(Add)  | bit!(AtomicBinary);

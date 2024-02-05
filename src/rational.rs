@@ -4,7 +4,7 @@ use num::Integer;
 
 use crate::{
     base::{Base, CalcursType},
-    numeric::{Numeric, Sign},
+    numeric::{Numeric, Sign, Float},
     pattern::{Item, Pattern},
 };
 
@@ -107,6 +107,21 @@ impl Rational {
         self.denom.non_zero_val
     }
 
+    pub fn as_float(&self) -> Float {
+       let n = self.numer as f64; 
+       let d = self.denom() as f64;
+       let e = self.expon as f64;
+       let sign = if self.sign.is_neg() {
+           -1f64
+       } else {
+           1f64
+       };
+
+       let f = sign * (n * 10f64.powf(e) / d);
+       assert!(!f.is_nan(), "not possible if denom is not zero?");
+       Float(f)
+    }
+
     /// reduces only the fraction part
     #[inline]
     pub(crate) fn reduce_frac(&mut self) {
@@ -188,6 +203,29 @@ impl Rational {
     }
 
     #[inline]
+    fn factor_expon(mut lhs: Self, mut rhs: Self) -> (Self, Self, i32) {
+        if lhs.expon == rhs.expon {
+            (lhs, rhs, 0)
+        } else if lhs.desc().is(Item::Zero) {
+            let factor = rhs.expon;
+            lhs.expon = factor;
+            (lhs, rhs, factor)
+        } 
+        else if rhs.desc().is(Item::Zero) {
+            let factor = lhs.expon;
+            rhs.expon = factor;
+            (lhs, rhs, factor)
+        } else {
+            let factor = (lhs.expon + rhs.expon) / 2;
+            lhs.expon -= factor;
+            rhs.expon -= factor;
+            lhs.apply_expon();
+            rhs.apply_expon();
+            (lhs, rhs, factor)
+        }
+    }
+
+    #[inline]
     fn factor_and_apply_expon(mut lhs: Self, mut rhs: Self) -> (Self, Self, i32) {
         let factor = (lhs.expon + rhs.expon) / 2;
         lhs.expon -= factor;
@@ -211,7 +249,6 @@ impl Rational {
             Item::Rational.union(sign)
         })
     }
-
 
     fn format_for_print(&self) -> Self {
         let mut r = *self;
@@ -377,7 +414,7 @@ impl ops::Add for Rational {
     type Output = Rational;
 
     fn add(self, rhs: Self) -> Self::Output {
-        let (lhs, rhs, factor) = Rational::factor_and_apply_expon(self, rhs);
+        let (lhs, rhs, factor) = Rational::factor_expon(self, rhs);
 
         let lhs_f = Fraction::from((lhs.numer(), lhs.denom()));
         let rhs_f = Fraction::from((rhs.numer(), rhs.denom()));
@@ -516,8 +553,8 @@ impl ops::Add for Fraction {
         }
 
         let lcm = self.denom.lcm(&rhs.denom);
-        let lhs_numer = self.numer * lcm / self.denom;
-        let rhs_numer = rhs.numer * lcm / rhs.denom;
+        let lhs_numer = self.numer * (lcm / self.denom);
+        let rhs_numer = rhs.numer * (lcm / rhs.denom);
 
         Self {
             numer: lhs_numer + rhs_numer,

@@ -11,6 +11,7 @@ use crate::{
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum Numeric {
     // F64(f64),
+    Float(Float),
     Rational(Rational),
     Infinity(Infinity),
     Undefined(Undefined),
@@ -33,6 +34,10 @@ pub enum Sign {
     Negative,
 }
 
+#[derive(Debug, Clone, PartialEq, PartialOrd, Copy)]
+pub struct Float(pub(crate) f64);
+
+
 impl Numeric {
     pub fn subs(self, _dict: &SubsDict) -> Self {
         self
@@ -40,6 +45,7 @@ impl Numeric {
 
     pub const fn desc(&self) -> pattern::Pattern {
         pattern::Pattern::Itm(match self {
+            Numeric::Float(_) => Item::Float,
             Numeric::Rational(r) => r.desc().to_item(),
             Numeric::Infinity(Infinity { sign }) => sign.desc().union(Item::Inf),
             Numeric::Undefined(_) => Item::Undef,
@@ -50,6 +56,8 @@ impl Numeric {
         match (self, n) {
             (N::Undefined(_), _) | (_, N::Undefined(_)) => Undefined.into(),
             (N::Infinity(inf), n) | (n, N::Infinity(inf)) => inf.add_num(n),
+            (N::Float(f1), N::Float(f2)) => (f1 + f2).into(),
+            (N::Float(f), N::Rational(r)) | (N::Rational(r), N::Float(f)) => (r.as_float() + f).into(),
             (N::Rational(r1), N::Rational(r2)) => (r1 + r2).into(),
         }
     }
@@ -60,6 +68,8 @@ impl Numeric {
             (N::Undefined(_), _) | (_, N::Undefined(_)) => Undefined.into(),
             (N::Infinity(inf), n) => inf.sub_num(n),
             (n, N::Infinity(inf)) => n.sub_inf(inf),
+            (N::Float(f1), N::Float(f2)) => (f1 - f2).into(),
+            (N::Float(f), N::Rational(r)) | (N::Rational(r), N::Float(f)) => (r.as_float() - f).into(),
             (N::Rational(r1), N::Rational(r2)) => (r1 - r2).into(),
         }
     }
@@ -69,6 +79,8 @@ impl Numeric {
         match (self, n) {
             (N::Undefined(_), _) | (_, N::Undefined(_)) => Undefined.into(),
             (N::Infinity(inf), n) | (n, N::Infinity(inf)) => inf.mul_num(n),
+            (N::Float(f1), N::Float(f2)) => (f1 * f2).into(),
+            (N::Float(f), N::Rational(r)) | (N::Rational(r), N::Float(f)) => (r.as_float() * f).into(),
             (N::Rational(r1), N::Rational(r2)) => (r1 * r2).into(),
         }
     }
@@ -79,7 +91,8 @@ impl Numeric {
             (N::Undefined(_), _) | (_, N::Undefined(_)) => Undefined.into(),
             (N::Infinity(inf), n) => inf.div_num(n),
             (n, N::Infinity(inf)) => n.div_inf(inf),
-
+            (N::Float(f1), N::Float(f2)) => f1 / f2,
+            (N::Float(f), N::Rational(r)) | (N::Rational(r), N::Float(f)) => r.as_float() / f,
             (N::Rational(r1), N::Rational(r2)) => (r1 / r2).into(),
         }
     }
@@ -126,17 +139,20 @@ impl Numeric {
         use Numeric as N;
         match self {
             N::Rational(_) => inf.into(),
+            N::Float(_) => inf.into(),
             N::Infinity(i) => i.sub_num(inf.into()),
             N::Undefined(_) => self,
         }
     }
 
-    fn div_inf(self, mut inf: Infinity) -> Numeric {
+    fn div_inf(self, inf: Infinity) -> Numeric {
         use Numeric as N;
         match self {
-            N::Rational(r) => {
-                inf.sign *= r.sign;
-                inf.into()
+            N::Rational(_) => {
+                Rational::zero().into()
+            }
+            N::Float(_) => {
+                Float(0f64).into()
             }
             N::Infinity(i) => i.div_num(inf.into()),
             N::Undefined(_) => self,
@@ -172,7 +188,7 @@ impl Infinity {
     pub fn add_num(self, n: Numeric) -> Numeric {
         use Numeric as N;
         match n {
-            N::Rational(_) => self.num(),
+            N::Rational(_) | N::Float(_) => self.num(),
             N::Infinity(inf) => match self.sign == inf.sign {
                 true => self.num(),
                 false => Undefined.num(),
@@ -184,7 +200,7 @@ impl Infinity {
     pub fn sub_num(self, n: Numeric) -> Numeric {
         use Numeric as N;
         match n {
-            N::Rational(_) | N::Infinity(_) => self.into(),
+            N::Rational(_) | N::Float(_) | N::Infinity(_) => self.into(),
             N::Undefined(_) => n,
         }
     }
@@ -193,6 +209,7 @@ impl Infinity {
         use Numeric as N;
         match n {
             N::Rational(r) => Infinity::new(self.sign * r.sign).into(),
+            N::Float(f) => Infinity::new(self.sign * f.sign()).into(),
             N::Infinity(inf) => Infinity::new(self.sign * inf.sign).into(),
             N::Undefined(_) => n,
         }
@@ -240,6 +257,75 @@ impl Sign {
 impl Undefined {
     pub fn num(self) -> Numeric {
         self.into()
+    }
+}
+
+impl Float {
+    pub fn sign(&self) -> Sign {
+        if self.0.is_sign_negative() {
+            Sign::Negative
+        } else {
+            Sign::Positive
+        }
+    }
+}
+
+impl Eq for Float {}
+
+impl std::hash::Hash for Float {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let bits = (self.0 + 0.0f64).to_bits();
+        state.write_u64(bits)
+    }
+}
+
+impl Ord for Float {
+    fn cmp(&self, other: &Self) -> Ordering {
+        if self.0 < other.0 {
+            Ordering::Less
+        } else if self.0 > other.0 {
+            Ordering::Greater
+        } else {
+            Ordering::Equal
+        }
+    }
+}
+
+impl ops::Add for Float {
+    type Output = Float;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Float(self.0 + rhs.0)
+    }
+}
+
+impl ops::Sub for Float {
+    type Output = Float;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Float(self.0 - rhs.0)
+    }
+}
+
+impl ops::Mul for Float {
+    type Output = Float;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        Float(self.0 * rhs.0)
+    }
+}
+
+impl ops::Div for Float {
+    type Output = Numeric;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        let f = self.0 / rhs.0;
+
+        if f.is_nan() {
+            Undefined.into()
+        } else {
+            Float(f).into()
+        }
     }
 }
 
@@ -321,21 +407,24 @@ impl Ord for Numeric {
     fn cmp(&self, other: &Self) -> Ordering {
         use Numeric as N;
         match (self, other) {
-            (N::Rational(r1), N::Rational(r2)) => r1.cmp(r2),
-            (N::Infinity(i1), N::Infinity(i2)) => i1.cmp(i2),
             (N::Undefined(_), N::Undefined(_)) => Ordering::Equal,
+            (_, N::Undefined(_)) => Ordering::Greater,
+            (N::Undefined(_), _) => Ordering::Less,
 
-            (N::Rational(_), N::Infinity(inf)) => match inf.sign {
+            (N::Infinity(i1), N::Infinity(i2)) => i1.cmp(i2),
+            (_, N::Infinity(inf)) => match inf.sign {
                 Sign::Positive => Ordering::Less,
                 Sign::Negative => Ordering::Greater,
             },
-            (N::Infinity(inf), N::Rational(_)) => match inf.sign {
+            (N::Infinity(inf), _) => match inf.sign {
                 Sign::Positive => Ordering::Greater,
                 Sign::Negative => Ordering::Less,
             },
 
-            (_, N::Undefined(_)) => Ordering::Greater,
-            (N::Undefined(_), _) => Ordering::Less,
+            (N::Rational(r1), N::Rational(r2)) => r1.cmp(r2),
+            (N::Float(f1), N::Float(f2)) => f1.cmp(f2),
+            (N::Rational(r), N::Float(f)) => r.as_float().cmp(f),
+            (N::Float(f), N::Rational(r)) => f.cmp(&r.as_float()),
         }
     }
 }
@@ -383,9 +472,21 @@ impl CalcursType for Undefined {
     }
 }
 
+impl CalcursType for Float {
+    fn base(self) -> Base {
+        Numeric::Float(self).base()
+    }
+}
+
 impl From<Rational> for Numeric {
     fn from(value: Rational) -> Self {
         Numeric::Rational(value)
+    }
+}
+
+impl From<Float> for Numeric {
+    fn from(value: Float) -> Self {
+        Numeric::Float(value)
     }
 }
 
@@ -416,6 +517,7 @@ impl fmt::Display for Numeric {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Numeric::Rational(v) => write!(f, "{v}"),
+            Numeric::Float(v) => write!(f, "{:?}", v),
             Numeric::Infinity(v) => write!(f, "{v}"),
             Numeric::Undefined(v) => write!(f, "{v}"),
         }

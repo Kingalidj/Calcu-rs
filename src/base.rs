@@ -247,6 +247,5 @@ mod display {
     fn disp_fractions(exp: Base, res: &str) {
         let fmt = format!("{}", exp);
         assert_eq!(fmt, res);
-        
     }
 }

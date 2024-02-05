@@ -3,7 +3,10 @@ extern crate calcu_rs;
 use calcu_rs::{base, prelude::*};
 
 fn main() {
-    let e1 = base!(1 / 10000);
+    let r1 = Rational::new(100000003, 1);
+    let r2 = Rational::new(1, 1);
 
-    println!("{e1}");
+    let e = r1 + r2;
+    println!("{e}");
 }
+
