@@ -3,8 +3,8 @@ use core::{cmp, fmt, hash::Hash, ops};
 use num::Integer;
 
 use crate::{
-    base::{Base, CalcursType},
-    numeric::{Numeric, Sign, Float},
+    base::{Base, CalcursType, Differentiable},
+    numeric::{Float, Numeric, Sign},
     pattern::{Item, Pattern},
 };
 
@@ -16,7 +16,7 @@ pub type RatioTyp = u64;
 ///
 /// sign * numer / denom * 10^(expon): \
 /// (numer / denom) should always be between 1 and 0.1
-#[derive(Debug, Clone, PartialEq, Eq, Copy, Hash)]
+#[derive(Clone, PartialEq, Eq, Copy, Hash)]
 pub struct Rational {
     pub(crate) sign: Sign,
     pub(crate) numer: RatioTyp,
@@ -108,18 +108,14 @@ impl Rational {
     }
 
     pub fn as_float(&self) -> Float {
-       let n = self.numer as f64; 
-       let d = self.denom() as f64;
-       let e = self.expon as f64;
-       let sign = if self.sign.is_neg() {
-           -1f64
-       } else {
-           1f64
-       };
+        let n = self.numer as f64;
+        let d = self.denom() as f64;
+        let e = self.expon as f64;
+        let sign = if self.sign.is_neg() { -1f64 } else { 1f64 };
 
-       let f = sign * (n * 10f64.powf(e) / d);
-       assert!(!f.is_nan(), "not possible if denom is not zero?");
-       Float(f)
+        let f = sign * (n * 10f64.powf(e) / d);
+        assert!(!f.is_nan(), "not possible if denom is not zero?");
+        Float(f)
     }
 
     /// reduces only the fraction part
@@ -210,8 +206,7 @@ impl Rational {
             let factor = rhs.expon;
             lhs.expon = factor;
             (lhs, rhs, factor)
-        } 
-        else if rhs.desc().is(Item::Zero) {
+        } else if rhs.desc().is(Item::Zero) {
             let factor = lhs.expon;
             rhs.expon = factor;
             (lhs, rhs, factor)
@@ -225,29 +220,31 @@ impl Rational {
         }
     }
 
-    #[inline]
-    fn factor_and_apply_expon(mut lhs: Self, mut rhs: Self) -> (Self, Self, i32) {
-        let factor = (lhs.expon + rhs.expon) / 2;
-        lhs.expon -= factor;
-        rhs.expon -= factor;
-        lhs.apply_expon();
-        rhs.apply_expon();
-        (lhs, rhs, factor)
-    }
+    //#[inline]
+    //fn factor_and_apply_expon(mut lhs: Self, mut rhs: Self) -> (Self, Self, i32) {
+    //    let factor = (lhs.expon + rhs.expon) / 2;
+    //    lhs.expon -= factor;
+    //    rhs.expon -= factor;
+    //    lhs.apply_expon();
+    //    rhs.apply_expon();
+    //    (lhs, rhs, factor)
+    //}
 
     #[inline]
     pub const fn desc(&self) -> Pattern {
         let sign = self.sign.desc();
 
-        Pattern::Itm(if self.numer == 0 {
+        let flag = if self.numer == 0 {
             Item::Zero
         } else if self.numer == 1 && self.denom() == 1 && self.expon == 0 {
             Item::UOne.union(sign)
         } else if self.denom() == 1 && self.expon >= 0 {
             Item::Int.union(sign)
         } else {
-            Item::Rational.union(sign)
-        })
+            sign
+        };
+
+        Pattern::Itm(flag.union(Item::Rational))
     }
 
     fn format_for_print(&self) -> Self {
@@ -629,6 +626,18 @@ impl fmt::Display for Rational {
         }
 
         Ok(())
+    }
+}
+
+impl fmt::Debug for Rational {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "R(")?;
+        if self.sign.is_neg() {
+            write!(f, "-")?;
+        }
+
+        write!(f, "{}/{}", self.numer, self.denom)?;
+        write!(f, ")")
     }
 }
 

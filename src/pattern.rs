@@ -21,26 +21,26 @@ bitflags! {
     #[rustfmt::skip]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Item: u32 {
-        const Atom     = bit!(0);
-        const Symbol   = bit!(1)  | bit!(Atom);
-        const Numeric  = bit!(2)  | bit!(Atom);
+        const Atom     = bit!(1);
+        const Symbol   = bit!(2)  | bit!(Atom);
+        const Numeric  = bit!(3)  | bit!(Atom);
 
-        const Undef    = bit!(3)  | bit!(Numeric);
-        const Inf      = bit!(4)  | bit!(Numeric);
-        const Rational = bit!(5)  | bit!(Numeric);
-        const Float    = bit!(6)  | bit!(Numeric);
+        const Undef    = bit!(4)  | bit!(Numeric);
+        const Inf      = bit!(5)  | bit!(Numeric);
+        const Rational = bit!(6)  | bit!(Numeric);
+        const Float    = bit!(7)  | bit!(Numeric);
 
-        const Int      = bit!(7)  | bit!(Rational);
-        const UOne     = bit!(8)  | bit!(Int);
+        const Int      = bit!(8)  | bit!(Rational);
+        const UOne     = bit!(9)  | bit!(Numeric);
 
-        const Binary   = bit!(9);
-        const Add      = bit!(10) | bit!(Binary);
-        const Mul      = bit!(11) | bit!(Binary);
-        const Pow      = bit!(12) | bit!(Binary);
+        const Binary   = bit!(10);
+        const Add      = bit!(11) | bit!(Binary);
+        const Mul      = bit!(12) | bit!(Binary);
+        const Pow      = bit!(13) | bit!(Binary);
 
-        const Zero     = bit!(13);
-        const Pos      = bit!(14);
-        const Neg      = bit!(15);
+        const Zero     = bit!(14) | bit!(Numeric);
+        const Pos      = bit!(15);
+        const Neg      = bit!(16);
 
         //const AtomicBinary = bit!(Atom) | bit!(Binary);
         //const AtomicAdd    = bit!(Add)  | bit!(AtomicBinary);
@@ -50,12 +50,21 @@ bitflags! {
         const One          = bit!(Pos)  | bit!(UOne);
         const PosInt       = bit!(Pos)  | bit!(Int);
         const PosRatio     = bit!(Pos)  | bit!(Rational);
+        const PosFloat     = bit!(Pos)  | bit!(Float);
         const PosInf       = bit!(Pos)  | bit!(Inf);
 
         const MinusOne     = bit!(Neg)  | bit!(UOne);
         const NegInt       = bit!(Neg)  | bit!(Int);
         const NegRatio     = bit!(Neg)  | bit!(Rational);
+        const NegFloat     = bit!(Neg)  | bit!(Float);
         const NegInf       = bit!(Neg)  | bit!(Inf);
+    }
+}
+
+impl Item {
+    pub const fn is(&self, itm: Item) -> bool {
+        let b = itm.bits();
+        (self.bits() & b) == b
     }
 }
 
@@ -73,7 +82,7 @@ impl Pattern {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub const fn is(&self, itm: Item) -> bool {
         let b = itm.bits();
         (self.to_item().bits() & b) == b
@@ -94,6 +103,38 @@ macro_rules! get_itm {
             r
         } else {
             panic!("get_itm for Rational failed");
+        }
+    };
+
+    (Symbol: $e:expr) => {
+        if let crate::base::Base::Symbol(e) = $e {
+            e
+        } else {
+            panic!("get_itm for Symbol failed");
+        }
+    };
+
+    (Add: $e:expr) => {
+        if let crate::base::Base::Add(e) = $e {
+            e
+        } else {
+            panic!("get_itm for Add failed");
+        }
+    };
+
+    (Mul: $e:expr) => {
+        if let crate::base::Base::Mul(e) = $e {
+            e
+        } else {
+            panic!("get_itm for Mul failed");
+        }
+    };
+
+    (Pow: $e:expr) => {
+        if let crate::base::Base::Pow(e) = $e {
+            e
+        } else {
+            panic!("get_itm for Pow failed");
         }
     };
 }

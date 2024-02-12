@@ -3,10 +3,11 @@ extern crate calcu_rs;
 use calcu_rs::{base, prelude::*};
 
 fn main() {
-    let r1 = Rational::new(100000003, 1);
-    let r2 = Rational::new(1, 1);
-
-    let e = r1 + r2;
-    println!("{e}");
+    //let e = (base!(v: x).pow(base!(2)) + base!(2)) / base!(v: x);
+    let e = (base!(v: x).pow(base!(2)) + base!(1)) / base!(v:x);
+    println!("{}", e);
+    // println!("{:?}", e);
+    let de = e.derive("x");
+    println!("{}", de);
+    // println!("{:?}", de);
 }
-

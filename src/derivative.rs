@@ -1,139 +1,123 @@
 use crate::{
-    base::{Base, CalcursType, Symbol, PTR},
-    operator::{Add, Mul, Pow, Sub},
+    base::{Base, CalcursType, Differentiable, Symbol},
+    numeric::Numeric,
+    operator::{Add, Mul, Pow},
     pattern::{get_itm, Item},
     rational::Rational,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Derivative {
-    pub deriv: PTR<Base>,
-    pub indep: Symbol,
-    pub degree: u32,
+impl Differentiable for Add {
+    type Output = Base;
+
+    // f + g = f' + g'
+    fn derive(self, indep: &str) -> Self::Output {
+        let mut sum = Add::new_raw();
+
+        for mul in self.args.into_mul_iter() {
+            sum.arg(mul.derive(indep));
+        }
+
+        sum.reduce()
+    }
 }
 
-impl CalcursType for Derivative {
-    #[inline(always)]
-    fn base(self) -> Base {
-        Base::Derivative(self)
-    }
-}
+impl Differentiable for Mul {
+    type Output = Base;
 
-impl Derivative {
-    /// d(f) / d(x)
-    pub fn apply(f: Base, x: &Symbol) -> Base {
-        use Base as B;
+    // f * g = f'*g + f*g'
+    fn derive(self, indep: &str) -> Self::Output {
+        let mut sum = Add::new_raw();
 
-        match f {
-            // d(n) / d(x) => 0
-            B::Numeric(_) => Rational::one().base(),
+        let args: Vec<_> = self.args.into_pow_iter().collect();
+        let coeff = self.coeff;
 
-            // d(x) / d(x) => 1
-            // d(y) / d(x) => 0
-            B::Symbol(ref sym) => if sym == x {
-                Rational::one()
-            } else {
-                Rational::zero()
-            }
-            .base(),
+        for i in 0..args.len() {
+            let mut prod = Mul::new_raw();
+            prod.coeff = coeff;
 
-            // sum rule
-            B::Add(add) => Self::apply_sum(add, x),
+            let deriv = args.get(i).unwrap().clone().derive(indep);
+            prod.arg(deriv);
 
-            // chain rule
-            B::Mul(mul) => Self::apply_chain(mul, x),
-
-            // power rule
-            B::Pow(pow) => Self::apply_pow(*pow, x),
-
-            B::Derivative(mut d) if &d.indep == x => {
-                d.degree += 1;
-                d.base()
-            }
-
-            f => Derivative {
-                deriv: f.base().into(),
-                indep: x.clone(),
-                degree: 1,
-            }
-            .base(),
-        }
-    }
-
-    pub fn subs(self, _dict: &crate::base::SubsDict) -> Base {
-        //TODO: subs in derivative?
-        self.base()
-    }
-
-    /// d(f + g) / d(x) => d(f) / d(x) + d(g) / d(x)
-    ///
-    /// apply summation rule
-    fn apply_sum(add: Add, x: &Symbol) -> Base {
-        let mut sum = Rational::zero().base();
-        for mul in add.args.into_mul_iter() {
-            sum += Derivative::apply_chain(mul, x);
-        }
-        sum
-    }
-
-    /// d(f * g) / d(x) => g * d(f) / d(x) + f * d(g) / d(x)
-    ///
-    /// apply chain rule
-    fn apply_chain(mul: Mul, x: &Symbol) -> Base {
-        // d(n * f) / d(x) => n * d(f) / d(x)
-        let coeff = mul.coeff;
-        let args: Vec<_> = mul.args.into_pow_iter().collect();
-
-        let mut derivs = vec![];
-
-        for pow in args.clone() {
-            let deriv = Derivative::apply_pow(pow, x);
-            derivs.push(deriv);
-        }
-
-        let mut sum = Rational::zero().base();
-
-        // (f * g * h * ...)' => f' * g * h * ... + f * g' * h * ... + ...
-        for (i, deriv) in derivs.into_iter().enumerate() {
-            let mut prod = deriv;
-
-            for (j, a) in args.clone().into_iter().enumerate() {
-                if i == j {
-                    continue;
+            for j in 0..args.len() {
+                if i != j {
+                    let a = args.get(j).unwrap().clone().base();
+                    prod.arg(a);
                 }
-
-                prod *= a.base();
             }
-            sum += prod;
+            sum.arg(prod.reduce());
         }
-
-        Mul::mul(coeff, sum)
+        sum.reduce()
     }
+}
 
-    // d(f^g) / d(x)
-    //
-    // apply power rule
-    fn apply_pow(p: Pow, x: &Symbol) -> Base {
-        let base = p.base.desc();
-        let exp = p.exp.desc();
+impl Differentiable for Pow {
+    type Output = Base;
 
-        // TODO: 1 / f
-        // TODO: (f / g)' => (g*f' - f*g') / g^2
+    // derive f^g
+    fn derive(self, indep: &str) -> Self::Output {
+        let b = self.base.desc();
+        let e = self.exp.desc();
 
-        if base.is(Item::Numeric) && exp.is(Item::Numeric) {
-            // n^m => 0
+        if b.is(Item::Numeric) && e.is(Item::Numeric) {
             Rational::zero().base()
-        } else if exp.is(Item::Rational) && !exp.is(Item::Zero) {
-            // f^n => n * f^(n - 1)
-            let n = get_itm!(Rational: p.exp);
-            Mul::mul(n, Pow::pow(p.base, Sub::sub(n, Rational::one()))).base()
-        } else {
-            Derivative {
-                deriv: p.base().into(),
-                indep: x.clone(),
-                degree: 1,
+        } else if b.is(Item::Symbol) && e.is(Item::Numeric) {
+            // x^n -> n * x^(n-1)
+            let n = get_itm!(Numeric: self.exp);
+            let x = get_itm!(Symbol: self.base);
+            if x.name == indep {
+                n.base() * x.base().pow(n - Rational::one().num())
+            } else {
+                Rational::zero().base()
             }
-            .base()
+        } else if e.is(Item::Numeric) {
+            // f^n -> n * f^(n-1) * f'
+            let n = get_itm!(Numeric: self.exp);
+            let f = self.base;
+            let df = f.clone().derive(indep);
+            n.base() * f.pow(n + Rational::minus_one().num()) * df
+        } else {
+            unimplemented!("can't derive this function")
         }
+    }
+}
+
+impl Differentiable for &Symbol {
+    type Output = Rational;
+
+    fn derive(self, indep: &str) -> Self::Output {
+        if self.name == indep {
+            Rational::one()
+        } else {
+            Rational::zero()
+        }
+    }
+}
+
+impl Differentiable for Base {
+    type Output = Base;
+
+    fn derive(self, indep: &str) -> Self::Output {
+        use Base as B;
+        match self {
+            B::Symbol(s) => s.derive(indep).base(),
+            B::Numeric(n) => n.derive(indep).base(),
+            B::Add(a) => a.derive(indep),
+            B::Mul(m) => m.derive(indep),
+            B::Pow(p) => p.derive(indep),
+        }
+    }
+}
+
+impl Differentiable for Numeric {
+    type Output = Rational;
+    fn derive(self, _: &str) -> Self::Output {
+        Rational::zero()
+    }
+}
+
+impl Differentiable for Rational {
+    type Output = Rational;
+    fn derive(self, _: &str) -> Self::Output {
+        Rational::zero()
     }
 }

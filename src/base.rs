@@ -1,7 +1,6 @@
-use std::{collections::HashMap, fmt, ops};
+use std::{fmt, ops};
 
 use crate::{
-    derivative::Derivative,
     numeric::Numeric,
     operator::{Add, Div, Mul, Pow, Sub},
 };
@@ -9,9 +8,8 @@ use crate::{
 use crate::pattern as pat;
 
 pub type PTR<T> = Box<T>;
-pub type SubsDict<'a> = HashMap<String, Base>;
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Base {
     Symbol(Symbol),
     Numeric(Numeric),
@@ -19,28 +17,26 @@ pub enum Base {
     Add(Add),
     Mul(Mul),
     Pow(PTR<Pow>),
-
-    Derivative(Derivative),
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Ord, Eq, Hash)]
+//TODO: generic Symbol data type (e.g &str)
+#[derive(Clone, PartialEq, PartialOrd, Ord, Eq, Hash)]
 pub struct Symbol {
     pub name: String,
 }
 
-impl Base {
-    pub fn subs(self, dict: &SubsDict) -> Base {
-        match self {
-            Base::Symbol(s) => s.subs(dict),
-            Base::Numeric(n) => n.subs(dict).base(),
-            Base::Add(a) => a.subs(dict),
-            Base::Mul(m) => m.subs(dict),
-            Base::Pow(p) => p.subs(dict),
-            Base::Derivative(d) => d.subs(dict),
-        }
-    }
+pub trait Differentiable: CalcursType {
+    type Output;
+    fn derive(self, indep: &str) -> Self::Output;
+}
 
-    pub fn pow(self, other: Self) -> Base {
+/// implemented by every symbolic math type
+pub trait CalcursType: Clone + fmt::Debug {
+    fn base(self) -> Base;
+}
+
+impl Base {
+    pub fn pow(self, other: impl CalcursType) -> Base {
         Pow::pow(self, other).base()
     }
 
@@ -53,7 +49,6 @@ impl Base {
             B::Add(add) => add.desc(),
             B::Mul(mul) => mul.desc(),
             B::Pow(pow) => pow.desc(),
-            B::Derivative(_) => todo!(),
         }
     }
 }
@@ -63,22 +58,9 @@ impl Symbol {
         Self { name: name.into() }
     }
 
-    pub fn subs(&self, dict: &SubsDict) -> Base {
-        if let Some(key) = dict.get(&self.name) {
-            key.clone()
-        } else {
-            self.clone().base()
-        }
-    }
-
     pub const fn desc(&self) -> pat::Pattern {
         pat::Pattern::Itm(pat::Item::Symbol)
     }
-}
-
-/// implemented by every symbolic math type
-pub trait CalcursType: Clone + fmt::Debug {
-    fn base(self) -> Base;
 }
 
 impl CalcursType for Base {
@@ -92,6 +74,13 @@ impl CalcursType for Symbol {
     #[inline(always)]
     fn base(self) -> Base {
         Base::Symbol(self).base()
+    }
+}
+
+impl CalcursType for &Symbol {
+    #[inline(always)]
+    fn base(self) -> Base {
+        Base::Symbol(self.clone()).base()
     }
 }
 
@@ -123,6 +112,10 @@ macro_rules! base {
 
     (v: $var: ident) => {
         Symbol::new(stringify!($var)).base()
+    };
+
+    (f: $f: expr) => {
+        Float::new($f).base()
     };
 }
 
@@ -200,7 +193,20 @@ impl fmt::Display for Base {
             B::Add(a) => write!(f, "{a}"),
             B::Mul(m) => write!(f, "{m}"),
             B::Pow(p) => write!(f, "{p}"),
-            B::Derivative(d) => write!(f, "{:?}", d),
+        }
+    }
+}
+
+impl fmt::Debug for Base {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use Base as B;
+        match self {
+            B::Symbol(v) => write!(f, "{:?}", v),
+            B::Numeric(n) => write!(f, "{:?}", n),
+
+            B::Add(a) => write!(f, "{:?}", a),
+            B::Mul(m) => write!(f, "{:?}", m),
+            B::Pow(p) => write!(f, "{:?}", p),
         }
     }
 }
@@ -211,19 +217,9 @@ impl fmt::Display for Symbol {
     }
 }
 
-#[cfg(test)]
-mod base_test {
-
-    use crate::prelude::*;
-    use pretty_assertions::assert_eq;
-    use std::collections::HashMap;
-
-    #[test]
-    fn subs() {
-        let dict = HashMap::from([("x".to_owned(), base!(2))]);
-
-        let expr = base!(v: x).pow(base!(2)) + base!(4) * base!(v: x) + base!(3);
-        assert_eq!(expr.subs(&dict), base!(15));
+impl fmt::Debug for Symbol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
     }
 }
 
