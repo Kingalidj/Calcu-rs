@@ -297,11 +297,35 @@ enum SumElem {
 /// <=> n1 * {pow_1_1 * pow_1_2 * ... } + n2 * { pow_2_1 * pow_2_2 * ...} + ...
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub(crate) struct Sum {
-    sum: Vec<(Numeric, Product)>,
+    sum: Vec<(Numeric, SumElem)>,
     __args: BTreeMap<Product, Numeric>,
 }
 
 impl Sum {
+    pub fn insert(&mut self, itm: Base) {
+        match itm {
+            Base::Mul(m) => {
+                let elem = SumElem::Product(m.args);
+                let coeff = m.coeff;
+                if let Some(indx) = self.sum.iter_mut().position(|e| e.1 == elem) {
+                    let old = self.sum.get_mut(indx).unwrap();
+                    old.0 += coeff;
+
+                    if old.0.desc().is(Item::Zero) {
+                        self.sum.remove(indx);
+                    }
+                } else {
+                    self.sum.push((coeff, elem));
+                }
+            },
+            a => {
+                let elem = SumElem::Atom(a);
+                self.sum.push((Rational::one().num(), elem));
+            },
+        }
+        todo!()
+    }
+
     pub fn insert_mul(&mut self, mul: Mul) {
         if mul.coeff.desc().is(Item::Zero) {
             return;
@@ -364,12 +388,18 @@ impl Sum {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+enum ProductElem {
+    Power(Pow),
+    Atom(Base),
+}
+
 /// helper container for [Mul]
 ///
 /// k1 ^ v1 * k2 ^ v2 * k3 ^ v3 * ...
 #[derive(Default, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct Product {
-    pows: Vec<Pow>,
+    pows: Vec<(Base, ProductElem)>,
     __args: BTreeMap<Base, Base>,
 }
 
