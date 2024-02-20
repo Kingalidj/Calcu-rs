@@ -163,9 +163,13 @@ impl Mul {
     }
 
     fn fmt_coeff(coeff: &Numeric, prod_desc: Pattern, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let show_coeff = !coeff.desc().is(Item::One);
+        let show_sign = coeff.desc().is(Item::Neg);
+        let show_coeff = !coeff.desc().is(Item::UOne);
         let show_op = show_coeff && !prod_desc.is(Item::Pow);
 
+        if show_sign {
+            write!(f, "-")?;
+        }
         if show_coeff {
             write!(f, "{coeff}")?;
         }
@@ -596,7 +600,11 @@ impl fmt::Display for Product {
         }
 
         for pow in iter {
-            write!(f, " * {pow}")?;
+            if pow.exp.desc().is(Item::MinusOne) {
+                write!(f, "/{}", pow.base)?;
+            } else {
+                write!(f, " * {pow}")?;
+            }
         }
 
         Ok(())

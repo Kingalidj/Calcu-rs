@@ -98,7 +98,7 @@ macro_rules! base {
         Infinity::pos().base()
     };
 
-    (nan) => {
+    (undef) => {
         Undefined.base()
     };
 
@@ -127,7 +127,6 @@ impl ops::Add for Base {
     }
 }
 
-// TODO: support add assign without clone
 impl ops::AddAssign for Base {
     fn add_assign(&mut self, rhs: Self) {
         unsafe {
