@@ -1,7 +1,7 @@
-use std::{collections::BTreeMap, fmt};
+use std::fmt;
 
 use crate::{
-    base::{Base, CalcursType, Differentiable},
+    base::{Base, CalcursType},
     numeric::{Infinity, Numeric, Undefined},
     pattern::{get_itm, Item, Pattern},
     rational::Rational,
@@ -14,7 +14,7 @@ use crate::{
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Add {
     pub(crate) coeff: Numeric,
-    pub(crate) args: Sum,
+    pub(crate) sum: Sum,
 }
 
 pub type Sub = Add;
@@ -31,7 +31,7 @@ impl Add {
     pub fn desc(&self) -> Pattern {
         let op = Item::Add;
         let lhs = self.coeff.desc().to_item();
-        let rhs = self.args.desc().to_item();
+        let rhs = self.sum.desc().to_item();
         Pattern::Binary { lhs, op, rhs }
     }
 
@@ -45,25 +45,28 @@ impl Add {
         use Base as B;
         match b {
             B::Numeric(num) => self.coeff += num,
-            B::Mul(mul) => self.args.insert_mul(mul),
+            B::Mul(mul) => self.sum.add(mul.base()),
             B::Add(add) => {
                 self.coeff += add.coeff;
-                add.args
+                add.sum
                     .into_mul_iter()
-                    .for_each(|mul| self.args.insert_mul(mul));
+                    .for_each(|mul| self.sum.add(mul.base()));
             }
 
-            base @ (B::Symbol(_) | B::Pow(_)) => self.args.insert_mul(Mul::from_base(base)),
+            base @ (B::Symbol(_) | B::Pow(_)) => {
+                self.sum.add(base)
+            },
         };
     }
 
     pub fn reduce(self) -> Base {
         let coeff = self.coeff.desc();
 
-        if self.args.is_empty() {
+        if self.sum.is_empty() {
             self.coeff.base()
-        } else if coeff.is(Item::Zero) && self.args.is_mul() {
-            self.args.into_mul().base()
+        } else if coeff.is(Item::Zero) && self.sum.is_product() {
+            let mul: Mul = self.sum.try_into().unwrap();
+            mul.base()
         } else {
             self.base()
         }
@@ -72,7 +75,7 @@ impl Add {
     pub fn new_raw() -> Add {
         Self {
             coeff: Rational::zero().num(),
-            args: Default::default(),
+            sum: Default::default(),
         }
     }
 }
@@ -84,12 +87,20 @@ impl Add {
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Mul {
     pub(crate) coeff: Numeric,
-    pub(crate) args: Product,
+    pub(crate) product: Product,
 }
 
 pub type Div = Mul;
 
 impl Mul {
+
+    fn zero() -> Self {
+        Mul {
+            coeff: Rational::one().num(),
+            product: Product::zero(),
+        }
+    }
+
     /// n1 * n2
     pub fn mul(n1: impl CalcursType, n2: impl CalcursType) -> Base {
         let mut prod = Self::new_raw();
@@ -116,28 +127,29 @@ impl Mul {
 
         match b {
             B::Numeric(num) => self.coeff *= num,
-            B::Pow(pow) => self.args.insert_pow(*pow),
+            B::Pow(pow) => self.product.mul(pow.base()),
             B::Mul(mul) => {
                 self.coeff *= mul.coeff;
-                mul.args
+                mul.product
                     .into_pow_iter()
-                    .for_each(|pow| self.args.insert_pow(pow));
+                    .for_each(|pow| self.product.mul(pow.base()));
             }
-            base @ (B::Symbol(_) | B::Add(_)) => self.args.insert_pow(Pow::from_base(base)),
+            B::Symbol(_) | B::Add(_) => self.product.mul(b),
         }
     }
 
     pub fn reduce(self) -> Base {
         let coeff = self.coeff.desc();
 
-        if self.args.is_empty() {
+        if self.product.is_empty() {
             self.coeff.base()
         } else if coeff.is(Item::Undef) {
             Undefined.base()
         } else if coeff.is(Item::Zero) {
             Rational::zero().base()
-        } else if coeff.is(Item::One) && self.args.is_pow() {
-            self.args.into_pow().base()
+        } else if coeff.is(Item::One) && self.product.is_pow() {
+            let p: Pow = self.product.try_into().unwrap();
+            p.base()
         } else {
             self.base()
         }
@@ -146,13 +158,13 @@ impl Mul {
     pub fn new_raw() -> Self {
         Self {
             coeff: Rational::one().num(),
-            args: Product::default(),
+            product: Product::default(),
         }
     }
 
-    fn fmt_parts(args: &Product, coeff: &Numeric, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_coeff(coeff: &Numeric, prod_desc: Pattern, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let show_coeff = !coeff.desc().is(Item::One);
-        let show_op = show_coeff && args.len() != 1;
+        let show_op = show_coeff && !prod_desc.is(Item::Pow);
 
         if show_coeff {
             write!(f, "{coeff}")?;
@@ -162,24 +174,22 @@ impl Mul {
             write!(f, " * ")?;
         }
 
-        write!(f, "{args}")
+        Ok(())
+    }
+
+    fn fmt_parts(coeff: &Numeric, prod: &SumElem, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Self::fmt_coeff(coeff, prod.desc(), f)?;
+        write!(f, "{prod}")
     }
 
     #[inline]
     pub fn desc(&self) -> Pattern {
         let op = Item::Mul;
         let lhs = self.coeff.desc().to_item();
-        let rhs = self.args.desc().to_item();
+        let rhs = self.product.desc().to_item();
         Pattern::Binary { lhs, op, rhs }
     }
 
-    #[inline]
-    fn from_base(b: Base) -> Self {
-        Self {
-            coeff: Rational::one().num(),
-            args: Product::from_base(b),
-        }
-    }
 }
 
 // TODO: pow of number
@@ -245,18 +255,6 @@ impl Pow {
     }
 
     #[inline]
-    fn from_base(b: Base) -> Self {
-        if let Base::Pow(pow) = b {
-            *pow
-        } else {
-            Pow {
-                base: b,
-                exp: Rational::one().base(),
-            }
-        }
-    }
-
-    #[inline]
     pub fn desc(&self) -> Pattern {
         let op = Item::Pow;
         let lhs = self.base.desc().to_item();
@@ -268,6 +266,10 @@ impl Pow {
     fn fmt_parts(base: &Base, exp: &Base, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let b = base.desc();
         let e = exp.desc();
+
+        if b.is(Item::Atom) && e.is(Item::MinusOne) {
+            return write!(f, "1/{}", base);
+        }
 
         if b.is(Item::Atom) && (!b.is(Item::Numeric) || b.is(Item::PosInt)) {
             write!(f, "{base}")?;
@@ -285,10 +287,32 @@ impl Pow {
     }
 }
 
+impl From<Base> for Pow {
+    fn from(value: Base) -> Self {
+        if let Base::Pow(pow) = value {
+            *pow
+        } else {
+            Pow {
+                base: value,
+                exp: Rational::one().base(),
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 enum SumElem {
     Product(Product),
     Atom(Base),
+}
+
+impl SumElem {
+    fn desc(&self) -> Pattern {
+        match self {
+            SumElem::Product(p) => p.desc(),
+            SumElem::Atom(a) => a.desc(),
+        }
+    }
 }
 
 /// helper container for [Add]
@@ -297,90 +321,83 @@ enum SumElem {
 /// <=> n1 * {pow_1_1 * pow_1_2 * ... } + n2 * { pow_2_1 * pow_2_2 * ...} + ...
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub(crate) struct Sum {
-    sum: Vec<(Numeric, SumElem)>,
-    __args: BTreeMap<Product, Numeric>,
+    elems: Vec<(Numeric, SumElem)>,
+    //__args: BTreeMap<Product, Numeric>,
 }
 
 impl Sum {
-    pub fn insert(&mut self, itm: Base) {
+
+    fn find<'a>(&'a mut self, elem: &SumElem) -> Option<(usize, &'a mut Numeric)> {
+        if let Some(indx) = self.elems.iter().position(|e| &e.1 == elem) {
+            let coeff = self.elems.get_mut(indx).unwrap();
+            Some((indx, &mut coeff.0))
+        } else {
+            None
+        }
+    }
+
+    pub fn add(&mut self, itm: Base) {
         match itm {
             Base::Mul(m) => {
-                let elem = SumElem::Product(m.args);
-                let coeff = m.coeff;
-                if let Some(indx) = self.sum.iter_mut().position(|e| e.1 == elem) {
-                    let old = self.sum.get_mut(indx).unwrap();
-                    old.0 += coeff;
+                let elem = SumElem::Product(m.product);
+                if let Some((indx, coeff)) = self.find(&elem) {
+                    *coeff += m.coeff;
 
-                    if old.0.desc().is(Item::Zero) {
-                        self.sum.remove(indx);
+                    if coeff.desc().is(Item::Zero) {
+                        self.elems.remove(indx);
                     }
                 } else {
-                    self.sum.push((coeff, elem));
+                    self.elems.push((m.coeff, elem));
                 }
             },
             a => {
                 let elem = SumElem::Atom(a);
-                self.sum.push((Rational::one().num(), elem));
+                let one = Rational::one().num();
+                if let Some((indx, coeff)) = self.find(&elem) {
+                    *coeff += one;
+
+                    if coeff.desc().is(Item::Zero) {
+                        self.elems.remove(indx);
+                    }
+                } else {
+                    self.elems.push((one, elem));
+                }
+
             },
-        }
-        todo!()
-    }
-
-    pub fn insert_mul(&mut self, mul: Mul) {
-        if mul.coeff.desc().is(Item::Zero) {
-            return;
-        }
-
-        if let Some(coeff) = self.__args.get_mut(&mul.args) {
-            // 2x + 3x => 5x
-            *coeff += mul.coeff;
-
-            if coeff.desc().is(Item::Zero) {
-                self.__args.remove(&mul.args);
-            }
-        } else {
-            self.__args.insert(mul.args, mul.coeff);
         }
     }
 
     #[inline]
     pub fn into_mul_iter(self) -> impl Iterator<Item = Mul> {
-        self.__args
+        self.elems
             .into_iter()
-            .map(|(args, coeff)| Mul { coeff, args })
+            .map(|(coeff, sum_elem)| Mul { coeff, product: match sum_elem {
+                SumElem::Product(p) => p,
+                SumElem::Atom(a) => a.into(),
+            } })
     }
 
     #[inline]
     pub fn len(&self) -> usize {
-        self.__args.len()
+        self.elems.len()
     }
 
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.__args.is_empty()
+        self.elems.is_empty()
     }
 
     #[inline]
-    pub fn is_mul(&self) -> bool {
+    pub fn is_product(&self) -> bool {
         self.len() == 1
     }
 
-    #[inline]
-    pub fn into_mul(mut self) -> Mul {
-        if self.is_mul() {
-            let (args, coeff) = self.__args.pop_first().unwrap();
-            Mul { args, coeff }
-        } else {
-            panic!("Sum::into_mul: not possible")
-        }
-    }
-
     pub fn desc(&self) -> Pattern {
-        if self.__args.len() == 1 {
-            let (args, coeff) = self.__args.first_key_value().unwrap();
+        if self.elems.len() == 1 {
+            let (coeff, elem) = self.elems.first().unwrap();
             let op = Item::Mul;
             let lhs = coeff.desc().to_item();
-            let rhs = args.desc().to_item();
+            let rhs = elem.desc().to_item();
             Pattern::Binary { lhs, op, rhs }
         } else {
             Pattern::Itm(Item::Add)
@@ -388,10 +405,30 @@ impl Sum {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-enum ProductElem {
-    Power(Pow),
-    Atom(Base),
+impl TryFrom<Sum> for Mul {
+    type Error = &'static str;
+
+    fn try_from(mut s: Sum) -> Result<Self, Self::Error> {
+        if s.is_product() {
+            let (coeff, elem) = s.elems.pop().unwrap();
+            match elem {
+                SumElem::Product(p) => {
+                    Ok(Mul {
+                        coeff,
+                        product: p
+                    })
+                },
+                SumElem::Atom(a) => {
+                    let mut m = Mul::zero();
+                    m.coeff = coeff;
+                    m.product = a.into();
+                    Ok(m)
+                },
+            }
+        } else {
+            Err("conversion failed: sum is not a product")
+        }
+    }
 }
 
 /// helper container for [Mul]
@@ -399,66 +436,82 @@ enum ProductElem {
 /// k1 ^ v1 * k2 ^ v2 * k3 ^ v3 * ...
 #[derive(Default, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct Product {
-    pows: Vec<(Base, ProductElem)>,
-    __args: BTreeMap<Base, Base>,
+    elems: Vec<Pow>,
+    //__args: BTreeMap<Base, Base>,
 }
 
 impl Product {
-    pub fn insert_pow(&mut self, mut pow: Pow) {
-        if let Some(exp) = self.__args.remove(&pow.base) {
-            pow.exp = Add::add(exp, pow.exp);
 
-            if !pow.exp.desc().is(Item::Zero) {
-                self.__args.insert(pow.base, pow.exp);
+    fn find(&mut self, elem: &mut Base) -> Option<(usize, &mut Pow)> {
+        if let Some(indx) = self.elems.iter().position(|e| &e.base == elem) {
+            let coeff = self.elems.get_mut(indx).unwrap();
+            Some((indx, coeff))
+        } else {
+            None
+        }
+    }
+
+    pub fn zero() -> Self {
+        Product {
+            elems: vec![],
+        }
+    }
+
+    pub fn mul(&mut self, itm: Base) {
+        let mut pow: Pow = itm.into();
+        if let Some((indx, p)) = self.find(&mut pow.base) {
+            p.exp += pow.exp;
+
+            if p.exp.desc().is(Item::Zero) {
+                self.elems.remove(indx);
             }
         } else {
-            self.__args.insert(pow.base, pow.exp);
+            self.elems.push(pow);
         }
     }
 
     #[inline]
     pub fn into_pow_iter(self) -> impl Iterator<Item = Pow> {
-        self.__args.into_iter().map(|(base, exp)| Pow { base, exp })
+        self.elems.into_iter()
     }
 
     #[inline]
     pub fn is_pow(&self) -> bool {
-        self.__args.len() == 1
-    }
-
-    #[inline]
-    pub fn len(&self) -> usize {
-        self.__args.len()
-    }
-
-    #[inline]
-    pub fn into_pow(mut self) -> Pow {
-        if self.is_pow() {
-            let (base, exp) = self.__args.pop_first().unwrap();
-            Pow { base, exp }
-        } else {
-            panic!("Product::into_pow: not possible")
-        }
+        self.elems.len() == 1
     }
 
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.__args.is_empty()
-    }
-
-    #[inline]
-    pub fn from_base(b: Base) -> Self {
-        let pow = Pow::from_base(b);
-        let __args = BTreeMap::from([(pow.base, pow.exp)]);
-        Self {
-            __args,
-            ..Default::default()
-        }
+        self.elems.is_empty()
     }
 
     #[inline]
     pub fn desc(&self) -> Pattern {
-        Pattern::Itm(Item::Mul)
+        if self.is_pow() {
+            self.elems.first().unwrap().desc()
+        } else {
+            Pattern::Itm(Item::Mul)
+        }
+    }
+}
+
+impl TryInto<Pow> for Product {
+    type Error = &'static str;
+
+    fn try_into(mut self) -> Result<Pow, Self::Error> {
+        if self.is_pow() {
+            Ok(self.elems.pop().unwrap())
+        } else {
+            Err("product is not a power")
+        }
+    }
+}
+
+impl From<Base> for Product {
+    fn from(value: Base) -> Self {
+        let mut p = Product::zero();
+        p.elems.push(value.into());
+        p
     }
 }
 
@@ -485,7 +538,7 @@ impl CalcursType for Pow {
 
 impl fmt::Display for Add {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.args)?;
+        write!(f, "{}", self.sum)?;
 
         if !self.coeff.desc().is(Item::Zero) {
             write!(f, " + {}", self.coeff)?;
@@ -497,7 +550,8 @@ impl fmt::Display for Add {
 
 impl fmt::Display for Mul {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        Mul::fmt_parts(&self.args, &self.coeff, f)
+        Mul::fmt_coeff(&self.coeff, self.product.desc(), f)?;
+        write!(f, "{}", self.product)
     }
 }
 
@@ -509,32 +563,40 @@ impl fmt::Display for Pow {
 
 impl fmt::Display for Sum {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut iter = self.__args.iter().rev();
+        let mut iter = self.elems.iter().rev();
 
-        if let Some((args, coeff)) = iter.next() {
-            Mul::fmt_parts(args, coeff, f)?;
+        if let Some((coeff, prod)) = iter.next() {
+            Mul::fmt_parts(coeff, prod, f)?;
         }
 
-        for (args, coeff) in iter {
+        for (coeff, prod) in iter {
             write!(f, " + ")?;
-            Mul::fmt_parts(args, coeff, f)?;
+            Mul::fmt_parts(coeff, prod, f)?;
         }
 
         Ok(())
     }
 }
 
+impl fmt::Display for SumElem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SumElem::Product(p) => write!(f, "{p}"),
+            SumElem::Atom(a) => write!(f, "{a}"),
+        }
+    }
+}
+
 impl fmt::Display for Product {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut iter = self.__args.iter();
+        let mut iter = self.elems.iter();
 
-        if let Some((base, exp)) = iter.next() {
-            Pow::fmt_parts(base, exp, f)?;
+        if let Some(pow) = iter.next() {
+            write!(f, "{pow}")?;
         }
 
-        for (base, exp) in iter {
-            write!(f, " * ")?;
-            Pow::fmt_parts(base, exp, f)?;
+        for pow in iter {
+            write!(f, " * {pow}")?;
         }
 
         Ok(())
@@ -544,7 +606,7 @@ impl fmt::Display for Product {
 impl fmt::Debug for Add {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Sum( ")?;
-        write!(f, "{:?}", self.args)?;
+        write!(f, "{:?}", self.sum)?;
         write!(f, " + {:?}", self.coeff)?;
         write!(f, " )")
     }
@@ -553,7 +615,7 @@ impl fmt::Debug for Add {
 impl fmt::Debug for Mul {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Prod( ")?;
-        write!(f, "{:?}", self.args)?;
+        write!(f, "{:?}", self.product)?;
         write!(f, " * {:?}", self.coeff)?;
         write!(f, " )")
     }
@@ -562,7 +624,7 @@ impl fmt::Debug for Mul {
 impl fmt::Debug for Sum {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut first = true;
-        for a in self.__args.iter() {
+        for a in self.elems.iter() {
             if !first {
                 write!(f, " + ")?;
             } else {
@@ -578,13 +640,13 @@ impl fmt::Debug for Sum {
 impl fmt::Debug for Product {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut first = true;
-        for a in self.__args.iter() {
+        for a in self.elems.iter() {
             if !first {
                 write!(f, " * ")?;
             } else {
                 first = false
             }
-            write!(f, "{:?}^{:?}", a.0, a.1)?;
+            write!(f, "{:?}", a)?;
         }
 
         Ok(())

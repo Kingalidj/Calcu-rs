@@ -33,7 +33,7 @@ pub enum Sign {
     Negative,
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Copy)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub struct Float(pub(crate) f64);
 
 impl Numeric {
@@ -172,7 +172,7 @@ impl Float {
     }
 
     pub const fn desc(&self) -> pattern::Pattern {
-        todo!()
+        unimplemented!()
     }
 }
 
@@ -400,6 +400,7 @@ impl Ord for Numeric {
         use Numeric as N;
         match (self, other) {
             (N::Undefined(_), N::Undefined(_)) => Ordering::Equal,
+            // undefined last
             (_, N::Undefined(_)) => Ordering::Greater,
             (N::Undefined(_), _) => Ordering::Less,
 
@@ -422,6 +423,11 @@ impl Ord for Numeric {
 }
 
 impl Eq for Float {}
+impl PartialOrd for Float {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
 impl Ord for Float {
     fn cmp(&self, other: &Self) -> Ordering {
         if self.0 < other.0 {

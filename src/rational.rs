@@ -3,7 +3,7 @@ use core::{cmp, fmt, hash::Hash, ops};
 use num::Integer;
 
 use crate::{
-    base::{Base, CalcursType, Differentiable},
+    base::{Base, CalcursType},
     numeric::{Float, Numeric, Sign},
     pattern::{Item, Pattern},
 };

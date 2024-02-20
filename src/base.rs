@@ -44,8 +44,8 @@ impl Base {
     pub fn desc(&self) -> pat::Pattern {
         use Base as B;
         match self {
-            B::Symbol(s) => s.desc().into(),
-            B::Numeric(n) => n.desc().into(),
+            B::Symbol(s) => s.desc(),
+            B::Numeric(n) => n.desc(),
             B::Add(add) => add.desc(),
             B::Mul(mul) => mul.desc(),
             B::Pow(pow) => pow.desc(),
@@ -80,7 +80,7 @@ impl CalcursType for Symbol {
 impl CalcursType for &Symbol {
     #[inline(always)]
     fn base(self) -> Base {
-        Base::Symbol(self.clone()).base()
+        panic!("only used for derivative")
     }
 }
 
@@ -130,7 +130,14 @@ impl ops::Add for Base {
 // TODO: support add assign without clone
 impl ops::AddAssign for Base {
     fn add_assign(&mut self, rhs: Self) {
-        *self = Add::add(self.clone(), rhs);
+        unsafe {
+            // lhs = { 0 }
+            // lhs = self
+            // self = lhs + rhs
+            let mut lhs: Base = std::mem::zeroed();
+            std::mem::swap(self, &mut lhs);
+            *self = Add::add(lhs, rhs);
+        }
     }
 }
 
@@ -156,10 +163,17 @@ impl ops::Mul for Base {
     }
 }
 
-// TODO: support mul assign without clone
 impl ops::MulAssign for Base {
     fn mul_assign(&mut self, rhs: Self) {
-        *self = Mul::mul(self.clone(), rhs);
+        // self *= rhs => self = self * rhs
+        unsafe {
+            // lhs = { 0 }
+            // lhs = self
+            // self = lhs * rhs
+            let mut lhs = std::mem::zeroed();
+            std::mem::swap(self, &mut lhs);
+            *self = Mul::mul(lhs, rhs);
+        }
     }
 }
 
@@ -173,7 +187,14 @@ impl ops::Div for Base {
 
 impl ops::DivAssign for Base {
     fn div_assign(&mut self, rhs: Self) {
-        *self = Div::div(self.clone(), rhs);
+        unsafe {
+            // lhs = { 0 }
+            // lhs = self
+            // self = lhs / rhs
+            let mut lhs = std::mem::zeroed();
+            std::mem::swap(self, &mut lhs);
+            *self = Div::div(lhs, rhs);
+        }
     }
 }
 
@@ -235,6 +256,10 @@ mod display {
         }
     }
 
+    #[test_case(b!(v: x).pow(b!(-1)), "1/x")]
+    #[test_case(b!(v: x).pow(b!(-3)), "x^(-3)")]
+    #[test_case(b!(v: x).pow(b!(2)), "x^2")]
+    #[test_case(b!(v: x) + b!(v: x), "2x")]
     #[test_case(b!(1).pow(b!(2)), "1")]
     #[test_case(b!(1 / 2).pow(b!(2)), "1/4")]
     #[test_case(b!(1 / 3).pow(b!(1 / 100)), "(1/3)^(1/100)")]

@@ -13,7 +13,7 @@ impl Differentiable for Add {
     fn derive(self, indep: &str) -> Self::Output {
         let mut sum = Add::new_raw();
 
-        for mul in self.args.into_mul_iter() {
+        for mul in self.sum.into_mul_iter() {
             sum.arg(mul.derive(indep));
         }
 
@@ -28,7 +28,7 @@ impl Differentiable for Mul {
     fn derive(self, indep: &str) -> Self::Output {
         let mut sum = Add::new_raw();
 
-        let args: Vec<_> = self.args.into_pow_iter().collect();
+        let args: Vec<_> = self.product.into_pow_iter().collect();
         let coeff = self.coeff;
 
         for i in 0..args.len() {
