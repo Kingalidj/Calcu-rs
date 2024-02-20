@@ -695,8 +695,8 @@ mod op_test {
     #[test_case(5, base!(inf), base!(4), base!(inf))]
     #[test_case(6, base!(neg_inf), base!(4), base!(neg_inf))]
     #[test_case(7, base!(pos_inf), base!(pos_inf), base!(pos_inf))]
-    #[test_case(8, base!(neg_inf), base!(pos_inf), base!(nan))]
-    #[test_case(9, base!(nan), base!(pos_inf), base!(nan))]
+    #[test_case(8, base!(neg_inf), base!(pos_inf), base!(undef))]
+    #[test_case(9, base!(undef), base!(pos_inf), base!(undef))]
     #[test_case(10, base!(4 / 2), base!(0), base!(2))]
     fn add(_case: u32, x: Base, y: Base, z: Base) {
         let expr = x + y;
@@ -709,9 +709,9 @@ mod op_test {
     #[test_case(4, base!(inf), base!(4), base!(inf))]
     #[test_case(5, base!(neg_inf), base!(4 / 2), base!(neg_inf))]
     #[test_case(6, base!(pos_inf), base!(4), base!(pos_inf))]
-    #[test_case(7, base!(pos_inf), base!(pos_inf), base!(nan))]
+    #[test_case(7, base!(pos_inf), base!(pos_inf), base!(undef))]
     #[test_case(8, base!(neg_inf), base!(pos_inf), base!(neg_inf))]
-    #[test_case(9, base!(nan), base!(inf), base!(nan))]
+    #[test_case(9, base!(undef), base!(inf), base!(undef))]
     fn sub(_case: u32, x: Base, y: Base, z: Base) {
         let expr = x - y;
         assert_eq!(expr, z)
@@ -728,15 +728,15 @@ mod op_test {
     #[test_case(9, base!(pos_inf), base!(-1), base!(neg_inf))]
     #[test_case(10, base!(pos_inf), base!(pos_inf), base!(pos_inf))]
     #[test_case(11, base!(neg_inf), base!(pos_inf), base!(neg_inf))]
-    #[test_case(12, base!(nan), base!(inf), base!(nan))]
+    #[test_case(12, base!(undef), base!(inf), base!(undef))]
     fn mul(_case: u32, x: Base, y: Base, z: Base) {
         let expr = x * y;
         assert_eq!(expr, z);
     }
 
-    #[test_case(1, base!(0), base!(0), base!(nan))]
+    #[test_case(1, base!(0), base!(0), base!(undef))]
     #[test_case(2, base!(0), base!(5), base!(0))]
-    #[test_case(3, base!(5), base!(0), base!(nan))]
+    #[test_case(3, base!(5), base!(0), base!(undef))]
     #[test_case(4, base!(5), base!(5), base!(1))]
     #[test_case(5, base!(1), base!(3), base!(1 / 3))]
     #[test_case(6, base!(v: x), base!(v: x), base!(1))]
@@ -747,8 +747,8 @@ mod op_test {
 
     #[test_case(1, base!(1), base!(1 / 100), base!(1))]
     #[test_case(2, base!(4), base!(1), base!(4))]
-    #[test_case(3, base!(0), base!(0), base!(nan))]
-    #[test_case(4, base!(0), base!(-3 / 4), base!(nan))]
+    #[test_case(3, base!(0), base!(0), base!(undef))]
+    #[test_case(4, base!(0), base!(-3 / 4), base!(undef))]
     #[test_case(5, base!(0), base!(3 / 4), base!(0))]
     #[test_case(6, base!(1 / 2), base!(-1), base!(4 / 2))]
     fn pow(_case: u32, x: Base, y: Base, z: Base) {
