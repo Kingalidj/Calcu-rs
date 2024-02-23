@@ -55,9 +55,7 @@ impl Add {
                     .for_each(|mul| self.sum.add(mul.base()));
             }
 
-            base @ (B::Symbol(_) | B::Pow(_)) => {
-                self.sum.add(base)
-            },
+            base @ (B::Symbol(_) | B::Pow(_)) => self.sum.add(base),
         };
     }
 
@@ -95,7 +93,6 @@ pub struct Mul {
 pub type Div = Mul;
 
 impl Mul {
-
     fn zero() -> Self {
         Mul {
             coeff: Rational::one().num(),
@@ -195,7 +192,6 @@ impl Mul {
         let rhs = self.product.desc().to_item();
         Pattern::Binary { lhs, op, rhs }
     }
-
 }
 
 // TODO: pow of number
@@ -205,57 +201,6 @@ pub struct Pow {
     pub(crate) base: Base,
     pub(crate) exp: Base,
 }
-
-//macro_rules! identity {
-//
-//    (@is $a: ident, $p:expr) => {
-//        $a.is($p)
-//    };
-//
-//    // e.g: a b c, Undef Zero Inf
-//    (@listed_is ($($a: ident,)*), ($($p: expr,)*)) => {
-//        ($(identity!(@is $a, $p) &&)* true)
-//    };
-//
-//    (@alt_listed_is ($( ($($p: expr,)*) ,)*) @unrolled $a: tt) => {
-//        ($(identity!(@listed_is $a, ($($p,)*)) ||)* false)
-//    };
-//
-//    // e.g: a b c, Undef Zero Inf or
-//    //      a b c, Inf Zero Inf
-//    (@alt_listed_is ($($a: ident,)*), ($( ($($p: expr,)*) ,)*) ) => {
-//        identity!(@alt_listed_is ($(($($p,)*),)*) @unrolled ($($a,)*))
-//    };
-//
-//    (@match_arm ($($a: ident,)*), ($($p:expr,)*), ($( ($($q: expr,)*) ,)*) ) => {
-//        identity!(@listed_is ($($a,)*), ($($p,)*)) || identity!(@alt_listed_is ($($a,)*), ($(($($q,)*),)*))
-//    };
-//
-//    ($a0:ident $(,$a: ident)*:
-//        ($p0:expr $(,$p:expr)*) $(|| ($q0:expr $(,$q:expr)*))* => $id0: expr,
-//        _ => $default: expr $(,)?
-//    ) => {
-//        if identity!(@match_arm ($a0, $($a,)*), ($p0, $($p,)*), ($(($q0, $($q,)*),)*) )
-//        {
-//            $id0
-//        } else {
-//            $default
-//        }
-//    };
-//
-//    ($a0:ident $(,$a:ident)*:
-//        ($p00:expr $(,$p01:expr)*) $(|| ($q00:expr $(,$q01:expr)*))* => $id0:expr,
-//        $(($p10:expr $(,$p11:expr)*) $(|| ($q10:expr $(,$q11:expr)*))* => $id:expr,)*
-//        _ => $default:expr $(,)?
-//    ) => {
-//        if identity!(@match_arm ($a0, $($a,)*), ($p00, $($p01,)*), ($(($q00, $($q01,)*),)*) ) {
-//            println!("{}", stringify!($id0));
-//            $id0
-//        } else {
-//            identity!($a0 $(,$a)*: $(($p10 $(,$p11)*) $(|| ($q10 $(,$q11)*))* => $id,)+ _ => $default)
-//        }
-//    }
-//}
 
 impl Pow {
     pub fn pow(n1: impl CalcursType, n2: impl CalcursType) -> Base {
@@ -267,61 +212,59 @@ impl Pow {
     }
 
     fn reduce(self) -> Base {
-        let b = self.base.desc();
-        let e = self.exp.desc();
         use Item as I;
 
-        if (b.is(Item::Undef) || e.is(Item::Undef))
-            || (b.is(Item::Zero) && e.is(Item::Zero))
-            || (b.is(Item::Zero) && e.is(Item::Neg))
-        {
-            // 0^0 / 0^-n => undef
-            Undefined.base()
+        let b = self.base.desc();
+        let e = self.exp.desc();
 
-        } else if b.is(Item::One) || e.is(Item::One) {
+        identity! { (b, e) {
+            // undef => undef
+            (I::Undef, _) || (_, I::Undef)
+            // 0^0 / 0^-n => undef
+            || (I::Zero, I::Zero) || (I::Zero, I::Neg) => Undefined.base(),
+
             // 1^x => 1
             // x^1 => x
-            self.base
-        } else if !b.is(Item::Zero) && e.is(Item::Zero) {
-            // x^0 if x != 0 => 1
-            Rational::one().base()
+            (_, I::One) || (I::One, _) => self.base,
 
-        } else if b.is(Item::Zero) && e.is(Item::Pos) {
-            // 0^x if x > 0 => 0
-            Rational::zero().base()
+            // x^0 => 1 | if x != 0
+            (!I::Zero, I::Zero) => Rational::one().base(),
 
-        } else if b.is(Item::Numeric) && e.is(Item::PosInf) {
-            // x^(+oo) = +oo
-            Infinity::pos().base()
+            // 0^x => 0 | if x > 0
+            (I::Zero, I::Pos) => Rational::zero().base(),
 
-        } else if b.is(Item::Numeric) && e.is(Item::NegInf) {
-            // x^(-oo) = 0
-            Rational::zero().base()
+            // n^(-1) => 1 / n
+            (I::Rational, I::MinusOne) => {
+                // from div?
+                let r = get_itm!(Rational: self.base);
+                //TODO: inv()
+                (Rational::one() / r).base()
+            },
 
-        } else if b.is(Item::Rational) && e.is(Item::MinusOne) {
-            // n^-1 => 1 / n
-            let r = get_itm!(Rational: self.base);
-            (Rational::one() / r).base()
+            // (x^a)^b => x^(a*b) | if b in Z
+            (I::Pow, I::Int) => {
+                let mut pow = get_itm!(Pow: self.base);
+                pow.exp *= self.exp;
+                pow.base()
+            },
 
-        } else if b.is(Item::Pow) && e.is(Item::Int) {
-            // (x^a)^b => x^a*b if b in Z
-            let mut pow = get_itm!(Pow: self.base);
-            pow.exp *= self.exp;
-            pow.base()
+            (I::Numeric, I::Numeric) => {
+                let n1 = get_itm!(Numeric: self.base);
+                let n2 = get_itm!(Numeric: self.exp);
+                n1.checked_pow_num(n2).map(|n| n.base()).unwrap_or(
+                    Pow {
+                        base: n1.base(),
+                        exp: n2.base(),
+                    }
+                    .base(),
+                )
+            },
 
-        } else if b.is(Item::Numeric) && e.is(Item::Numeric) {
-            let n1 = get_itm!(Numeric: self.base);
-            let n2 = get_itm!(Numeric: self.exp);
-            n1.checked_pow_num(n2).map(|n| n.base()).unwrap_or(
-                Pow {
-                    base: n1.base(),
-                    exp: n2.base(),
-                }
-                .base(),
-            )
-        } else {
-            self.base()
-        }
+            //TODO: x^(+oo) = +oo
+
+            default => self.base(),
+        }}
+
     }
 
     #[inline]
@@ -395,7 +338,6 @@ pub(crate) struct Sum {
 }
 
 impl Sum {
-
     fn find<'a>(&'a mut self, elem: &SumElem) -> Option<(usize, &'a mut Numeric)> {
         if let Some(indx) = self.elems.iter().position(|e| &e.1 == elem) {
             let coeff = self.elems.get_mut(indx).unwrap();
@@ -418,7 +360,7 @@ impl Sum {
                 } else {
                     self.elems.push((m.coeff, elem));
                 }
-            },
+            }
             a => {
                 let elem = SumElem::Atom(a);
                 let one = Rational::one().num();
@@ -431,19 +373,19 @@ impl Sum {
                 } else {
                     self.elems.push((one, elem));
                 }
-
-            },
+            }
         }
     }
 
     #[inline]
     pub fn into_mul_iter(self) -> impl Iterator<Item = Mul> {
-        self.elems
-            .into_iter()
-            .map(|(coeff, sum_elem)| Mul { coeff, product: match sum_elem {
+        self.elems.into_iter().map(|(coeff, sum_elem)| Mul {
+            coeff,
+            product: match sum_elem {
                 SumElem::Product(p) => p,
                 SumElem::Atom(a) => a.into(),
-            } })
+            },
+        })
     }
 
     #[inline]
@@ -481,18 +423,13 @@ impl TryFrom<Sum> for Mul {
         if s.is_product() {
             let (coeff, elem) = s.elems.pop().unwrap();
             match elem {
-                SumElem::Product(p) => {
-                    Ok(Mul {
-                        coeff,
-                        product: p
-                    })
-                },
+                SumElem::Product(p) => Ok(Mul { coeff, product: p }),
                 SumElem::Atom(a) => {
                     let mut m = Mul::zero();
                     m.coeff = coeff;
                     m.product = a.into();
                     Ok(m)
-                },
+                }
             }
         } else {
             Err("conversion failed: sum is not a product")
@@ -509,7 +446,6 @@ pub(crate) struct Product {
 }
 
 impl Product {
-
     fn find(&mut self, elem: &mut Base) -> Option<(usize, &mut Pow)> {
         if let Some(indx) = self.elems.iter().position(|e| &e.base == elem) {
             let coeff = self.elems.get_mut(indx).unwrap();
@@ -520,9 +456,7 @@ impl Product {
     }
 
     pub fn zero() -> Self {
-        Product {
-            elems: vec![],
-        }
+        Product { elems: vec![] }
     }
 
     pub fn mul(&mut self, itm: Base) {
