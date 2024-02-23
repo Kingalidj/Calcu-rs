@@ -7,6 +7,8 @@ use crate::{
     rational::Rational,
 };
 
+use calcurs_macros::identity;
+
 /// Represents addition in symbolic expressions
 ///
 /// Implemented with a coefficient and an [Sum]: \
@@ -204,6 +206,57 @@ pub struct Pow {
     pub(crate) exp: Base,
 }
 
+//macro_rules! identity {
+//
+//    (@is $a: ident, $p:expr) => {
+//        $a.is($p)
+//    };
+//
+//    // e.g: a b c, Undef Zero Inf
+//    (@listed_is ($($a: ident,)*), ($($p: expr,)*)) => {
+//        ($(identity!(@is $a, $p) &&)* true)
+//    };
+//
+//    (@alt_listed_is ($( ($($p: expr,)*) ,)*) @unrolled $a: tt) => {
+//        ($(identity!(@listed_is $a, ($($p,)*)) ||)* false)
+//    };
+//
+//    // e.g: a b c, Undef Zero Inf or
+//    //      a b c, Inf Zero Inf
+//    (@alt_listed_is ($($a: ident,)*), ($( ($($p: expr,)*) ,)*) ) => {
+//        identity!(@alt_listed_is ($(($($p,)*),)*) @unrolled ($($a,)*))
+//    };
+//
+//    (@match_arm ($($a: ident,)*), ($($p:expr,)*), ($( ($($q: expr,)*) ,)*) ) => {
+//        identity!(@listed_is ($($a,)*), ($($p,)*)) || identity!(@alt_listed_is ($($a,)*), ($(($($q,)*),)*))
+//    };
+//
+//    ($a0:ident $(,$a: ident)*:
+//        ($p0:expr $(,$p:expr)*) $(|| ($q0:expr $(,$q:expr)*))* => $id0: expr,
+//        _ => $default: expr $(,)?
+//    ) => {
+//        if identity!(@match_arm ($a0, $($a,)*), ($p0, $($p,)*), ($(($q0, $($q,)*),)*) )
+//        {
+//            $id0
+//        } else {
+//            $default
+//        }
+//    };
+//
+//    ($a0:ident $(,$a:ident)*:
+//        ($p00:expr $(,$p01:expr)*) $(|| ($q00:expr $(,$q01:expr)*))* => $id0:expr,
+//        $(($p10:expr $(,$p11:expr)*) $(|| ($q10:expr $(,$q11:expr)*))* => $id:expr,)*
+//        _ => $default:expr $(,)?
+//    ) => {
+//        if identity!(@match_arm ($a0, $($a,)*), ($p00, $($p01,)*), ($(($q00, $($q01,)*),)*) ) {
+//            println!("{}", stringify!($id0));
+//            $id0
+//        } else {
+//            identity!($a0 $(,$a)*: $(($p10 $(,$p11)*) $(|| ($q10 $(,$q11)*))* => $id,)+ _ => $default)
+//        }
+//    }
+//}
+
 impl Pow {
     pub fn pow(n1: impl CalcursType, n2: impl CalcursType) -> Base {
         Self {
@@ -216,6 +269,7 @@ impl Pow {
     fn reduce(self) -> Base {
         let b = self.base.desc();
         let e = self.exp.desc();
+        use Item as I;
 
         if (b.is(Item::Undef) || e.is(Item::Undef))
             || (b.is(Item::Zero) && e.is(Item::Zero))
@@ -223,6 +277,7 @@ impl Pow {
         {
             // 0^0 / 0^-n => undef
             Undefined.base()
+
         } else if b.is(Item::One) || e.is(Item::One) {
             // 1^x => 1
             // x^1 => x
@@ -230,19 +285,30 @@ impl Pow {
         } else if !b.is(Item::Zero) && e.is(Item::Zero) {
             // x^0 if x != 0 => 1
             Rational::one().base()
+
         } else if b.is(Item::Zero) && e.is(Item::Pos) {
             // 0^x if x > 0 => 0
             Rational::zero().base()
+
         } else if b.is(Item::Numeric) && e.is(Item::PosInf) {
             // x^(+oo) = +oo
             Infinity::pos().base()
+
         } else if b.is(Item::Numeric) && e.is(Item::NegInf) {
             // x^(-oo) = 0
             Rational::zero().base()
+
         } else if b.is(Item::Rational) && e.is(Item::MinusOne) {
             // n^-1 => 1 / n
             let r = get_itm!(Rational: self.base);
             (Rational::one() / r).base()
+
+        } else if b.is(Item::Pow) && e.is(Item::Int) {
+            // (x^a)^b => x^a*b if b in Z
+            let mut pow = get_itm!(Pow: self.base);
+            pow.exp *= self.exp;
+            pow.base()
+
         } else if b.is(Item::Numeric) && e.is(Item::Numeric) {
             let n1 = get_itm!(Numeric: self.base);
             let n2 = get_itm!(Numeric: self.exp);
@@ -272,7 +338,7 @@ impl Pow {
         let e = exp.desc();
 
         if b.is(Item::Atom) && e.is(Item::MinusOne) {
-            return write!(f, "1/{}", base);
+            return write!(f, "1/{base}");
         }
 
         if b.is(Item::Atom) && (!b.is(Item::Numeric) || b.is(Item::PosInt)) {
@@ -326,7 +392,6 @@ impl SumElem {
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub(crate) struct Sum {
     elems: Vec<(Numeric, SumElem)>,
-    //__args: BTreeMap<Product, Numeric>,
 }
 
 impl Sum {
@@ -441,7 +506,6 @@ impl TryFrom<Sum> for Mul {
 #[derive(Default, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct Product {
     elems: Vec<Pow>,
-    //__args: BTreeMap<Base, Base>,
 }
 
 impl Product {
@@ -688,69 +752,77 @@ mod op_test {
     use pretty_assertions::assert_eq;
     use test_case::test_case;
 
-    #[test_case(1, base!(2), base!(3), base!(5))]
-    #[test_case(2, base!(1 / 2), base!(1 / 2), base!(1))]
-    #[test_case(3, base!(v: x), base!(v: x), base!(v: x) * base!(2))]
-    #[test_case(4, base!(-3), base!(1 / 2), base!(-5 / 2))]
-    #[test_case(5, base!(inf), base!(4), base!(inf))]
-    #[test_case(6, base!(neg_inf), base!(4), base!(neg_inf))]
-    #[test_case(7, base!(pos_inf), base!(pos_inf), base!(pos_inf))]
-    #[test_case(8, base!(neg_inf), base!(pos_inf), base!(nan))]
-    #[test_case(9, base!(nan), base!(pos_inf), base!(nan))]
-    #[test_case(10, base!(4 / 2), base!(0), base!(2))]
+    macro_rules! b {
+        ($($t:tt)*) => {
+            base!($($t)*)
+        }
+    }
+
+    #[test_case(1, b!(2), b!(3), b!(5))]
+    #[test_case(2, b!(1 / 2), b!(1 / 2), b!(1))]
+    #[test_case(3, b!(v: x), b!(v: x), b!(v: x) * b!(2))]
+    #[test_case(4, b!(-3), b!(1 / 2), b!(-5 / 2))]
+    #[test_case(5, b!(inf), b!(4), b!(inf))]
+    #[test_case(6, b!(neg_inf), b!(4), b!(neg_inf))]
+    #[test_case(7, b!(pos_inf), b!(pos_inf), b!(pos_inf))]
+    #[test_case(8, b!(neg_inf), b!(pos_inf), b!(undef))]
+    #[test_case(9, b!(undef), b!(pos_inf), b!(undef))]
+    #[test_case(10, b!(4 / 2), b!(0), b!(2))]
     fn add(_case: u32, x: Base, y: Base, z: Base) {
         let expr = x + y;
         assert_eq!(expr, z);
     }
 
-    #[test_case(1, base!(-1), base!(3), base!(-4))]
-    #[test_case(2, base!(-3), base!(1 / 2), base!(-7 / 2))]
-    #[test_case(3, base!(1 / 2), base!(1 / 2), base!(0))]
-    #[test_case(4, base!(inf), base!(4), base!(inf))]
-    #[test_case(5, base!(neg_inf), base!(4 / 2), base!(neg_inf))]
-    #[test_case(6, base!(pos_inf), base!(4), base!(pos_inf))]
-    #[test_case(7, base!(pos_inf), base!(pos_inf), base!(nan))]
-    #[test_case(8, base!(neg_inf), base!(pos_inf), base!(neg_inf))]
-    #[test_case(9, base!(nan), base!(inf), base!(nan))]
+    #[test_case(1, b!(-1), b!(3), b!(-4))]
+    #[test_case(2, b!(-3), b!(1 / 2), b!(-7 / 2))]
+    #[test_case(3, b!(1 / 2), b!(1 / 2), b!(0))]
+    #[test_case(4, b!(inf), b!(4), b!(inf))]
+    #[test_case(5, b!(neg_inf), b!(4 / 2), b!(neg_inf))]
+    #[test_case(6, b!(pos_inf), b!(4), b!(pos_inf))]
+    #[test_case(7, b!(pos_inf), b!(pos_inf), b!(undef))]
+    #[test_case(8, b!(neg_inf), b!(pos_inf), b!(neg_inf))]
+    #[test_case(9, b!(undef), b!(inf), b!(undef))]
     fn sub(_case: u32, x: Base, y: Base, z: Base) {
         let expr = x - y;
         assert_eq!(expr, z)
     }
 
-    #[test_case(1, base!(-1), base!(3), base!(-3))]
-    #[test_case(2, base!(-1), base!(0), base!(0))]
-    #[test_case(3, base!(-1), base!(3) * base!(0), base!(0))]
-    #[test_case(4, base!(-3), base!(1 / 2), base!(-3 / 2))]
-    #[test_case(5, base!(1 / 2), base!(1 / 2), base!(1 / 4))]
-    #[test_case(6, base!(inf), base!(4), base!(inf))]
-    #[test_case(7, base!(neg_inf), base!(4 / 2), base!(neg_inf))]
-    #[test_case(8, base!(pos_inf), base!(4), base!(pos_inf))]
-    #[test_case(9, base!(pos_inf), base!(-1), base!(neg_inf))]
-    #[test_case(10, base!(pos_inf), base!(pos_inf), base!(pos_inf))]
-    #[test_case(11, base!(neg_inf), base!(pos_inf), base!(neg_inf))]
-    #[test_case(12, base!(nan), base!(inf), base!(nan))]
+    #[test_case(1, b!(-1), b!(3), b!(-3))]
+    #[test_case(2, b!(-1), b!(0), b!(0))]
+    #[test_case(3, b!(-1), b!(3) * b!(0), b!(0))]
+    #[test_case(4, b!(-3), b!(1 / 2), b!(-3 / 2))]
+    #[test_case(5, b!(1 / 2), b!(1 / 2), b!(1 / 4))]
+    #[test_case(6, b!(inf), b!(4), b!(inf))]
+    #[test_case(7, b!(neg_inf), b!(4 / 2), b!(neg_inf))]
+    #[test_case(8, b!(pos_inf), b!(4), b!(pos_inf))]
+    #[test_case(9, b!(pos_inf), b!(-1), b!(neg_inf))]
+    #[test_case(10, b!(pos_inf), b!(pos_inf), b!(pos_inf))]
+    #[test_case(11, b!(neg_inf), b!(pos_inf), b!(neg_inf))]
+    #[test_case(12, b!(undef), b!(inf), b!(undef))]
     fn mul(_case: u32, x: Base, y: Base, z: Base) {
         let expr = x * y;
         assert_eq!(expr, z);
     }
 
-    #[test_case(1, base!(0), base!(0), base!(nan))]
-    #[test_case(2, base!(0), base!(5), base!(0))]
-    #[test_case(3, base!(5), base!(0), base!(nan))]
-    #[test_case(4, base!(5), base!(5), base!(1))]
-    #[test_case(5, base!(1), base!(3), base!(1 / 3))]
-    #[test_case(6, base!(v: x), base!(v: x), base!(1))]
+    #[test_case(1, b!(0), b!(0), b!(undef))]
+    #[test_case(2, b!(0), b!(5), b!(0))]
+    #[test_case(3, b!(5), b!(0), b!(undef))]
+    #[test_case(4, b!(5), b!(5), b!(1))]
+    #[test_case(5, b!(1), b!(3), b!(1 / 3))]
+    #[test_case(6, b!(v: x), b!(v: x), b!(1))]
     fn div(_case: u32, x: Base, y: Base, z: Base) {
         let div = x / y;
         assert_eq!(div, z);
     }
 
-    #[test_case(1, base!(1), base!(1 / 100), base!(1))]
-    #[test_case(2, base!(4), base!(1), base!(4))]
-    #[test_case(3, base!(0), base!(0), base!(nan))]
-    #[test_case(4, base!(0), base!(-3 / 4), base!(nan))]
-    #[test_case(5, base!(0), base!(3 / 4), base!(0))]
-    #[test_case(6, base!(1 / 2), base!(-1), base!(4 / 2))]
+    #[test_case(1, b!(1), b!(1 / 100), b!(1))]
+    #[test_case(2, b!(4), b!(1), b!(4))]
+    #[test_case(3, b!(0), b!(0), b!(undef))]
+    #[test_case(4, b!(0), b!(-3 / 4), b!(undef))]
+    #[test_case(5, b!(0), b!(3 / 4), b!(0))]
+    #[test_case(6, b!(1 / 2), b!(-1), b!(4 / 2))]
+    #[test_case(7, b!(v: x).pow(b!(2)), b!(3), b!(v: x).pow(b!(6)))]
+    #[test_case(7, b!(v: x).pow(b!(2)), b!(3 / 2), b!(v: x).pow(b!(2)).pow(b!(3 / 2)))]
     fn pow(_case: u32, x: Base, y: Base, z: Base) {
         let expr = x.pow(y);
         assert_eq!(expr, z);
@@ -758,8 +830,8 @@ mod op_test {
 
     #[test]
     fn polynom() {
-        let p1 = base!(v: x) * base!(v: x) * base!(2) + base!(3) * base!(v: x) + base!(4 / 3);
-        let p2 = base!(4 / 3) + (base!(v: x).pow(base!(2))) * base!(2) + base!(3) * base!(v: x);
+        let p1 = b!(v: x) * b!(v: x) * b!(2) + b!(3) * b!(v: x) + b!(4 / 3);
+        let p2 = b!(4 / 3) + (b!(v: x).pow(b!(2))) * b!(2) + b!(3) * b!(v: x);
         assert_eq!(p1, p2);
     }
 }

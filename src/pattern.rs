@@ -21,6 +21,7 @@ bitflags! {
     #[rustfmt::skip]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Item: u32 {
+        const All      = bit!(0);
         const Atom     = bit!(1);
         const Symbol   = bit!(2)  | bit!(Atom);
         const Numeric  = bit!(3)  | bit!(Atom);
@@ -31,14 +32,14 @@ bitflags! {
         const Float    = bit!(7)  | bit!(Numeric);
 
         const Int      = bit!(8)  | bit!(Rational);
-        const UOne     = bit!(9)  | bit!(Numeric);
+        const UOne     = bit!(9)  | bit!(Int);
 
         const Binary   = bit!(10);
         const Add      = bit!(11) | bit!(Binary);
         const Mul      = bit!(12) | bit!(Binary);
         const Pow      = bit!(13) | bit!(Binary);
 
-        const Zero     = bit!(14) | bit!(Numeric);
+        const Zero     = bit!(14) | bit!(Int);
         const Pos      = bit!(15);
         const Neg      = bit!(16);
 
@@ -66,6 +67,10 @@ impl Item {
         let b = itm.bits();
         (self.bits() & b) == b
     }
+
+    pub const fn is_not(&self, itm: Item) -> bool {
+        !self.is(itm)
+    }
 }
 
 impl From<Item> for Pattern {
@@ -86,6 +91,11 @@ impl Pattern {
     pub const fn is(&self, itm: Item) -> bool {
         let b = itm.bits();
         (self.to_item().bits() & b) == b
+    }
+
+    #[inline(always)]
+    pub const fn is_not(&self, itm: Item) -> bool {
+        !self.is(itm)
     }
 }
 
