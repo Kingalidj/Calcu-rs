@@ -3,9 +3,8 @@ use std::{fmt, ops};
 use crate::{
     numeric::Numeric,
     operator::{Add, Div, Mul, Pow, Sub},
+    pattern::{Item, Pattern},
 };
-
-use crate::pattern as pat;
 
 pub type PTR<T> = Box<T>;
 
@@ -41,7 +40,7 @@ impl Base {
     }
 
     #[inline]
-    pub fn desc(&self) -> pat::Pattern {
+    pub fn desc(&self) -> Pattern {
         use Base as B;
         match self {
             B::Symbol(s) => s.desc(),
@@ -58,8 +57,8 @@ impl Symbol {
         Self { name: name.into() }
     }
 
-    pub const fn desc(&self) -> pat::Pattern {
-        pat::Pattern::Itm(pat::Item::Symbol)
+    pub const fn desc(&self) -> Pattern {
+        Pattern::Itm(Item::Symbol)
     }
 }
 
@@ -82,41 +81,6 @@ impl CalcursType for &Symbol {
     fn base(self) -> Base {
         panic!("only used for derivative")
     }
-}
-
-#[macro_export]
-macro_rules! base {
-    (pos_inf) => {
-        Infinity::pos().base()
-    };
-
-    (neg_inf) => {
-        Infinity::neg().base()
-    };
-
-    (inf) => {
-        Infinity::pos().base()
-    };
-
-    (undef) => {
-        Undefined.base()
-    };
-
-    ($int: literal) => {
-        Rational::from($int).base()
-    };
-
-    ($val: literal / $denom: literal) => {
-        Rational::from(($val, $denom)).base()
-    };
-
-    (v: $var: ident) => {
-        Symbol::new(stringify!($var)).base()
-    };
-
-    (f: $f: expr) => {
-        Float::new($f).base()
-    };
 }
 
 impl ops::Add for Base {
@@ -173,6 +137,14 @@ impl ops::MulAssign for Base {
             std::mem::swap(self, &mut lhs);
             *self = Mul::mul(lhs, rhs);
         }
+    }
+}
+
+impl ops::Neg for Base {
+    type Output = Base;
+
+    fn neg(self) -> Self::Output {
+        crate::rational::Rational::minus_one().base() * self
     }
 }
 
@@ -246,24 +218,25 @@ impl fmt::Debug for Symbol {
 #[cfg(test)]
 mod display {
     use crate::prelude::*;
+    use calcurs_macros::calc;
     use pretty_assertions::assert_eq;
     use test_case::test_case;
 
-    macro_rules! b {
+    macro_rules! c {
         ($($x: tt)*) => {
-            base!($($x)*)
+            calc!($($x)*)
         }
     }
 
-    #[test_case(b!(v: x).pow(b!(-1)), "1/x")]
-    #[test_case(b!(v: x).pow(b!(-3)), "x^(-3)")]
-    #[test_case(b!(v: x).pow(b!(2)), "x^2")]
-    #[test_case(b!(v: x) + b!(v: x), "2x")]
-    #[test_case(b!(1).pow(b!(2)), "1")]
-    #[test_case(b!(1 / 2).pow(b!(2)), "1/4")]
-    #[test_case(b!(1 / 3).pow(b!(1 / 100)), "(1/3)^(1/100)")]
-    #[test_case(b!(10).pow(b!(10)) + b!(1 / 1000), "10000000000001 e-3")]
-    #[test_case(b!(1 / 3).pow(b!(2 / 1000)), "(1/3)^(1/500)")]
+    #[test_case(c!(x^(-1)), "1/x")]
+    #[test_case(c!(x^(-3)), "x^(-3)")]
+    #[test_case(c!(x^2), "x^2")]
+    #[test_case(c!(x+x), "2x")]
+    #[test_case(c!(1^2), "1")]
+    #[test_case(c!((1/2)^2), "1/4")]
+    #[test_case(c!((1/3)^(1/100)), "(1/3)^(1/100)")]
+    #[test_case(c!((10^15) + 1/1000), "1000000000000000001 e-3")]
+    #[test_case(c!((1/3)^(2/1000)), "(1/3)^(1/500)")]
     fn disp_fractions(exp: Base, res: &str) {
         let fmt = format!("{}", exp);
         assert_eq!(fmt, res);

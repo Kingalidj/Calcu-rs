@@ -68,7 +68,7 @@ impl Rational {
         }
     }
 
-    pub fn new(num: i32, den: i32) -> Self {
+    pub fn new(num: i64, den: i64) -> Self {
         if den == 0 {
             panic!("Rational::new: found 0 denominator")
         }
@@ -299,8 +299,14 @@ impl From<RatioTyp> for Rational {
 }
 
 impl From<i32> for Rational {
+    fn from(val: i32) -> Self {
+        (val as i64).into()
+    }
+}
+
+impl From<i64> for Rational {
     #[inline]
-    fn from(numer: i32) -> Self {
+    fn from(numer: i64) -> Self {
         if numer == 0 {
             return Self::zero();
         }

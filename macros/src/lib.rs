@@ -200,10 +200,89 @@ pub fn identity(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     out.into()
 }
 
+fn eval_bin(b: syn::ExprBinary) -> TokenStream {
+    use syn::BinOp as B;
+
+    let lhs = eval_expr(*b.left); 
+    let rhs = eval_expr(*b.right);
+    let op = match b.op {
+        B::Add(_) => quote!(+),
+        B::Sub(_) => quote!(-),
+        B::Mul(_) => quote!(*),
+        B::Div(_) => quote!(/),
+
+        B::Eq(_) => quote!(==),
+        B::Lt(_) => quote!(<),
+        B::Le(_) => quote!(<=),
+        B::Ne(_) => quote!(!=),
+        B::Ge(_) => quote!(>=),
+        B::Gt(_) => quote!(>),
+
+        B::AddAssign(_) => quote!(+=),
+        B::SubAssign(_) => quote!(-=),
+        B::MulAssign(_) => quote!(*=),
+        B::DivAssign(_) => quote!(/=),
+
+        B::BitXor(_) => return quote!(#lhs.pow(#rhs)),
+        _ => panic!("unknown binop"),
+    };
+    quote!(#lhs #op #rhs)
+}
+
+fn eval_lit(l: syn::ExprLit) -> TokenStream {
+    match l.lit {
+        syn::Lit::Int(i) => {
+            let val: i64 = i.base10_parse().unwrap();
+            quote!(calcu_rs::rational::Rational::from(#val).base())
+        },
+        syn::Lit::Float(f) => {
+            let val: f64 = f.base10_parse().unwrap();
+            quote!(calcu_rs::numeric::Float::new(#val).base())
+        },
+        _ => panic!("unknown literal"),
+    }
+}
+
+fn eval_paren(p: syn::ExprParen) -> TokenStream {
+    let expr = eval_expr(*p.expr);
+    quote!((#expr))
+}
+
+fn eval_unary(u: syn::ExprUnary) -> TokenStream {
+    let expr = eval_expr(*u.expr);
+    let op = u.op;
+    quote!(#op #expr)
+}
+
+fn eval_ident(p: &syn::Ident) -> TokenStream {
+    let id = p.to_string();
+    if id == "oo" {
+        quote!(calcu_rs::numeric::Infinity::pos().base())
+    } else if id == "undef" {
+        quote!(calcu_rs::numeric::Undefined.base())
+    } else {
+        quote!(calcu_rs::base::Symbol::new(#id).base())
+    }
+}
+
+fn eval_path(p: syn::ExprPath) -> TokenStream {
+    let id = p.path.get_ident().expect("path is not an identifier");
+    eval_ident(id)
+}
+
+fn eval_expr(e: syn::Expr) -> TokenStream {
+    use syn::Expr as E;
+    match e {
+        E::Binary(b) => eval_bin(b),
+        E::Lit(l) => eval_lit(l),
+        E::Paren(p) => eval_paren(p),
+        E::Unary(u) => eval_unary(u),
+        E::Path(p) => eval_path(p),
+        _ => panic!("unknown expression"),
+    }
+}
+
 #[proc_macro]
 pub fn calc(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-
-    let expr: syn::Expr = syn::parse_macro_input!(input);
-
-    Default::default()
+    eval_expr(syn::parse_macro_input!(input as syn::Expr)).into()
 }
