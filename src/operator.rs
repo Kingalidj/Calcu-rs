@@ -185,7 +185,7 @@ impl Mul {
     fn fmt_parts(coeff: &Numeric, prod: &SumElem, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let p = prod.desc();
         Self::fmt_coeff(coeff, p, f)?;
-        if p.is(Item::Pow) {
+        if p.is(Item::Pow) || p.is(Item::Atom) {
             write!(f, "{prod}")
         } else {
             write!(f, "({prod})")
