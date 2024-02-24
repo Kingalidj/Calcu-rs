@@ -1,4 +1,5 @@
 use crate::{
+    identity,
     base::{Base, CalcursType, Differentiable, Symbol},
     numeric::Numeric,
     operator::{Add, Mul, Pow},
@@ -58,26 +59,29 @@ impl Differentiable for Pow {
         let b = self.base.desc();
         let e = self.exp.desc();
 
-        if b.is(Item::Numeric) && e.is(Item::Numeric) {
-            Rational::zero().base()
-        } else if b.is(Item::Symbol) && e.is(Item::Numeric) {
+        identity!{ (b, e) {
             // x^n -> n * x^(n-1)
-            let n = get_itm!(Numeric: self.exp);
-            let x = get_itm!(Symbol: self.base);
-            if x.name == indep {
-                n.base() * x.base().pow(n - Rational::one().num())
-            } else {
-                Rational::zero().base()
-            }
-        } else if e.is(Item::Numeric) {
+            (Item::Numeric, Item::Numeric) => {
+                let n = get_itm!(Numeric: self.exp);
+                let x = get_itm!(Symbol: self.base);
+                if x.name == indep {
+                    n.base() * x.base().pow(n - Rational::one().num())
+                } else {
+                    Rational::zero().base()
+                }
+            },
+
             // f^n -> n * f^(n-1) * f'
-            let n = get_itm!(Numeric: self.exp);
-            let f = self.base;
-            let df = f.clone().derive(indep);
-            n.base() * f.pow(n + Rational::minus_one().num()) * df
-        } else {
-            unimplemented!("can't derive this function")
-        }
+            (_, Item::Numeric) => {
+               let n = get_itm!(Numeric: self.exp);
+               let f = self.base;
+               let df = f.clone().derive(indep);
+               n.base() * f.pow(n + Rational::minus_one().num()) * df
+            },
+
+            default => unimplemented!("can't derive this function")
+        }}
+
     }
 }
 

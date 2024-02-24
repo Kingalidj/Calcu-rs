@@ -218,7 +218,7 @@ impl fmt::Debug for Symbol {
 #[cfg(test)]
 mod display {
     use crate::prelude::*;
-    use calcurs_macros::calc;
+    use calcu_rs::calc;
     use pretty_assertions::assert_eq;
     use test_case::test_case;
 

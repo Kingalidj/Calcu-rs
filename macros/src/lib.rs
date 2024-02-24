@@ -116,7 +116,7 @@ impl parse::Parse for IdentityMap {
 //      default => ...
 // }}
 //
-// to:
+// turns to:
 //
 // if a.is(Zero) && b.is(One) {
 //

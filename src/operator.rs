@@ -7,7 +7,7 @@ use crate::{
     rational::Rational,
 };
 
-use calcurs_macros::{calc, identity};
+use calcu_rs::{calc, identity};
 
 /// Represents addition in symbolic expressions
 ///
@@ -139,19 +139,21 @@ impl Mul {
 
     pub fn reduce(self) -> Base {
         let coeff = self.coeff.desc();
+        let prod = self.product.desc();
 
         if self.product.is_empty() {
-            self.coeff.base()
-        } else if coeff.is(Item::Undef) {
-            Undefined.base()
-        } else if coeff.is(Item::Zero) {
-            Rational::zero().base()
-        } else if coeff.is(Item::One) && self.product.is_pow() {
-            let p: Pow = self.product.try_into().unwrap();
-            p.base()
-        } else {
-            self.base()
+            return self.coeff.base();
         }
+
+        identity! { (coeff, prod) {
+            (Item::Undef, _) => calc!(undef),
+            (Item::Zero, _) => calc!(0),
+            (Item::One, Item::Pow) => {
+                let p: Pow = self.product.try_into().unwrap();
+                p.base()
+            },
+            default => self.base(),
+        }}
     }
 
     pub fn new_raw() -> Self {
@@ -181,8 +183,13 @@ impl Mul {
     }
 
     fn fmt_parts(coeff: &Numeric, prod: &SumElem, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        Self::fmt_coeff(coeff, prod.desc(), f)?;
-        write!(f, "{prod}")
+        let p = prod.desc();
+        Self::fmt_coeff(coeff, p, f)?;
+        if p.is(Item::Pow) {
+            write!(f, "{prod}")
+        } else {
+            write!(f, "({prod})")
+        }
     }
 
     #[inline]
@@ -218,51 +225,51 @@ impl Pow {
         let e = self.exp.desc();
 
         identity! { (b, e) {
-                    // undef => undef
-                    (I::Undef, _) || (_, I::Undef)
-                    // 0^0 / 0^-n => undef
-                    || (I::Zero, I::Zero) || (I::Zero, I::Neg) => calc!(undef),
+            // undef => undef
+            (I::Undef, _) || (_, I::Undef)
+                // 0^0 / 0^-n => undef
+                || (I::Zero, I::Zero) || (I::Zero, I::Neg) => calc!(undef),
 
-                    // 1^x => 1
-                    // x^1 => x
-                    (_, I::One) || (I::One, _) => self.base,
-        // x^0 => 1 | if x != 0
-                    (!I::Zero, I::Zero) => calc!(1),
+                // 1^x => 1
+                // x^1 => x
+                (_, I::One) || (I::One, _) => self.base,
+                // x^0 => 1 | if x != 0
+                (!I::Zero, I::Zero) => calc!(1),
 
-                    // 0^x => 0 | if x > 0
-                    (I::Zero, I::Pos) => calc!(0),
+                // 0^x => 0 | if x > 0
+                (I::Zero, I::Pos) => calc!(0),
 
-                    // n^(-1) => 1 / n
-                    (I::Rational, I::MinusOne) => {
-                        // from div?
-                        let r = get_itm!(Rational: self.base);
-                        //TODO: inv()
-                        (Rational::one() / r).base()
-                    },
+                // n^(-1) => 1 / n
+                (I::Rational, I::MinusOne) => {
+                    // from div?
+                    let r = get_itm!(Rational: self.base);
+                    //TODO: inv()
+                    (Rational::one() / r).base()
+                },
 
-                    // (x^a)^b => x^(a*b) | if b in Z
-                    (I::Pow, I::Int) => {
-                        let mut pow = get_itm!(Pow: self.base);
-                        pow.exp *= self.exp;
-                        pow.base()
-                    },
+                // (x^a)^b => x^(a*b) | if b in Z
+                (I::Pow, I::Int) => {
+                    let mut pow = get_itm!(Pow: self.base);
+                    pow.exp *= self.exp;
+                    pow.base()
+                },
 
-                    (I::Numeric, I::Numeric) => {
-                        let n1 = get_itm!(Numeric: self.base);
-                        let n2 = get_itm!(Numeric: self.exp);
-                        n1.checked_pow_num(n2).map(|n| n.base()).unwrap_or(
-                            Pow {
-                                base: n1.base(),
-                                exp: n2.base(),
-                            }
-                            .base(),
+                (I::Numeric, I::Numeric) => {
+                    let n1 = get_itm!(Numeric: self.base);
+                    let n2 = get_itm!(Numeric: self.exp);
+                    n1.checked_pow_num(n2).map(|n| n.base()).unwrap_or(
+                        Pow {
+                            base: n1.base(),
+                            exp: n2.base(),
+                        }
+                        .base(),
                         )
-                    },
+                },
 
-                    //TODO: x^(+oo) = +oo
+                //TODO: x^(+oo) = +oo
 
-                    default => self.base(),
-                }}
+                default => self.base(),
+        }}
     }
 
     #[inline]
@@ -670,7 +677,6 @@ mod deriv_test {
     fn sum_rule(_case: u32, f: Base, df: Base) {
         assert_eq!(f.derive("x"), df);
     }
-
 
     #[test_case(calc!((x^2)*y), calc!(2*x*y); "1")]
     fn product_rule(f: Base, df: Base) {

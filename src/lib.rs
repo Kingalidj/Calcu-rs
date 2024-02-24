@@ -1,5 +1,5 @@
 pub extern crate self as calcu_rs;
-pub use calcurs_macros::calc;
+pub use calcurs_macros::{calc, identity};
 
 pub mod base;
 pub mod derivative;
