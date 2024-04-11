@@ -54,7 +54,7 @@ impl Numeric {
             (N::Float(f), N::Rational(r)) | (N::Rational(r), N::Float(f)) => {
                 (r.as_float() + f).into()
             }
-            (N::Rational(r1), N::Rational(r2)) => (r1 + r2).into(),
+            (N::Rational(r1), N::Rational(r2)) => r1.convert_add(r2),
         }
     }
 
@@ -68,7 +68,7 @@ impl Numeric {
             (N::Float(f), N::Rational(r)) | (N::Rational(r), N::Float(f)) => {
                 (r.as_float() - f).into()
             }
-            (N::Rational(r1), N::Rational(r2)) => (r1 - r2).into(),
+            (N::Rational(r1), N::Rational(r2)) => r1.convert_sub(r2),
         }
     }
 
@@ -81,7 +81,7 @@ impl Numeric {
             (N::Float(f), N::Rational(r)) | (N::Rational(r), N::Float(f)) => {
                 (r.as_float() * f).into()
             }
-            (N::Rational(r1), N::Rational(r2)) => (r1 * r2).into(),
+            (N::Rational(r1), N::Rational(r2)) => r1.convert_mul(r2),
         }
     }
 
@@ -93,7 +93,7 @@ impl Numeric {
             (n, N::Infinity(inf)) => n.div_inf(inf),
             (N::Float(f1), N::Float(f2)) => f1 / f2,
             (N::Float(f), N::Rational(r)) | (N::Rational(r), N::Float(f)) => r.as_float() / f,
-            (N::Rational(r1), N::Rational(r2)) => (r1 / r2).into(),
+            (N::Rational(r1), N::Rational(r2)) => r1.convert_div(r2),
         }
     }
 
@@ -510,6 +510,22 @@ impl From<Infinity> for Numeric {
 impl From<Undefined> for Numeric {
     fn from(value: Undefined) -> Self {
         Numeric::Undefined(value)
+    }
+}
+
+impl From<f64> for Numeric {
+    fn from(value: f64) -> Self {
+        if value.is_nan() {
+            Undefined.into()
+        } else if value.is_infinite() {
+            if value.is_sign_negative() {
+                Infinity::neg().into()
+            } else {
+                Infinity::pos().into()
+            }
+        } else {
+            Float(value).into()
+        }
     }
 }
 

@@ -244,7 +244,7 @@ impl Pow {
                     // from div?
                     let r = get_itm!(Rational: self.base);
                     //TODO: inv()
-                    (Rational::one() / r).base()
+                    Rational::one().convert_div(r).base()
                 },
 
                 // (x^a)^b => x^(a*b) | if b in Z
@@ -269,6 +269,32 @@ impl Pow {
                 //TODO: x^(+oo) = +oo
 
                 default => self.base(),
+        }}
+    }
+
+    pub fn expand(self) -> Base {
+        use Item as I;
+
+        let b = self.base.desc();
+        let e = self.exp.desc();
+
+        identity! {(b, e) {
+
+            (I::Add, I::Int) => {
+                let add = get_itm!(Add: self.base);
+                let rat = get_itm!(Rational: self.exp);
+                let int = rat.numer;
+
+                match int {
+                    1 => add.base(),
+                    2 => {
+                        todo!()
+                    }
+                    _ => add.base().pow(rat),
+                }
+            },
+
+            default => self.base(),
         }}
     }
 

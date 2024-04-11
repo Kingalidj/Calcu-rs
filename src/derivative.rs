@@ -1,6 +1,6 @@
 use crate::{
-    identity,
     base::{Base, CalcursType, Differentiable, Symbol},
+    identity,
     numeric::Numeric,
     operator::{Add, Mul, Pow},
     pattern::{get_itm, Item},
@@ -59,7 +59,7 @@ impl Differentiable for Pow {
         let b = self.base.desc();
         let e = self.exp.desc();
 
-        identity!{ (b, e) {
+        identity! { (b, e) {
             // x^n -> n * x^(n-1)
             (Item::Numeric, Item::Numeric) => {
                 let n = get_itm!(Numeric: self.exp);
@@ -81,7 +81,6 @@ impl Differentiable for Pow {
 
             default => unimplemented!("can't derive this function")
         }}
-
     }
 }
 

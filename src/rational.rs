@@ -247,6 +247,24 @@ impl Rational {
         Pattern::Itm(flag.union(Item::Rational))
     }
 
+    pub fn factorial(self) -> Self {
+        let d = self.desc();
+
+        if d.is(Item::Zero) {
+            Self::one()
+        } else if d.is(Item::PosInt) {
+            let mut res = self.numer;
+
+            for i in 1..res {
+                res *= i;
+            }
+
+            Rational::from(res)
+        } else {
+            panic!("factorial of {self} not defined");
+        }
+    }
+
     fn format_for_print(&self) -> Self {
         let mut r = *self;
 
@@ -285,6 +303,15 @@ impl NonZero {
     #[inline(always)]
     pub const fn val(&self) -> RatioTyp {
         self.non_zero_val
+    }
+
+    #[inline(always)]
+    pub const fn checked_mul(&self, rhs: RatioTyp) -> Option<RatioTyp> {
+        if rhs == 0 {
+            return None;
+        }
+
+        self.non_zero_val.checked_mul(rhs)
     }
 }
 
@@ -412,9 +439,64 @@ impl ops::Neg for Rational {
     }
 }
 
+impl From<Rational> for f64 {
+    fn from(value: Rational) -> Self {
+        let mut val: f64 = value.numer() as f64 * 10f64.powf(value.expon as f64);
+        val /= value.denom() as f64;
+
+        return val;
+    }
+}
+
+impl Rational {
+    pub(crate) fn convert_add(self, rhs: Rational) -> Numeric {
+        if let Some(sum) = self + rhs {
+            sum.into()
+        } else {
+            let f_lhs: f64 = self.into();
+            let f_rhs: f64 = rhs.into();
+            let sum = f_lhs + f_rhs;
+            sum.into()
+        }
+    }
+
+    pub(crate) fn convert_sub(self, rhs: Rational) -> Numeric {
+        if let Some(diff) = self - rhs {
+            diff.into()
+        } else {
+            let f_lhs: f64 = self.into();
+            let f_rhs: f64 = rhs.into();
+            let diff = f_lhs - f_rhs;
+            diff.into()
+        }
+    }
+
+    pub(crate) fn convert_mul(self, rhs: Rational) -> Numeric {
+        if let Some(prod) = self * rhs {
+            prod.into()
+        } else {
+            let f_lhs: f64 = self.into();
+            let f_rhs: f64 = rhs.into();
+            let mul = f_lhs * f_rhs;
+            mul.into()
+        }
+    }
+
+    pub(crate) fn convert_div(self, rhs: Rational) -> Numeric {
+        if let Some(prod) = self / rhs {
+            prod.into()
+        } else {
+            let f_lhs: f64 = self.into();
+            let f_rhs: f64 = rhs.into();
+            let mul = f_lhs / f_rhs;
+            mul.into()
+        }
+    }
+}
+
 //TODO: checked add
 impl ops::Add for Rational {
-    type Output = Rational;
+    type Output = Option<Rational>;
 
     fn add(self, rhs: Self) -> Self::Output {
         let (lhs, rhs, factor) = Rational::factor_expon(self, rhs);
@@ -424,10 +506,10 @@ impl ops::Add for Rational {
 
         let mut res;
         if lhs.sign == rhs.sign {
-            res = Self::from(lhs_f + rhs_f);
+            res = Self::from((lhs_f + rhs_f)?);
             res.sign = lhs.sign;
-            res.expon += factor;
-            return res;
+            res.expon = res.expon.checked_add(factor)?;
+            return Some(res);
         }
 
         // lhs.sign != rhs.sign
@@ -441,12 +523,19 @@ impl ops::Add for Rational {
             res.sign = rhs.sign;
         }
         res.expon += factor;
-        res.reduce()
+        Some(res.reduce())
+    }
+}
+
+// TODO: remove add assign
+impl ops::AddAssign for Rational {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = (*self + rhs).unwrap();
     }
 }
 
 impl ops::Sub for Rational {
-    type Output = Rational;
+    type Output = Option<Rational>;
 
     fn sub(self, rhs: Self) -> Self::Output {
         let mut rhs = rhs;
@@ -456,34 +545,45 @@ impl ops::Sub for Rational {
 }
 
 impl ops::Mul for Rational {
-    type Output = Rational;
+    type Output = Option<Rational>;
 
     fn mul(mut self, rhs: Self) -> Self::Output {
         self.sign *= rhs.sign;
         let gcd_ad = self.numer.gcd(&rhs.denom());
         let gcd_bc = self.denom().gcd(&rhs.numer);
+        // divisions should be safe
         self.numer /= gcd_ad;
-        self.numer = self.numer * rhs.numer / gcd_bc;
+        self.numer = self.numer.checked_mul(rhs.numer)? / gcd_bc;
         self.denom /= gcd_bc;
         self.denom *= rhs.denom() / gcd_ad;
         self.expon += rhs.expon;
-        self.reduce()
+        Some(self.reduce())
+    }
+}
+
+// TODO: remove
+impl ops::MulAssign for Rational {
+    fn mul_assign(&mut self, rhs: Self) {
+        *self = (*self * rhs).unwrap();
     }
 }
 
 impl ops::Div for Rational {
-    type Output = Rational;
+    type Output = Option<Rational>;
 
     fn div(mut self, rhs: Self) -> Self::Output {
         self.sign *= rhs.sign;
         let gcd_ac = self.numer.gcd(&rhs.numer);
         let gcd_bd = self.denom().gcd(&rhs.denom());
         self.numer /= gcd_ac;
-        self.numer = self.numer * rhs.denom() / gcd_bd;
+        self.numer = self.numer.checked_mul(rhs.denom())? / gcd_bd;
         self.denom /= gcd_bd;
-        self.denom *= rhs.numer / gcd_ac;
+        self.denom = self
+            .denom
+            .checked_mul(rhs.numer.checked_div(gcd_ac)?)?
+            .into();
         self.expon -= rhs.expon;
-        self.reduce()
+        Some(self.reduce())
     }
 }
 
@@ -544,25 +644,25 @@ impl ops::DivAssign<RatioTyp> for NonZero {
 }
 
 impl ops::Add for Fraction {
-    type Output = Fraction;
+    type Output = Option<Fraction>;
 
     /// assume self.denom != 0 and rhs.denom != 0
     #[inline]
     fn add(self, rhs: Self) -> Self::Output {
         if self.denom == rhs.denom {
             let denom = self.denom;
-            let numer = self.numer + rhs.numer;
-            return Self { numer, denom };
+            let numer = self.numer.checked_add(rhs.numer)?;
+            return Some(Self { numer, denom });
         }
 
         let lcm = self.denom.lcm(&rhs.denom);
-        let lhs_numer = self.numer * (lcm / self.denom);
-        let rhs_numer = rhs.numer * (lcm / rhs.denom);
+        let lhs_numer = self.numer.checked_mul(lcm.checked_div(self.denom)?)?;
+        let rhs_numer = rhs.numer.checked_mul(lcm.checked_div(rhs.denom)?)?;
 
-        Self {
+        Some(Self {
             numer: lhs_numer + rhs_numer,
             denom: lcm,
-        }
+        })
     }
 }
 
@@ -672,10 +772,10 @@ mod rational_test {
 
     #[test]
     fn exprs() {
-        assert_eq!(r!(1) + r!(1), r!(2));
-        assert_eq!(r!(1 / 3) + r!(2 / 3), r!(1));
-        assert_eq!(r!(1 / 3) - r!(2 / 3), r!(-1 / 3));
-        assert_eq!(r!(1 / -3) * r!(3), r!(-1));
+        assert_eq!(r!(1) + r!(1), Some(r!(2)));
+        assert_eq!(r!(1 / 3) + r!(2 / 3), Some(r!(1)));
+        assert_eq!(r!(1 / 3) - r!(2 / 3), Some(r!(-1 / 3)));
+        assert_eq!(r!(1 / -3) * r!(3), Some(r!(-1)));
         assert!(r!(2) > r!(1));
         assert!(r!(2) >= r!(2));
         assert!(r!(2 / 4) <= r!(4 / 8));
