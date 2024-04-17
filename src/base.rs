@@ -229,6 +229,7 @@ mod display {
     }
 
     #[test_case(c!(x^(-1)), "1/x")]
+    #[test_case(c!(34/3), "34/3")]
     #[test_case(c!(x^(-3)), "x^(-3)")]
     #[test_case(c!(x^2), "x^2")]
     #[test_case(c!(x+x), "2x")]

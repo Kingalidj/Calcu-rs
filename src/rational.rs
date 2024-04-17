@@ -118,7 +118,7 @@ impl Rational {
         Float(f)
     }
 
-    /// reduces only the fraction part
+    /// reduces only the fraction part, ignores exponent
     #[inline]
     pub(crate) fn reduce_frac(&mut self) {
         match (self.numer, self.denom()) {
@@ -277,6 +277,11 @@ impl Rational {
         let max_num = 999;
 
         if r.expon.abs() <= max_len && r.expon.abs() > 1 && r.numer < max_num {
+            r.apply_expon();
+            r.reduce_frac();
+        }
+
+        if r.expon == 1 {
             r.apply_expon();
             r.reduce_frac();
         }
