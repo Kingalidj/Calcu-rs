@@ -72,7 +72,7 @@ impl CalcursType for Base {
 impl CalcursType for Symbol {
     #[inline(always)]
     fn base(self) -> Base {
-        Base::Symbol(self).base()
+        Base::Symbol(self)
     }
 }
 

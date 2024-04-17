@@ -102,6 +102,7 @@ impl Mul {
 
     /// n1 * n2
     pub fn mul(n1: impl CalcursType, n2: impl CalcursType) -> Base {
+        println!("mul: [{}] * [{}]", n1.clone().base(), n2.clone().base());
         let mut prod = Self::new_raw();
         prod.arg(n1.base());
         prod.arg(n2.base());
@@ -126,13 +127,25 @@ impl Mul {
 
         match b {
             B::Numeric(num) => self.coeff *= num,
-            B::Pow(pow) => self.product.mul(pow.base()),
             B::Mul(mul) => {
                 self.coeff *= mul.coeff;
                 mul.product
                     .into_pow_iter()
-                    .for_each(|pow| self.product.mul(pow.base()));
+                    .for_each(|pow| self.arg(pow.base()));
             }
+            B::Pow(pow) => {
+                if pow.base.desc().is(Item::Atom) {
+                    self.product.mul(pow.base());
+                } else {
+                    let flat = pow.expand();
+                    // the base of the power is not an atom, so the flattened version should no
+                    // longer be a power
+                    debug_assert!(!flat.desc().is(Item::Pow)); 
+                    self.arg(flat);
+                }
+            }
+
+                //self.product.mul(pow.base()),
             B::Symbol(_) | B::Add(_) => self.product.mul(b),
         }
     }
@@ -292,6 +305,22 @@ impl Pow {
                     }
                     _ => add.base().pow(rat),
                 }
+            },
+
+            // (a * b * c)^d => a^d * b^d * c^d
+            // powers with same exponent will not be reduced
+            (I::Mul, _) => {
+                let mul = get_itm!(Mul: self.base);
+                let mul_coeff = mul.coeff;
+                let mul_elems = mul.product.elems;
+
+                let mut flat_res = mul_coeff.base().pow(self.exp.clone());
+
+                for elem in mul_elems {
+                    flat_res *= elem.base().pow(self.exp.clone());
+                }
+
+                flat_res
             },
 
             default => self.base(),
@@ -477,8 +506,24 @@ pub(crate) struct Product {
 }
 
 impl Product {
-    fn find(&mut self, elem: &mut Base) -> Option<(usize, &mut Pow)> {
-        if let Some(indx) = self.elems.iter().position(|e| &e.base == elem) {
+    fn find_base(&mut self, elem: &Base) -> Option<(usize, &mut Pow)> {
+        // search for expressions that can be shortened:
+        if let Some(indx) = self.elems.iter()
+            .position(|e| //&e.base == elem
+                      {
+                      match elem {
+                        Base::Symbol(_) => elem == &e.base,
+                        Base::Add(_) => elem == &e.base,
+                        Base::Pow(pow) => 
+                        {
+                            println!("{}: find_base: {}", e, pow);
+                            pow.base == e.base
+                        },
+                        Base::Numeric(_) => false,
+                        Base::Mul(_) => panic!("multiplication should happen element-wise"),
+                    }
+                      }
+            ) {
             let coeff = self.elems.get_mut(indx).unwrap();
             Some((indx, coeff))
         } else {
@@ -491,15 +536,16 @@ impl Product {
     }
 
     pub fn mul(&mut self, itm: Base) {
-        let mut pow: Pow = itm.into();
-        if let Some((indx, p)) = self.find(&mut pow.base) {
+
+        if let Some((indx, p)) = self.find_base(&itm) {
+            let pow: Pow = itm.into();
             p.exp += pow.exp;
 
             if p.exp.desc().is(Item::Zero) {
                 self.elems.remove(indx);
             }
         } else {
-            self.elems.push(pow);
+            self.elems.push(itm.into());
         }
     }
 
@@ -772,6 +818,7 @@ mod op_test {
     #[test_case(c!(5/5), c!(1);     "4")]
     #[test_case(c!(1/3), c!(1/3);   "5")]
     #[test_case(c!(x/x), c!(1);     "6")]
+    #[test_case(c!((x*x + x) / x), c!(x + 1); "7")]
     fn div(div: Base, sol: Base) {
         assert_eq!(div, sol);
     }

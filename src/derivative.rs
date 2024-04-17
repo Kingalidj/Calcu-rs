@@ -79,6 +79,7 @@ impl Differentiable for Pow {
                n.base() * f.pow(n + Rational::minus_one().num()) * df
             },
 
+            // f(x)^g(x)
             default => unimplemented!("can't derive this function")
         }}
     }
@@ -122,5 +123,27 @@ impl Differentiable for Rational {
     type Output = Rational;
     fn derive(self, _: &str) -> Self::Output {
         Rational::zero()
+    }
+}
+
+#[cfg(test)]
+mod derivative_tests {
+    use crate::prelude::*;
+    use calcu_rs::calc;
+    use pretty_assertions::assert_eq;
+    use test_case::test_case;
+
+    macro_rules! c {
+        ($($x: tt)*) => {
+            calc!($($x)*)
+        }
+    }
+
+    #[test_case(c!(x).derive("x"), c!(1))]
+    #[test_case(c!(y).derive("x"), c!(0))]
+    #[test_case(c!(x*x).derive("x"), c!(2*x))]
+    #[test_case(c!((x^2 - x) / (2 * x)).derive("x"), c!(1 / 2))]
+    fn derive(expr: Base, result: Base) {
+        assert_eq!(expr, result);
     }
 }
