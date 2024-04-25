@@ -3,9 +3,9 @@ use core::{cmp, fmt, hash::Hash, ops};
 use num::Integer;
 
 use crate::{
-    base::{Base, CalcursType},
+    base::{Base, CalcursType, Described},
     numeric::{Float, Numeric, Sign},
-    pattern::{Item, Pattern},
+    pattern::{Item, Pattern, Pattern2},
 };
 
 pub type RatioTyp = u64;
@@ -229,23 +229,6 @@ impl Rational {
     //    rhs.apply_expon();
     //    (lhs, rhs, factor)
     //}
-
-    #[inline]
-    pub const fn desc(&self) -> Pattern {
-        let sign = self.sign.desc();
-
-        let flag = if self.numer == 0 {
-            Item::Zero
-        } else if self.numer == 1 && self.denom() == 1 && self.expon == 0 {
-            Item::UOne.union(sign)
-        } else if self.denom() == 1 && self.expon >= 0 {
-            Item::Int.union(sign)
-        } else {
-            sign
-        };
-
-        Pattern::Itm(flag.union(Item::Rational))
-    }
 
     pub fn factorial(self) -> Self {
         let d = self.desc();
@@ -496,6 +479,25 @@ impl Rational {
             let mul = f_lhs / f_rhs;
             mul.into()
         }
+    }
+}
+
+impl Described for Rational {
+    #[inline]
+    fn desc(&self) -> Pattern {
+        let sign = self.sign.desc();
+
+        let flag = if self.numer == 0 {
+            Item::Zero
+        } else if self.numer == 1 && self.denom() == 1 && self.expon == 0 {
+            Item::UOne.union(sign)
+        } else if self.denom() == 1 && self.expon >= 0 {
+            Item::Int.union(sign)
+        } else {
+            sign
+        };
+
+        Pattern::Itm(flag.union(Item::Rational))
     }
 }
 

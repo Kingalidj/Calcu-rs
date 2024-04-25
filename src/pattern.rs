@@ -6,6 +6,12 @@ pub enum Pattern {
     Binary { lhs: Item, op: Item, rhs: Item },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd)]
+pub enum Pattern2<'a> {
+    Item(Item),
+    Operation { op: Item, elems: &'a [Item] },
+}
+
 macro_rules! bit {
     ($x:literal) => {
         1 << $x
@@ -96,6 +102,20 @@ impl Pattern {
     #[inline(always)]
     pub const fn is_not(&self, itm: Item) -> bool {
         !self.is(itm)
+    }
+}
+
+impl<'a> Pattern2<'a> {
+    pub const fn to_item(&self) -> Item {
+        match self {
+            Pattern2::Item(itm) => *itm,
+            Pattern2::Operation { op, .. } => *op,
+        }
+    }
+
+    pub const fn contains(&self, item: Item) -> bool {
+        let b = item.bits();
+        (self.to_item().bits() & b) == b
     }
 }
 

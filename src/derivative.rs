@@ -1,5 +1,5 @@
 use crate::{
-    base::{Base, CalcursType, Differentiable, Symbol},
+    base::{Base, CalcursType, Described, Differentiable, Symbol},
     identity,
     numeric::Numeric,
     operator::{Add, Mul, Pow},

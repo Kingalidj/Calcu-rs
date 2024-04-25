@@ -3,7 +3,7 @@ use std::{fmt, ops};
 use crate::{
     numeric::Numeric,
     operator::{Add, Div, Mul, Pow, Sub},
-    pattern::{Item, Pattern},
+    pattern::{Item, Pattern, Pattern2},
 };
 
 pub type PTR<T> = Box<T>;
@@ -18,29 +18,32 @@ pub enum Base {
     Pow(PTR<Pow>),
 }
 
-//TODO: generic Symbol data type (e.g &str)
-#[derive(Clone, PartialEq, PartialOrd, Ord, Eq, Hash)]
-pub struct Symbol {
-    pub name: String,
-}
-
 pub trait Differentiable: CalcursType {
     type Output;
     fn derive(self, indep: &str) -> Self::Output;
 }
 
 /// implemented by every symbolic math type
-pub trait CalcursType: Clone + fmt::Debug {
+pub trait CalcursType: Clone + fmt::Debug + Described {
     fn base(self) -> Base;
+}
+
+pub trait Described {
+    fn desc(&self) -> Pattern;
+
+    fn match_local(&self, pattern: Pattern2) -> bool {
+        pattern.contains(self.desc().to_item())
+    }
 }
 
 impl Base {
     pub fn pow(self, other: impl CalcursType) -> Base {
         Pow::pow(self, other).base()
     }
+}
 
-    #[inline]
-    pub fn desc(&self) -> Pattern {
+impl Described for Base {
+    fn desc(&self) -> Pattern {
         use Base as B;
         match self {
             B::Symbol(s) => s.desc(),
@@ -52,14 +55,23 @@ impl Base {
     }
 }
 
+//TODO: generic Symbol data type (e.g &str)
+#[derive(Clone, PartialEq, PartialOrd, Ord, Eq, Hash)]
+pub struct Symbol {
+    pub name: String,
+}
+
 impl Symbol {
     pub fn new<I: Into<String>>(name: I) -> Self {
         Self { name: name.into() }
     }
+}
 
-    pub const fn desc(&self) -> Pattern {
+impl Described for Symbol {
+    fn desc(&self) -> Pattern {
         Pattern::Itm(Item::Symbol)
     }
+
 }
 
 impl CalcursType for Base {
@@ -80,6 +92,12 @@ impl CalcursType for &Symbol {
     #[inline(always)]
     fn base(self) -> Base {
         panic!("only used for derivative")
+    }
+}
+
+impl Described for &Symbol {
+    fn desc(&self) -> Pattern {
+        (*self).desc()
     }
 }
 

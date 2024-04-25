@@ -2,7 +2,7 @@ use num::integer::Roots;
 use std::{cmp::Ordering, fmt, ops};
 
 use crate::{
-    base::{Base, CalcursType},
+    base::{Base, CalcursType, Described},
     pattern::{self, Item},
     rational::{NonZero, Rational},
 };
@@ -37,14 +37,6 @@ pub enum Sign {
 pub struct Float(pub(crate) f64);
 
 impl Numeric {
-    pub const fn desc(&self) -> pattern::Pattern {
-        pattern::Pattern::Itm(match self {
-            Numeric::Float(_) => Item::Float,
-            Numeric::Rational(r) => r.desc().to_item(),
-            Numeric::Infinity(Infinity { sign }) => sign.desc().union(Item::Inf),
-            Numeric::Undefined(_) => Item::Undef,
-        })
-    }
     pub fn add_num(self, n: Numeric) -> Numeric {
         use Numeric as N;
         match (self, n) {
@@ -156,6 +148,17 @@ impl Numeric {
     }
 }
 
+impl Described for Numeric {
+    fn desc(&self) -> pattern::Pattern {
+        pattern::Pattern::Itm(match self {
+            Numeric::Float(_) => Item::Float,
+            Numeric::Rational(r) => r.desc().to_item(),
+            Numeric::Infinity(i) => i.desc().to_item(),
+            Numeric::Undefined(_) => Item::Undef,
+        })
+    }
+}
+
 impl Float {
     pub fn new<F: Into<f64>>(f: F) -> Self {
         let f: f64 = f.into();
@@ -173,6 +176,12 @@ impl Float {
 
     pub const fn desc(&self) -> pattern::Pattern {
         unimplemented!()
+    }
+}
+
+impl Described for Float {
+    fn desc(&self) -> pattern::Pattern {
+        Item::Float.into()
     }
 }
 
@@ -273,6 +282,12 @@ impl Sign {
 impl Undefined {
     pub fn num(self) -> Numeric {
         self.into()
+    }
+}
+
+impl Described for Undefined {
+    fn desc(&self) -> pattern::Pattern {
+        Item::Undef.into()
     }
 }
 
@@ -473,6 +488,12 @@ impl CalcursType for Infinity {
     #[inline(always)]
     fn base(self) -> Base {
         Numeric::Infinity(self).base()
+    }
+}
+
+impl Described for Infinity {
+    fn desc(&self) -> pattern::Pattern {
+        self.sign.desc().union(Item::Inf).into()
     }
 }
 

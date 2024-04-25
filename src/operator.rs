@@ -1,7 +1,7 @@
 use std::fmt;
 
 use crate::{
-    base::{Base, CalcursType},
+    base::{Base, CalcursType, Described},
     numeric::{Numeric, Undefined},
     pattern::{get_itm, Item, Pattern},
     rational::Rational,
@@ -28,13 +28,6 @@ impl Add {
         sum.arg(n1.base());
         sum.arg(n2.base());
         sum.reduce()
-    }
-
-    pub fn desc(&self) -> Pattern {
-        let op = Item::Add;
-        let lhs = self.coeff.desc().to_item();
-        let rhs = self.sum.desc().to_item();
-        Pattern::Binary { lhs, op, rhs }
     }
 
     /// n1 + (-1 * n2)
@@ -77,6 +70,15 @@ impl Add {
             coeff: Rational::zero().num(),
             sum: Default::default(),
         }
+    }
+}
+
+impl Described for Add {
+    fn desc(&self) -> Pattern {
+        let op = Item::Add;
+        let lhs = self.coeff.desc().to_item();
+        let rhs = self.sum.desc().to_item();
+        Pattern::Binary { lhs, op, rhs }
     }
 }
 
@@ -140,12 +142,12 @@ impl Mul {
                     let flat = pow.expand();
                     // the base of the power is not an atom, so the flattened version should no
                     // longer be a power
-                    debug_assert!(!flat.desc().is(Item::Pow)); 
+                    debug_assert!(!flat.desc().is(Item::Pow));
                     self.arg(flat);
                 }
             }
 
-                //self.product.mul(pow.base()),
+            //self.product.mul(pow.base()),
             B::Symbol(_) | B::Add(_) => self.product.mul(b),
         }
     }
@@ -204,9 +206,11 @@ impl Mul {
             write!(f, "({prod})")
         }
     }
+}
 
+impl Described for Mul {
     #[inline]
-    pub fn desc(&self) -> Pattern {
+    fn desc(&self) -> Pattern {
         let op = Item::Mul;
         let lhs = self.coeff.desc().to_item();
         let rhs = self.product.desc().to_item();
@@ -327,15 +331,6 @@ impl Pow {
         }}
     }
 
-    #[inline]
-    pub fn desc(&self) -> Pattern {
-        let op = Item::Pow;
-        let lhs = self.base.desc().to_item();
-        let rhs = self.exp.desc().to_item();
-
-        Pattern::Binary { lhs, op, rhs }
-    }
-
     fn fmt_parts(base: &Base, exp: &Base, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let b = base.desc();
         let e = exp.desc();
@@ -357,6 +352,17 @@ impl Pow {
         } else {
             write!(f, "^({exp})")
         }
+    }
+}
+
+impl Described for Pow {
+    #[inline]
+    fn desc(&self) -> Pattern {
+        let op = Item::Pow;
+        let lhs = self.base.desc().to_item();
+        let rhs = self.exp.desc().to_item();
+
+        Pattern::Binary { lhs, op, rhs }
     }
 }
 
@@ -506,15 +512,15 @@ pub(crate) struct Product {
 }
 
 impl Product {
+    // TODO: find all terms that contain this base
     fn find_base(&mut self, elem: &Base) -> Option<(usize, &mut Pow)> {
         // search for expressions that can be shortened:
-        if let Some(indx) = self.elems.iter()
-            .position(|e| //&e.base == elem
+        if let Some(indx) = self.elems.iter().position(|e| //&e.base == elem
                       {
                       match elem {
                         Base::Symbol(_) => elem == &e.base,
                         Base::Add(_) => elem == &e.base,
-                        Base::Pow(pow) => 
+                        Base::Pow(pow) =>
                         {
                             println!("{}: find_base: {}", e, pow);
                             pow.base == e.base
@@ -522,8 +528,8 @@ impl Product {
                         Base::Numeric(_) => false,
                         Base::Mul(_) => panic!("multiplication should happen element-wise"),
                     }
-                      }
-            ) {
+                      })
+        {
             let coeff = self.elems.get_mut(indx).unwrap();
             Some((indx, coeff))
         } else {
@@ -536,7 +542,6 @@ impl Product {
     }
 
     pub fn mul(&mut self, itm: Base) {
-
         if let Some((indx, p)) = self.find_base(&itm) {
             let pow: Pow = itm.into();
             p.exp += pow.exp;
@@ -819,6 +824,7 @@ mod op_test {
     #[test_case(c!(1/3), c!(1/3);   "5")]
     #[test_case(c!(x/x), c!(1);     "6")]
     #[test_case(c!((x*x + x) / x), c!(x + 1); "7")]
+    #[test_case(c!((x*x + x) / (1 / x)), c!(x); "8")]
     fn div(div: Base, sol: Base) {
         assert_eq!(div, sol);
     }
