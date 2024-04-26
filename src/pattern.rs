@@ -12,6 +12,20 @@ pub enum Pattern2<'a> {
     Operation { op: Item, elems: &'a [Item] },
 }
 
+impl<'a> Pattern2<'a> {
+    pub const fn get_item(&self) -> Item {
+        match self {
+            Pattern2::Item(itm) => *itm,
+            Pattern2::Operation { op, .. } => *op,
+        }
+    }
+
+    pub const fn contains(&self, item: Item) -> bool {
+        let b = item.bits();
+        (self.get_item().bits() & b) == b
+    }
+}
+
 macro_rules! bit {
     ($x:literal) => {
         1 << $x
@@ -102,20 +116,6 @@ impl Pattern {
     #[inline(always)]
     pub const fn is_not(&self, itm: Item) -> bool {
         !self.is(itm)
-    }
-}
-
-impl<'a> Pattern2<'a> {
-    pub const fn to_item(&self) -> Item {
-        match self {
-            Pattern2::Item(itm) => *itm,
-            Pattern2::Operation { op, .. } => *op,
-        }
-    }
-
-    pub const fn contains(&self, item: Item) -> bool {
-        let b = item.bits();
-        (self.to_item().bits() & b) == b
     }
 }
 

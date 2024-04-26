@@ -1,8 +1,8 @@
 use std::fmt;
 
 use crate::{
-    base::{Base, CalcursType, Described},
-    numeric::{Numeric, Undefined},
+    base::{Base, CalcursType},
+    numeric::Numeric,
     pattern::{get_itm, Item, Pattern},
     rational::Rational,
 };
@@ -18,7 +18,6 @@ pub struct Add {
     pub(crate) coeff: Numeric,
     pub(crate) sum: Sum,
 }
-
 pub type Sub = Add;
 
 impl Add {
@@ -72,13 +71,17 @@ impl Add {
         }
     }
 }
-
-impl Described for Add {
+impl CalcursType for Add {
     fn desc(&self) -> Pattern {
         let op = Item::Add;
         let lhs = self.coeff.desc().to_item();
         let rhs = self.sum.desc().to_item();
         Pattern::Binary { lhs, op, rhs }
+    }
+
+    #[inline(always)]
+    fn base(self) -> Base {
+        Base::Add(self)
     }
 }
 
@@ -91,7 +94,6 @@ pub struct Mul {
     pub(crate) coeff: Numeric,
     pub(crate) product: Product,
 }
-
 pub type Div = Mul;
 
 impl Mul {
@@ -120,8 +122,8 @@ impl Mul {
     pub fn arg(&mut self, b: Base) {
         use Base as B;
 
-        if Undefined.base() == b {
-            self.coeff = Undefined.into();
+        if b == Numeric::Undefined.base() {
+            self.coeff = Numeric::Undefined;
             return;
         } else if self.coeff == Rational::zero().num() || Rational::one().base() == b {
             return;
@@ -207,14 +209,18 @@ impl Mul {
         }
     }
 }
-
-impl Described for Mul {
+impl CalcursType for Mul {
     #[inline]
     fn desc(&self) -> Pattern {
         let op = Item::Mul;
         let lhs = self.coeff.desc().to_item();
         let rhs = self.product.desc().to_item();
         Pattern::Binary { lhs, op, rhs }
+    }
+
+    #[inline(always)]
+    fn base(self) -> Base {
+        Base::Mul(self)
     }
 }
 
@@ -354,8 +360,7 @@ impl Pow {
         }
     }
 }
-
-impl Described for Pow {
+impl CalcursType for Pow {
     #[inline]
     fn desc(&self) -> Pattern {
         let op = Item::Pow;
@@ -364,8 +369,12 @@ impl Described for Pow {
 
         Pattern::Binary { lhs, op, rhs }
     }
-}
 
+    #[inline(always)]
+    fn base(self) -> Base {
+        Base::Pow(self.into())
+    }
+}
 impl From<Base> for Pow {
     fn from(value: Base) -> Self {
         if let Base::Pow(pow) = value {
@@ -384,7 +393,6 @@ enum SumElem {
     Product(Product),
     Atom(Base),
 }
-
 impl SumElem {
     fn desc(&self) -> Pattern {
         match self {
@@ -481,7 +489,6 @@ impl Sum {
         }
     }
 }
-
 impl TryFrom<Sum> for Mul {
     type Error = &'static str;
 
@@ -578,7 +585,6 @@ impl Product {
         }
     }
 }
-
 impl TryInto<Pow> for Product {
     type Error = &'static str;
 
@@ -590,7 +596,6 @@ impl TryInto<Pow> for Product {
         }
     }
 }
-
 impl From<Base> for Product {
     fn from(value: Base) -> Self {
         let mut p = Product::zero();
@@ -599,26 +604,6 @@ impl From<Base> for Product {
     }
 }
 
-impl CalcursType for Add {
-    #[inline(always)]
-    fn base(self) -> Base {
-        Base::Add(self)
-    }
-}
-
-impl CalcursType for Mul {
-    #[inline(always)]
-    fn base(self) -> Base {
-        Base::Mul(self)
-    }
-}
-
-impl CalcursType for Pow {
-    #[inline(always)]
-    fn base(self) -> Base {
-        Base::Pow(self.into())
-    }
-}
 
 impl fmt::Display for Add {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -631,20 +616,17 @@ impl fmt::Display for Add {
         Ok(())
     }
 }
-
 impl fmt::Display for Mul {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Mul::fmt_coeff(&self.coeff, self.product.desc(), f)?;
         write!(f, "{}", self.product)
     }
 }
-
 impl fmt::Display for Pow {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Pow::fmt_parts(&self.base, &self.exp, f)
     }
 }
-
 impl fmt::Display for Sum {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut iter = self.elems.iter().rev();
@@ -661,7 +643,6 @@ impl fmt::Display for Sum {
         Ok(())
     }
 }
-
 impl fmt::Display for SumElem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -670,7 +651,6 @@ impl fmt::Display for SumElem {
         }
     }
 }
-
 impl fmt::Display for Product {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut iter = self.elems.iter();
@@ -690,7 +670,6 @@ impl fmt::Display for Product {
         Ok(())
     }
 }
-
 impl fmt::Debug for Add {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Sum( ")?;
@@ -699,7 +678,6 @@ impl fmt::Debug for Add {
         write!(f, " )")
     }
 }
-
 impl fmt::Debug for Mul {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Prod( ")?;
@@ -708,7 +686,6 @@ impl fmt::Debug for Mul {
         write!(f, " )")
     }
 }
-
 impl fmt::Debug for Sum {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut first = true;
@@ -724,7 +701,6 @@ impl fmt::Debug for Sum {
         Ok(())
     }
 }
-
 impl fmt::Debug for Product {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut first = true;
@@ -738,110 +714,5 @@ impl fmt::Debug for Product {
         }
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod deriv_test {
-    use crate::calc;
-    use crate::prelude::*;
-    use pretty_assertions::assert_eq;
-    use test_case::test_case;
-
-    #[test_case(1, calc!((x^2) + x*3), calc!(2*x + 3))]
-    #[test_case(2, calc!(1/3 + 3/5),   calc!(0))]
-    #[test_case(3, calc!(x+y),         calc!(1))]
-    fn sum_rule(_case: u32, f: Base, df: Base) {
-        assert_eq!(f.derive("x"), df);
-    }
-
-    #[test_case(calc!((x^2)*y), calc!(2*x*y); "1")]
-    fn product_rule(f: Base, df: Base) {
-        assert_eq!(f.derive("x"), df);
-    }
-}
-
-#[cfg(test)]
-mod op_test {
-    use crate::calc;
-    use crate::prelude::*;
-    use pretty_assertions::assert_eq;
-    use test_case::test_case;
-
-    macro_rules! c {
-        ($($t:tt)*) => {
-            calc!($($t)*)
-        }
-    }
-
-    #[test_case(c!(2 + 3),      c!(5);      "1")]
-    #[test_case(c!(1/2 + 1/2),  c!(1);      "2")]
-    #[test_case(c!(x + x),      c!(x * 2);  "3")]
-    #[test_case(c!(-3 + 1 / 2), c!(-5 / 2); "4")]
-    #[test_case(c!(oo + 4),     c!(oo);     "5")]
-    #[test_case(c!(-oo + 4),    c!(-oo);    "6")]
-    #[test_case(c!(oo + oo),    c!(oo);     "7")]
-    #[test_case(c!(-oo + oo),   c!(undef);  "8")]
-    #[test_case(c!(undef + oo), c!(undef);  "9")]
-    #[test_case(c!(4/2 + 0),    c!(2);      "10")]
-    fn add(add: Base, sol: Base) {
-        assert_eq!(add, sol);
-    }
-
-    #[test_case(c!(-1 - 3),        c!(-4);     "1")]
-    #[test_case(c!(-3 - 1 / 2),    c!(-7 / 2); "2")]
-    #[test_case(c!(1 / 2 - 1 / 2), c!(0);      "3")]
-    #[test_case(c!(oo - 4),        c!(oo);     "4")]
-    #[test_case(c!(-oo - 4 / 2),   c!(-oo);    "5")]
-    #[test_case(c!(oo - 4),        c!(oo);     "6")]
-    #[test_case(c!(oo - oo),       c!(undef);  "7")]
-    #[test_case(c!(-oo - oo),      c!(-oo);    "8")]
-    #[test_case(c!(undef - oo),    c!(undef);  "9")]
-    fn sub(sub: Base, sol: Base) {
-        assert_eq!(sub, sol)
-    }
-
-    #[test_case(c!(-1*3),         c!(-3);     "1")]
-    #[test_case(c!(-1*0),         c!(0);      "2")]
-    #[test_case(c!(-1*3) * c!(0), c!(0);      "3")]
-    #[test_case(c!(-3*1 / 2),     c!(-3 / 2); "4")]
-    #[test_case(c!(1 / 2*1 / 2),  c!(1 / 4);  "5")]
-    #[test_case(c!(oo*4),         c!(oo);     "6")]
-    #[test_case(c!(-oo * 4/2),    c!(-oo);    "7")]
-    #[test_case(c!(oo*4),         c!(oo);     "8")]
-    #[test_case(c!(oo*-1),        c!(-oo);    "9")]
-    #[test_case(c!(oo*oo),       c!(oo);      "10")]
-    #[test_case(c!(-oo*oo),      c!(-oo);     "11")]
-    #[test_case(c!(undef*oo),    c!(undef);   "12")]
-    fn mul(mul: Base, sol: Base) {
-        assert_eq!(mul, sol);
-    }
-
-    #[test_case(c!(0/0), c!(undef); "1")]
-    #[test_case(c!(0/5), c!(0);     "2")]
-    #[test_case(c!(5/0), c!(undef); "3")]
-    #[test_case(c!(5/5), c!(1);     "4")]
-    #[test_case(c!(1/3), c!(1/3);   "5")]
-    #[test_case(c!(x/x), c!(1);     "6")]
-    #[test_case(c!((x*x + x) / x), c!(x + 1); "7")]
-    #[test_case(c!((x*x + x) / (1 / x)), c!(x); "8")]
-    fn div(div: Base, sol: Base) {
-        assert_eq!(div, sol);
-    }
-
-    #[test_case(c!(1^(1/100)),  c!(1);     "1")]
-    #[test_case(c!(4^1),        c!(4);     "2")]
-    #[test_case(c!(0^0),        c!(undef); "3")]
-    #[test_case(c!(0^(-3/4)),   c!(undef); "4")]
-    #[test_case(c!(0^(3/4)),    c!(0);     "5")]
-    #[test_case(c!((1/2)^(-1)), c!(4/2);   "6")]
-    #[test_case(c!((x^2)^3),    c!(x^6);   "7")]
-    fn pow(pow: Base, sol: Base) {
-        assert_eq!(pow, sol);
-    }
-
-    #[test_case(c!(x*x*2 + 3*x + 4/3), c!(4/3 + (x^2) * 2 + 3*x); "1")]
-    fn polynom(p1: Base, p2: Base) {
-        assert_eq!(p1, p2);
     }
 }

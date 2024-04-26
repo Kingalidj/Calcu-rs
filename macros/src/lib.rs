@@ -259,7 +259,7 @@ fn eval_ident(p: &syn::Ident) -> TokenStream {
     if id == "oo" {
         quote!(calcu_rs::numeric::Infinity::pos().base())
     } else if id == "undef" {
-        quote!(calcu_rs::numeric::Undefined.base())
+        quote!(calcu_rs::numeric::Numeric::Undefined.base())
     } else {
         quote!(calcu_rs::base::Symbol::new(#id).base())
     }

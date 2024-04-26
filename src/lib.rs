@@ -9,9 +9,15 @@ pub mod pattern;
 pub mod rational;
 
 pub mod prelude {
-    pub use crate::base::{self, Base, CalcursType, Differentiable, Symbol};
-    pub use crate::calc;
-    pub use crate::numeric::{Float, Infinity, Numeric, Sign, Undefined};
-    pub use crate::operator::{Add, Div, Mul, Pow, Sub};
-    pub use crate::rational::Rational;
+    pub use crate::{
+        base::{self, Base, CalcursType, Symbol},
+        calc,
+        derivative::Differentiable,
+        numeric::{Float, Infinity, Numeric, Sign},
+        operator::{Add, Div, Mul, Pow, Sub},
+        rational::Rational,
+    };
 }
+
+#[cfg(test)]
+mod tests;

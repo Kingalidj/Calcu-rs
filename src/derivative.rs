@@ -1,11 +1,16 @@
 use crate::{
-    base::{Base, CalcursType, Described, Differentiable, Symbol},
+    base::{Base, CalcursType, Symbol},
     identity,
     numeric::Numeric,
     operator::{Add, Mul, Pow},
     pattern::{get_itm, Item},
     rational::Rational,
 };
+
+pub trait Differentiable: CalcursType {
+    type Output;
+    fn derive(self, indep: &str) -> Self::Output;
+}
 
 impl Differentiable for Add {
     type Output = Base;
@@ -21,7 +26,6 @@ impl Differentiable for Add {
         sum.reduce()
     }
 }
-
 impl Differentiable for Mul {
     type Output = Base;
 
@@ -50,7 +54,6 @@ impl Differentiable for Mul {
         sum.reduce()
     }
 }
-
 impl Differentiable for Pow {
     type Output = Base;
 
@@ -84,7 +87,6 @@ impl Differentiable for Pow {
         }}
     }
 }
-
 impl Differentiable for &Symbol {
     type Output = Rational;
 
@@ -96,7 +98,13 @@ impl Differentiable for &Symbol {
         }
     }
 }
+impl Differentiable for Symbol {
+    type Output = Rational;
 
+    fn derive(self, indep: &str) -> Self::Output {
+        (&self).derive(indep)
+    }
+}
 impl Differentiable for Base {
     type Output = Base;
 
@@ -111,39 +119,15 @@ impl Differentiable for Base {
         }
     }
 }
-
 impl Differentiable for Numeric {
     type Output = Rational;
     fn derive(self, _: &str) -> Self::Output {
         Rational::zero()
     }
 }
-
 impl Differentiable for Rational {
     type Output = Rational;
     fn derive(self, _: &str) -> Self::Output {
         Rational::zero()
-    }
-}
-
-#[cfg(test)]
-mod derivative_tests {
-    use crate::prelude::*;
-    use calcu_rs::calc;
-    use pretty_assertions::assert_eq;
-    use test_case::test_case;
-
-    macro_rules! c {
-        ($($x: tt)*) => {
-            calc!($($x)*)
-        }
-    }
-
-    #[test_case(c!(x).derive("x"), c!(1))]
-    #[test_case(c!(y).derive("x"), c!(0))]
-    #[test_case(c!(x*x).derive("x"), c!(2*x))]
-    #[test_case(c!((x^2 - x) / (2 * x)).derive("x"), c!(1 / 2))]
-    fn derive(expr: Base, result: Base) {
-        assert_eq!(expr, result);
     }
 }

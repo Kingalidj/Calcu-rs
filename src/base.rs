@@ -6,6 +6,16 @@ use crate::{
     pattern::{Item, Pattern, Pattern2},
 };
 
+/// implemented by every symbolic math type
+pub trait CalcursType: Clone + fmt::Debug {
+    fn desc(&self) -> Pattern;
+    fn base(self) -> Base;
+
+    fn match_local(&self, pattern: Pattern2) -> bool {
+        self.desc().to_item().contains(pattern.get_item())
+    }
+}
+
 pub type PTR<T> = Box<T>;
 
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -18,31 +28,13 @@ pub enum Base {
     Pow(PTR<Pow>),
 }
 
-pub trait Differentiable: CalcursType {
-    type Output;
-    fn derive(self, indep: &str) -> Self::Output;
-}
-
-/// implemented by every symbolic math type
-pub trait CalcursType: Clone + fmt::Debug + Described {
-    fn base(self) -> Base;
-}
-
-pub trait Described {
-    fn desc(&self) -> Pattern;
-
-    fn match_local(&self, pattern: Pattern2) -> bool {
-        pattern.contains(self.desc().to_item())
-    }
-}
-
 impl Base {
     pub fn pow(self, other: impl CalcursType) -> Base {
         Pow::pow(self, other).base()
     }
 }
 
-impl Described for Base {
+impl CalcursType for Base {
     fn desc(&self) -> Pattern {
         use Base as B;
         match self {
@@ -53,51 +45,42 @@ impl Described for Base {
             B::Pow(pow) => pow.desc(),
         }
     }
-}
-
-//TODO: generic Symbol data type (e.g &str)
-#[derive(Clone, PartialEq, PartialOrd, Ord, Eq, Hash)]
-pub struct Symbol {
-    pub name: String,
-}
-
-impl Symbol {
-    pub fn new<I: Into<String>>(name: I) -> Self {
-        Self { name: name.into() }
-    }
-}
-
-impl Described for Symbol {
-    fn desc(&self) -> Pattern {
-        Pattern::Itm(Item::Symbol)
-    }
-
-}
-
-impl CalcursType for Base {
     #[inline(always)]
     fn base(self) -> Self {
         self
     }
 }
 
+
+#[derive(Clone, PartialEq, PartialOrd, Ord, Eq, Hash)]
+pub struct Symbol {
+    pub name: String,
+}
+impl Symbol {
+    pub fn new<I: Into<String>>(name: I) -> Self {
+        Self { name: name.into() }
+    }
+}
+
 impl CalcursType for Symbol {
+    fn desc(&self) -> Pattern {
+        Pattern::Itm(Item::Symbol)
+    }
+
     #[inline(always)]
     fn base(self) -> Base {
         Base::Symbol(self)
     }
-}
 
+}
 impl CalcursType for &Symbol {
+    fn desc(&self) -> Pattern {
+        Pattern::Itm(Item::Symbol)
+    }
+
     #[inline(always)]
     fn base(self) -> Base {
         panic!("only used for derivative")
-    }
-}
-
-impl Described for &Symbol {
-    fn desc(&self) -> Pattern {
-        (*self).desc()
     }
 }
 
@@ -108,7 +91,6 @@ impl ops::Add for Base {
         Add::add(self, rhs)
     }
 }
-
 impl ops::AddAssign for Base {
     fn add_assign(&mut self, rhs: Self) {
         unsafe {
@@ -121,7 +103,6 @@ impl ops::AddAssign for Base {
         }
     }
 }
-
 impl ops::Sub for Base {
     type Output = Base;
 
@@ -129,13 +110,11 @@ impl ops::Sub for Base {
         Sub::sub(self, rhs)
     }
 }
-
 impl ops::SubAssign for Base {
     fn sub_assign(&mut self, rhs: Self) {
         *self = Sub::sub(self.clone(), rhs);
     }
 }
-
 impl ops::Mul for Base {
     type Output = Base;
 
@@ -143,7 +122,6 @@ impl ops::Mul for Base {
         Mul::mul(self, rhs)
     }
 }
-
 impl ops::MulAssign for Base {
     fn mul_assign(&mut self, rhs: Self) {
         // self *= rhs => self = self * rhs
@@ -157,7 +135,6 @@ impl ops::MulAssign for Base {
         }
     }
 }
-
 impl ops::Neg for Base {
     type Output = Base;
 
@@ -165,7 +142,6 @@ impl ops::Neg for Base {
         crate::rational::Rational::minus_one().base() * self
     }
 }
-
 impl ops::Div for Base {
     type Output = Base;
 
@@ -173,7 +149,6 @@ impl ops::Div for Base {
         Div::div(self, rhs)
     }
 }
-
 impl ops::DivAssign for Base {
     fn div_assign(&mut self, rhs: Self) {
         unsafe {
@@ -206,7 +181,16 @@ impl fmt::Display for Base {
         }
     }
 }
-
+impl fmt::Display for Symbol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+impl fmt::Debug for Symbol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
 impl fmt::Debug for Base {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Base as B;
@@ -218,46 +202,5 @@ impl fmt::Debug for Base {
             B::Mul(m) => write!(f, "{:?}", m),
             B::Pow(p) => write!(f, "{:?}", p),
         }
-    }
-}
-
-impl fmt::Display for Symbol {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.name)
-    }
-}
-
-impl fmt::Debug for Symbol {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.name)
-    }
-}
-
-#[cfg(test)]
-mod display {
-    use crate::prelude::*;
-    use calcu_rs::calc;
-    use pretty_assertions::assert_eq;
-    use test_case::test_case;
-
-    macro_rules! c {
-        ($($x: tt)*) => {
-            calc!($($x)*)
-        }
-    }
-
-    #[test_case(c!(x^(-1)), "1/x")]
-    #[test_case(c!(34/3), "34/3")]
-    #[test_case(c!(x^(-3)), "x^(-3)")]
-    #[test_case(c!(x^2), "x^2")]
-    #[test_case(c!(x+x), "2x")]
-    #[test_case(c!(1^2), "1")]
-    #[test_case(c!((1/2)^2), "1/4")]
-    #[test_case(c!((1/3)^(1/100)), "(1/3)^(1/100)")]
-    #[test_case(c!((10^15) + 1/1000), "1000000000000000001 e-3")]
-    #[test_case(c!((1/3)^(2/1000)), "(1/3)^(1/500)")]
-    fn disp_fractions(exp: Base, res: &str) {
-        let fmt = format!("{}", exp);
-        assert_eq!(fmt, res);
     }
 }
