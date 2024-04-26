@@ -6,26 +6,6 @@ pub enum Pattern {
     Binary { lhs: Item, op: Item, rhs: Item },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd)]
-pub enum Pattern2<'a> {
-    Item(Item),
-    Operation { op: Item, elems: &'a [Item] },
-}
-
-impl<'a> Pattern2<'a> {
-    pub const fn get_item(&self) -> Item {
-        match self {
-            Pattern2::Item(itm) => *itm,
-            Pattern2::Operation { op, .. } => *op,
-        }
-    }
-
-    pub const fn contains(&self, item: Item) -> bool {
-        let b = item.bits();
-        (self.get_item().bits() & b) == b
-    }
-}
-
 macro_rules! bit {
     ($x:literal) => {
         1 << $x
@@ -100,7 +80,7 @@ impl From<Item> for Pattern {
 }
 
 impl Pattern {
-    pub const fn to_item(&self) -> Item {
+    pub const fn get_item(&self) -> Item {
         match self {
             Self::Itm(itm) => *itm,
             Self::Binary { op, .. } => *op,
@@ -110,7 +90,7 @@ impl Pattern {
     #[inline(always)]
     pub const fn is(&self, itm: Item) -> bool {
         let b = itm.bits();
-        (self.to_item().bits() & b) == b
+        (self.get_item().bits() & b) == b
     }
 
     #[inline(always)]
@@ -120,16 +100,16 @@ impl Pattern {
 }
 
 macro_rules! get_itm {
-    (Numeric: $e:expr) => {
-        if let crate::base::Base::Numeric(n) = $e {
-            n
-        } else {
-            panic!("get_itm for Numeric failed");
-        }
-    };
+    //(Numeric: $e:expr) => {
+    //    if let crate::base::Base::Numeric(n) = $e {
+    //        n
+    //    } else {
+    //        panic!("get_itm for Numeric failed");
+    //    }
+    //};
 
     (Rational: $e:expr) => {
-        if let crate::base::Base::Numeric(crate::numeric::Numeric::Rational(r)) = $e {
+        if let crate::base::Base::Rational(r) = $e {
             r
         } else {
             panic!("get_itm for Rational failed");

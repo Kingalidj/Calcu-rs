@@ -21,59 +21,8 @@ pub enum Numeric {
 }
 
 
+// TODO: move to [Base]
 impl Numeric {
-    pub fn add_num(self, n: Numeric) -> Numeric {
-        use Numeric as N;
-        match (self, n) {
-            (N::Undefined, _) | (_, N::Undefined) => Numeric::Undefined,
-            (N::Infinity(inf), n) | (n, N::Infinity(inf)) => inf.add_num(n),
-            (N::Float(f1), N::Float(f2)) => (f1 + f2).into(),
-            (N::Float(f), N::Rational(r)) | (N::Rational(r), N::Float(f)) => {
-                (r.as_float() + f).into()
-            }
-            (N::Rational(r1), N::Rational(r2)) => r1.convert_add(r2),
-        }
-    }
-
-    pub fn sub_num(self, n: Numeric) -> Numeric {
-        use Numeric as N;
-        match (self, n) {
-            (N::Undefined, _) | (_, N::Undefined) => Numeric::Undefined,
-            (N::Infinity(inf), n) => inf.sub_num(n),
-            (n, N::Infinity(inf)) => n.sub_inf(inf),
-            (N::Float(f1), N::Float(f2)) => (f1 - f2).into(),
-            (N::Float(f), N::Rational(r)) | (N::Rational(r), N::Float(f)) => {
-                (r.as_float() - f).into()
-            }
-            (N::Rational(r1), N::Rational(r2)) => r1.convert_sub(r2),
-        }
-    }
-
-    pub fn mul_num(self, n: Numeric) -> Numeric {
-        use Numeric as N;
-        match (self, n) {
-            (N::Undefined, _) | (_, N::Undefined) => Numeric::Undefined,
-            (N::Infinity(inf), n) | (n, N::Infinity(inf)) => inf.mul_num(n),
-            (N::Float(f1), N::Float(f2)) => (f1 * f2).into(),
-            (N::Float(f), N::Rational(r)) | (N::Rational(r), N::Float(f)) => {
-                (r.as_float() * f).into()
-            }
-            (N::Rational(r1), N::Rational(r2)) => r1.convert_mul(r2),
-        }
-    }
-
-    pub fn div_num(self, n: Numeric) -> Numeric {
-        use Numeric as N;
-        match (self, n) {
-            (N::Undefined, _) | (_, N::Undefined) => Numeric::Undefined,
-            (N::Infinity(inf), n) => inf.div_num(n),
-            (n, N::Infinity(inf)) => n.div_inf(inf),
-            (N::Float(f1), N::Float(f2)) => f1 / f2,
-            (N::Float(f), N::Rational(r)) | (N::Rational(r), N::Float(f)) => r.as_float() / f,
-            (N::Rational(r1), N::Rational(r2)) => r1.convert_div(r2),
-        }
-    }
-
     pub fn checked_pow_num(self, n: Numeric) -> Option<Numeric> {
         match (self, n) {
             (Numeric::Rational(r1), Numeric::Rational(r2)) => {
@@ -132,21 +81,6 @@ impl Numeric {
         }
     }
 }
-impl CalcursType for Numeric {
-    fn desc(&self) -> pattern::Pattern {
-        pattern::Pattern::Itm(match self {
-            Numeric::Float(_) => Item::Float,
-            Numeric::Rational(r) => r.desc().to_item(),
-            Numeric::Infinity(i) => i.desc().to_item(),
-            Numeric::Undefined => Item::Undef,
-        })
-    }
-
-    #[inline(always)]
-    fn base(self) -> Base {
-        Base::Numeric(self)
-    }
-}
 
 impl Ord for Numeric {
     fn cmp(&self, other: &Self) -> Ordering {
@@ -171,6 +105,44 @@ impl Ord for Numeric {
             (N::Float(f1), N::Float(f2)) => f1.cmp(f2),
             (N::Rational(r), N::Float(f)) => r.as_float().cmp(f),
             (N::Float(f), N::Rational(r)) => f.cmp(&r.as_float()),
+        }
+    }
+}
+impl CalcursType for Numeric {
+    fn desc(&self) -> pattern::Pattern {
+        pattern::Pattern::Itm(match self {
+            Numeric::Float(_) => Item::Float,
+            Numeric::Rational(r) => r.desc().get_item(),
+            Numeric::Infinity(i) => i.desc().get_item(),
+            Numeric::Undefined => Item::Undef,
+        })
+    }
+
+    #[inline(always)]
+    fn base(self) -> Base {
+        use Numeric as N;
+        use Base as B;
+        match self {
+            N::Float(f) => B::Float(f),
+            N::Rational(r) => B::Rational(r),
+            N::Infinity(i) => B::Infinity(i),
+            N::Undefined => B::Undefined,
+        }
+    }
+}
+impl TryFrom<Base> for Numeric {
+    type Error = Base;
+
+    fn try_from(value: Base) -> Result<Self, Self::Error> {
+        use Numeric as N;
+        use Base as B;
+        match value {
+            B::Float(f) => Ok(N::Float(f)),
+            B::Rational(r) => Ok(N::Rational(r)),
+            B::Infinity(i) => Ok(N::Infinity(i)),
+            B::Undefined => Ok(N::Undefined),
+
+            _ => Err(value),
         }
     }
 }
@@ -353,48 +325,84 @@ impl ops::Add for Numeric {
     type Output = Numeric;
 
     fn add(self, rhs: Self) -> Self::Output {
-        self.add_num(rhs)
+        use Numeric as N;
+        match (self, rhs) {
+            (N::Undefined, _) | (_, N::Undefined) => Numeric::Undefined,
+            (N::Infinity(inf), n) | (n, N::Infinity(inf)) => inf.add_num(n),
+            (N::Float(f1), N::Float(f2)) => (f1 + f2).into(),
+            (N::Float(f), N::Rational(r)) | (N::Rational(r), N::Float(f)) => {
+                (r.as_float() + f).into()
+            }
+            (N::Rational(r1), N::Rational(r2)) => r1.convert_add(r2),
+        }
     }
 }
 impl ops::AddAssign for Numeric {
     fn add_assign(&mut self, rhs: Self) {
-        *self = self.add_num(rhs);
+        *self = *self + rhs;
     }
 }
 impl ops::Sub for Numeric {
     type Output = Numeric;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        self.sub_num(rhs)
+        use Numeric as N;
+        match (self, rhs) {
+            (N::Undefined, _) | (_, N::Undefined) => Numeric::Undefined,
+            (N::Infinity(inf), n) => inf.sub_num(n),
+            (n, N::Infinity(inf)) => n.sub_inf(inf),
+            (N::Float(f1), N::Float(f2)) => (f1 - f2).into(),
+            (N::Float(f), N::Rational(r)) | (N::Rational(r), N::Float(f)) => {
+                (r.as_float() - f).into()
+            }
+            (N::Rational(r1), N::Rational(r2)) => r1.convert_sub(r2),
+        }
     }
 }
 impl ops::SubAssign for Numeric {
     fn sub_assign(&mut self, rhs: Self) {
-        *self = self.sub_num(rhs);
+        *self = *self - rhs;
     }
 }
 impl ops::Mul for Numeric {
     type Output = Numeric;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        self.mul_num(rhs)
+        use Numeric as N;
+        match (self, rhs) {
+            (N::Undefined, _) | (_, N::Undefined) => Numeric::Undefined,
+            (N::Infinity(inf), n) | (n, N::Infinity(inf)) => inf.mul_num(n),
+            (N::Float(f1), N::Float(f2)) => (f1 * f2).into(),
+            (N::Float(f), N::Rational(r)) | (N::Rational(r), N::Float(f)) => {
+                (r.as_float() * f).into()
+            }
+            (N::Rational(r1), N::Rational(r2)) => r1.convert_mul(r2),
+        }
     }
 }
 impl ops::MulAssign for Numeric {
     fn mul_assign(&mut self, rhs: Self) {
-        *self = self.mul_num(rhs);
+        *self = *self * rhs;
     }
 }
 impl ops::Div for Numeric {
     type Output = Numeric;
 
     fn div(self, rhs: Self) -> Self::Output {
-        self.div_num(rhs)
+        use Numeric as N;
+        match (self, rhs) {
+            (N::Undefined, _) | (_, N::Undefined) => Numeric::Undefined,
+            (N::Infinity(inf), n) => inf.div_num(n),
+            (n, N::Infinity(inf)) => n.div_inf(inf),
+            (N::Float(f1), N::Float(f2)) => f1 / f2,
+            (N::Float(f), N::Rational(r)) | (N::Rational(r), N::Float(f)) => r.as_float() / f,
+            (N::Rational(r1), N::Rational(r2)) => r1.convert_div(r2),
+        }
     }
 }
 impl ops::DivAssign for Numeric {
     fn div_assign(&mut self, rhs: Self) {
-        *self = self.div_num(rhs);
+        *self = *self / rhs;
     }
 }
 

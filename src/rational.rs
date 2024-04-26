@@ -5,7 +5,7 @@ use num::Integer;
 use crate::{
     base::{Base, CalcursType},
     numeric::{Float, Numeric, Sign},
-    pattern::{Item, Pattern, Pattern2},
+    pattern::{Item, Pattern},
 };
 
 pub type RatioTyp = u64;
@@ -453,7 +453,7 @@ impl CalcursType for Rational {
 
     #[inline(always)]
     fn base(self) -> Base {
-        Base::Numeric(self.into())
+        Base::Rational(self.into())
     }
 }
 

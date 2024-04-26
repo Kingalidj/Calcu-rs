@@ -64,8 +64,9 @@ impl Differentiable for Pow {
 
         identity! { (b, e) {
             // x^n -> n * x^(n-1)
-            (Item::Numeric, Item::Numeric) => {
-                let n = get_itm!(Numeric: self.exp);
+            (Item::Symbol, Item::Numeric) => {
+                //let n = get_itm!(Numeric: self.exp);
+                let n: Numeric = self.exp.try_into().expect("numeric type");
                 let x = get_itm!(Symbol: self.base);
                 if x.name == indep {
                     n.base() * x.base().pow(n - Rational::one().num())
@@ -76,7 +77,7 @@ impl Differentiable for Pow {
 
             // f^n -> n * f^(n-1) * f'
             (_, Item::Numeric) => {
-               let n = get_itm!(Numeric: self.exp);
+               let n: Numeric = self.exp.try_into().expect("numeric type");
                let f = self.base;
                let df = f.clone().derive(indep);
                n.base() * f.pow(n + Rational::minus_one().num()) * df
@@ -112,10 +113,12 @@ impl Differentiable for Base {
         use Base as B;
         match self {
             B::Symbol(s) => s.derive(indep).base(),
-            B::Numeric(n) => n.derive(indep).base(),
+            //B::Numeric(n) => n.derive(indep).base(),
             B::Add(a) => a.derive(indep),
             B::Mul(m) => m.derive(indep),
             B::Pow(p) => p.derive(indep),
+            B::Float(_) | B::Infinity(_) | B::Rational(_) => Rational::zero().base(),
+            B::Undefined => B::Undefined,
         }
     }
 }

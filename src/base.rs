@@ -1,18 +1,20 @@
 use std::{fmt, ops};
+use calcu_rs::rational::Rational;
 
 use crate::{
     numeric::Numeric,
     operator::{Add, Div, Mul, Pow, Sub},
-    pattern::{Item, Pattern, Pattern2},
+    pattern::{Item, Pattern},
 };
+use crate::numeric::{Float, Infinity};
 
 /// implemented by every symbolic math type
 pub trait CalcursType: Clone + fmt::Debug {
     fn desc(&self) -> Pattern;
     fn base(self) -> Base;
 
-    fn match_local(&self, pattern: Pattern2) -> bool {
-        self.desc().to_item().contains(pattern.get_item())
+    fn match_local(&self, pattern: Pattern) -> bool {
+        self.desc().get_item().contains(pattern.get_item())
     }
 }
 
@@ -21,11 +23,18 @@ pub type PTR<T> = Box<T>;
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Base {
     Symbol(Symbol),
-    Numeric(Numeric),
+    Rational(Rational),
+    Float(Float),
+    Infinity(Infinity),
 
     Add(Add),
     Mul(Mul),
     Pow(PTR<Pow>),
+
+    /// only used if the result is provenly undefined, e.g 0 / 0
+    ///
+    /// not the same as [f64::NAN]
+    Undefined,
 }
 
 impl Base {
@@ -39,10 +48,13 @@ impl CalcursType for Base {
         use Base as B;
         match self {
             B::Symbol(s) => s.desc(),
-            B::Numeric(n) => n.desc(),
+            B::Rational(r) => r.desc(),
             B::Add(add) => add.desc(),
             B::Mul(mul) => mul.desc(),
             B::Pow(pow) => pow.desc(),
+            Base::Float(f) => f.desc(),
+            Base::Infinity(i) => i.desc(),
+            Base::Undefined => Item::Undef.into(),
         }
     }
     #[inline(always)]
@@ -139,7 +151,7 @@ impl ops::Neg for Base {
     type Output = Base;
 
     fn neg(self) -> Self::Output {
-        crate::rational::Rational::minus_one().base() * self
+        Rational::minus_one().base() * self
     }
 }
 impl ops::Div for Base {
@@ -169,38 +181,45 @@ impl<T: Into<String>> From<T> for Symbol {
 }
 
 impl fmt::Display for Base {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Base as B;
         match self {
             B::Symbol(v) => write!(f, "{v}"),
-            B::Numeric(n) => write!(f, "{n}"),
-
+            B::Rational(r) => write!(f, "{r}"),
+            B::Float(v) => write!(f, "{}", v.0),
+            B::Infinity(i) => write!(f, "{i}"),
             B::Add(a) => write!(f, "{a}"),
             B::Mul(m) => write!(f, "{m}"),
             B::Pow(p) => write!(f, "{p}"),
+
+            B::Undefined => write!(f, "undefined"),
         }
     }
 }
 impl fmt::Display for Symbol {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name)
     }
 }
 impl fmt::Debug for Symbol {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name)
     }
 }
 impl fmt::Debug for Base {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Base as B;
         match self {
             B::Symbol(v) => write!(f, "{:?}", v),
-            B::Numeric(n) => write!(f, "{:?}", n),
+            Base::Rational(r) => write!(f, "{:?}", r),
+            Base::Float(v) => write!(f, "{:?}", v),
+            Base::Infinity(i) => write!(f, "{:?}", i),
 
             B::Add(a) => write!(f, "{:?}", a),
             B::Mul(m) => write!(f, "{:?}", m),
             B::Pow(p) => write!(f, "{:?}", p),
+
+            Base::Undefined => write!(f, "{}", Base::Undefined),
         }
     }
 }

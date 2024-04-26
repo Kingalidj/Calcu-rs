@@ -38,7 +38,10 @@ impl Add {
     pub fn arg(&mut self, b: Base) {
         use Base as B;
         match b {
-            B::Numeric(num) => self.coeff += num,
+            B::Rational(r) => self.coeff += Numeric::Rational(r),
+            B::Infinity(i) => self.coeff += Numeric::Infinity(i),
+            B::Float(f) => self.coeff += Numeric::Float(f),
+            B::Undefined => self.coeff += Numeric::Undefined,
             B::Mul(mul) => self.sum.add(mul.base()),
             B::Add(add) => {
                 self.coeff += add.coeff;
@@ -74,8 +77,8 @@ impl Add {
 impl CalcursType for Add {
     fn desc(&self) -> Pattern {
         let op = Item::Add;
-        let lhs = self.coeff.desc().to_item();
-        let rhs = self.sum.desc().to_item();
+        let lhs = self.coeff.desc().get_item();
+        let rhs = self.sum.desc().get_item();
         Pattern::Binary { lhs, op, rhs }
     }
 
@@ -130,7 +133,10 @@ impl Mul {
         }
 
         match b {
-            B::Numeric(num) => self.coeff *= num,
+            B::Rational(r) => self.coeff *= Numeric::Rational(r),
+            B::Infinity(i) => self.coeff *= Numeric::Infinity(i),
+            B::Float(f) => self.coeff *= Numeric::Float(f),
+            B::Undefined => self.coeff *= Numeric::Undefined,
             B::Mul(mul) => {
                 self.coeff *= mul.coeff;
                 mul.product
@@ -213,8 +219,8 @@ impl CalcursType for Mul {
     #[inline]
     fn desc(&self) -> Pattern {
         let op = Item::Mul;
-        let lhs = self.coeff.desc().to_item();
-        let rhs = self.product.desc().to_item();
+        let lhs = self.coeff.desc().get_item();
+        let rhs = self.product.desc().get_item();
         Pattern::Binary { lhs, op, rhs }
     }
 
@@ -278,8 +284,8 @@ impl Pow {
                 },
 
                 (I::Numeric, I::Numeric) => {
-                    let n1 = get_itm!(Numeric: self.base);
-                    let n2 = get_itm!(Numeric: self.exp);
+                    let n1: Numeric = self.base.try_into().expect("Numerick");
+                    let n2: Numeric = self.exp.try_into().expect("Numerick");
                     n1.checked_pow_num(n2).map(|n| n.base()).unwrap_or(
                         Pow {
                             base: n1.base(),
@@ -364,8 +370,8 @@ impl CalcursType for Pow {
     #[inline]
     fn desc(&self) -> Pattern {
         let op = Item::Pow;
-        let lhs = self.base.desc().to_item();
-        let rhs = self.exp.desc().to_item();
+        let lhs = self.base.desc().get_item();
+        let rhs = self.exp.desc().get_item();
 
         Pattern::Binary { lhs, op, rhs }
     }
@@ -412,7 +418,7 @@ pub(crate) struct Sum {
 }
 
 impl Sum {
-    fn find<'a>(&'a mut self, elem: &SumElem) -> Option<(usize, &'a mut Numeric)> {
+    fn find(&mut self, elem: &SumElem) -> Option<(usize, &mut Numeric)> {
         if let Some(indx) = self.elems.iter().position(|e| &e.1 == elem) {
             let coeff = self.elems.get_mut(indx).unwrap();
             Some((indx, &mut coeff.0))
@@ -481,8 +487,8 @@ impl Sum {
         if self.elems.len() == 1 {
             let (coeff, elem) = self.elems.first().unwrap();
             let op = Item::Mul;
-            let lhs = coeff.desc().to_item();
-            let rhs = elem.desc().to_item();
+            let lhs = coeff.desc().get_item();
+            let rhs = elem.desc().get_item();
             Pattern::Binary { lhs, op, rhs }
         } else {
             Pattern::Itm(Item::Add)
@@ -520,22 +526,22 @@ pub(crate) struct Product {
 
 impl Product {
     // TODO: find all terms that contain this base
+    //TODO: rewrite
     fn find_base(&mut self, elem: &Base) -> Option<(usize, &mut Pow)> {
         // search for expressions that can be shortened:
         if let Some(indx) = self.elems.iter().position(|e| //&e.base == elem
-                      {
-                      match elem {
-                        Base::Symbol(_) => elem == &e.base,
-                        Base::Add(_) => elem == &e.base,
-                        Base::Pow(pow) =>
+            {
+                match elem {
+                    Base::Pow(pow) =>
                         {
                             println!("{}: find_base: {}", e, pow);
                             pow.base == e.base
                         },
-                        Base::Numeric(_) => false,
-                        Base::Mul(_) => panic!("multiplication should happen element-wise"),
-                    }
-                      })
+                    Base::Rational(_) | Base::Float(_) | Base::Infinity(_) | Base::Undefined => false,
+                    Base::Mul(_) => panic!("multiplication should happen element-wise"),
+                    _ => elem == &e.base,
+                }
+            })
         {
             let coeff = self.elems.get_mut(indx).unwrap();
             Some((indx, coeff))
