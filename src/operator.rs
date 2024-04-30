@@ -86,6 +86,19 @@ impl CalcursType for Add {
     fn base(self) -> Base {
         Base::Add(self)
     }
+
+    fn free_of(&self, other: &Base) -> bool {
+        if let Base::Add(add) = other {
+            if self == add {
+                return false;
+            }
+        } else if let Ok(num) = Numeric::try_from(other) {
+            if self.coeff == num {
+                return false;
+            }
+        }
+        self.sum.free_of(other)
+    }
 }
 
 /// Represents multiplication in symbolic expressions
@@ -109,7 +122,7 @@ impl Mul {
 
     /// n1 * n2
     pub fn mul(n1: impl CalcursType, n2: impl CalcursType) -> Base {
-        println!("mul: [{}] * [{}]", n1.clone().base(), n2.clone().base());
+        //println!("mul: [{}] * [{}]", n1.clone().base(), n2.clone().base());
         let mut prod = Self::new_raw();
         prod.arg(n1.base());
         prod.arg(n2.base());
@@ -227,6 +240,19 @@ impl CalcursType for Mul {
     #[inline(always)]
     fn base(self) -> Base {
         Base::Mul(self)
+    }
+
+    fn free_of(&self, other: &Base) -> bool {
+        if let Base::Mul(mul) = other {
+            if self == mul {
+                return false;
+            }
+        } else if let Ok(num) = Numeric::try_from(other) {
+            if self.coeff == num {
+                return false;
+            }
+        }
+        self.product.free_of(other)
     }
 }
 
@@ -380,6 +406,17 @@ impl CalcursType for Pow {
     fn base(self) -> Base {
         Base::Pow(self.into())
     }
+
+    fn free_of(&self, other: &Base) -> bool {
+        println!("{} vs {}", self, other);
+        if let Base::Pow(pow) = other {
+            self != pow.as_ref()
+        } else if !self.base.free_of(other) {
+            false
+        } else {
+            true
+        }
+    }
 }
 impl From<Base> for Pow {
     fn from(value: Base) -> Self {
@@ -494,6 +531,21 @@ impl Sum {
             Pattern::Itm(Item::Add)
         }
     }
+
+    pub fn free_of(&self, other: &Base) -> bool {
+        //TODO: what about coeff of sum elems?
+
+        for elem in &self.elems {
+            if !match elem.1 {
+                SumElem::Product(ref p) => p.free_of(other),
+                SumElem::Atom(ref a) => a.free_of(other),
+            } {
+                return false;
+            }
+        }
+
+        true
+    }
 }
 impl TryFrom<Sum> for Mul {
     type Error = &'static str;
@@ -534,7 +586,7 @@ impl Product {
                 match elem {
                     Base::Pow(pow) =>
                         {
-                            println!("{}: find_base: {}", e, pow);
+                            //println!("{}: find_base: {}", e, pow);
                             pow.base == e.base
                         },
                     Base::Rational(_) | Base::Float(_) | Base::Infinity(_) | Base::Undefined => false,
@@ -590,6 +642,17 @@ impl Product {
             Pattern::Itm(Item::Mul)
         }
     }
+
+    pub fn free_of(&self, other: &Base) -> bool {
+        for elem in &self.elems {
+            if !elem.free_of(other)
+            {
+                return false;
+            }
+        }
+
+        true
+    }
 }
 impl TryInto<Pow> for Product {
     type Error = &'static str;
@@ -609,7 +672,6 @@ impl From<Base> for Product {
         p
     }
 }
-
 
 impl fmt::Display for Add {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

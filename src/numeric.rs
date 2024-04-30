@@ -1,8 +1,11 @@
 use num::integer::Roots;
 use std::{cmp::Ordering, fmt, ops};
+//use std::os::watchos;
+use num::pow::Pow;
+use num::Zero;
 
 use crate::{
-    base::{Base, CalcursType},
+    expression::{Expr, CalcursType},
     pattern::{self, Item},
     rational::{Rational, UNonZero},
 };
@@ -20,16 +23,16 @@ pub enum Numeric {
     Undefined,
 }
 
-
-// TODO: move to [Base]
+// TODO: move to [Expr]
 impl Numeric {
     pub fn checked_pow_num(self, n: Numeric) -> Option<Numeric> {
         match (self, n) {
             (Numeric::Rational(r1), Numeric::Rational(r2)) => {
                 let mut exp = r2.try_apply_expon()?;
                 let mut base = r1.try_apply_expon()?;
-                exp.reduce_frac();
-                base.reduce_frac();
+                panic!();
+                //exp.reduce_frac();
+                //base.reduce_frac();
 
                 let mut root = base.numer;
                 if exp.denom() != 1 {
@@ -55,7 +58,7 @@ impl Numeric {
                     base.sign
                 };
 
-                Some(Rational::reduced(sign, numer, UNonZero::new(denom), 0).num())
+                Some(Rational::reduced(sign, numer, UNonZero::new(denom).unwrap(), 0).num())
             }
             _ => None,
         }
@@ -108,21 +111,50 @@ impl Ord for Numeric {
         }
     }
 }
-impl CalcursType for Numeric {
-    fn desc(&self) -> pattern::Pattern {
-        pattern::Pattern::Itm(match self {
-            Numeric::Float(_) => Item::Float,
-            Numeric::Rational(r) => r.desc().get_item(),
-            Numeric::Infinity(i) => i.desc().get_item(),
-            Numeric::Undefined => Item::Undef,
-        })
-    }
 
-    #[inline(always)]
-    fn base(self) -> Base {
+//impl CalcursType for Numeric {
+//    fn desc(&self) -> Item {
+//        use Numeric as N;
+//        match self {
+//            N::Float(_) => Item::Float,
+//            N::Rational(r) => r.desc(),
+//            N::Infinity(i) => i.desc(),
+//            N::Undefined => Item::Undef,
+//        }
+//    }
+//
+//    //#[inline(always)]
+//    //fn base(self) -> Expr {
+//    //    use Expr as B;
+//    //    use Numeric as N;
+//    //    match self {
+//    //        N::Float(f) => B::Float(f),
+//    //        N::Rational(r) => B::Rational(r),
+//    //        N::Infinity(i) => B::Infinity(i),
+//    //        N::Undefined => B::Undefined,
+//    //    }
+//    //}
+//
+//    //fn free_of(&self, other: &Base) -> bool {
+//    //    match self {
+//    //        Numeric::Float(x) => x.free_of(other),
+//    //        Numeric::Rational(x) => x.free_of(other),
+//    //        Numeric::Infinity(x) => x.free_of(other),
+//    //        Numeric::Undefined => &Base::Undefined != other,
+//    //    }
+//    //}
+//
+//    //fn operands(&mut self) -> Vec<&mut Base> {
+//    //    panic!("should have been called by parent")
+//    //}
+//}
+
+
+impl From<Numeric> for Expr {
+    fn from(value: Numeric) -> Self {
+        use Expr as B;
         use Numeric as N;
-        use Base as B;
-        match self {
+        match value {
             N::Float(f) => B::Float(f),
             N::Rational(r) => B::Rational(r),
             N::Infinity(i) => B::Infinity(i),
@@ -130,12 +162,12 @@ impl CalcursType for Numeric {
         }
     }
 }
-impl TryFrom<Base> for Numeric {
-    type Error = Base;
+impl TryFrom<Expr> for Numeric {
+    type Error = Expr;
 
-    fn try_from(value: Base) -> Result<Self, Self::Error> {
+    fn try_from(value: Expr) -> Result<Self, Self::Error> {
+        use Expr as B;
         use Numeric as N;
-        use Base as B;
         match value {
             B::Float(f) => Ok(N::Float(f)),
             B::Rational(r) => Ok(N::Rational(r)),
@@ -146,7 +178,25 @@ impl TryFrom<Base> for Numeric {
         }
     }
 }
+/// avoids copy of potential large expression
+impl TryFrom<&Expr> for Numeric {
+    type Error = ();
 
+    fn try_from(value: &Expr) -> Result<Self, Self::Error> {
+        use Expr as B;
+        use Numeric as N;
+        match value {
+            B::Float(f) => Ok(N::Float(*f)),
+            B::Rational(r) => Ok(N::Rational(*r)),
+            B::Infinity(i) => Ok(N::Infinity(*i)),
+            B::Undefined => Ok(N::Undefined),
+
+            _ => Err(()),
+        }
+    }
+}
+
+//TODO: turn to rational if integer?
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub struct Float(pub(crate) f64);
 
@@ -165,8 +215,8 @@ impl Float {
         }
     }
 
-    pub const fn desc(&self) -> pattern::Pattern {
-        unimplemented!()
+    pub fn pow(self, rhs: Float) -> Float {
+        Float(self.0.powf(rhs.0))
     }
 }
 
@@ -195,11 +245,14 @@ impl Ord for Float {
 }
 
 impl CalcursType for Float {
-    fn desc(&self) -> pattern::Pattern {
-        Item::Float.into()
-    }
-    fn base(self) -> Base {
-        Numeric::Float(self).base()
+    fn desc(&self) -> Item {
+        let mut desc = Item::Float;
+
+        if self.0.is_zero() {
+            desc |= Item::Zero;
+        }
+
+        desc
     }
 }
 
@@ -269,13 +322,8 @@ impl Infinity {
 }
 
 impl CalcursType for Infinity {
-    fn desc(&self) -> pattern::Pattern {
-        self.sign.desc().union(Item::Inf).into()
-    }
-
-    #[inline(always)]
-    fn base(self) -> Base {
-        Numeric::Infinity(self).base()
+    fn desc(&self) -> Item {
+        self.sign.desc().union(Item::Inf)
     }
 }
 

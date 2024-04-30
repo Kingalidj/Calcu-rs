@@ -233,11 +233,11 @@ fn eval_lit(l: syn::ExprLit) -> TokenStream {
     match l.lit {
         syn::Lit::Int(i) => {
             let val: i64 = i.base10_parse().unwrap();
-            quote!(calcu_rs::rational::Rational::from(#val).base())
+            quote!(calcu_rs::prelude::Expr::from(calcu_rs::prelude::Rational::from(#val)))
         },
         syn::Lit::Float(f) => {
             let val: f64 = f.base10_parse().unwrap();
-            quote!(calcu_rs::numeric::Float::new(#val).base())
+            quote!(calcu_rs::prelude::Expr::from(calcu_rs::prelude::Float::new(#val)))
         },
         _ => panic!("unknown literal"),
     }
@@ -257,11 +257,11 @@ fn eval_unary(u: syn::ExprUnary) -> TokenStream {
 fn eval_ident(p: &syn::Ident) -> TokenStream {
     let id = p.to_string();
     if id == "oo" {
-        quote!(calcu_rs::numeric::Infinity::pos().base())
+        quote!(calcu_rs::prelude::Expr::from(calcu_rs::prelude::Infinity::pos()))
     } else if id == "undef" {
-        quote!(calcu_rs::numeric::Numeric::Undefined.base())
+        quote!(calcu_rs::prelude::Expr::from(calcu_rs::prelude::Numeric::Undefined))
     } else {
-        quote!(calcu_rs::base::Symbol::new(#id).base())
+        quote!(calcu_rs::prelude::Expr::from(calcu_rs::prelude::Symbol::new(#id)))
     }
 }
 

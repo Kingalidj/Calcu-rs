@@ -24,19 +24,19 @@ bitflags! {
         const All      = bit!(0);
         const Atom     = bit!(1);
         const Symbol   = bit!(2)  | bit!(Atom);
-        const Numeric  = bit!(3)  | bit!(Atom);
+        const Constant  = bit!(3)  | bit!(Atom);
 
-        const Undef    = bit!(4)  | bit!(Numeric);
-        const Inf      = bit!(5)  | bit!(Numeric);
-        const Rational = bit!(6)  | bit!(Numeric);
-        const Float    = bit!(7)  | bit!(Numeric);
+        const Undef    = bit!(4)  | bit!(Constant);
+        const Inf      = bit!(5)  | bit!(Constant);
+        const Rational = bit!(6)  | bit!(Constant);
+        const Float    = bit!(7)  | bit!(Constant);
 
         const Int      = bit!(8)  | bit!(Rational);
         const UOne     = bit!(9)  | bit!(Int);
 
         const Binary   = bit!(10);
-        const Add      = bit!(11) | bit!(Binary);
-        const Mul      = bit!(12) | bit!(Binary);
+        const Sum      = bit!(11) | bit!(Binary);
+        const Prod      = bit!(12) | bit!(Binary);
         const Pow      = bit!(13) | bit!(Binary);
 
         const Zero     = bit!(14) | bit!(Int);
@@ -98,54 +98,3 @@ impl Pattern {
         !self.is(itm)
     }
 }
-
-macro_rules! get_itm {
-    //(Numeric: $e:expr) => {
-    //    if let crate::base::Base::Numeric(n) = $e {
-    //        n
-    //    } else {
-    //        panic!("get_itm for Numeric failed");
-    //    }
-    //};
-
-    (Rational: $e:expr) => {
-        if let crate::base::Base::Rational(r) = $e {
-            r
-        } else {
-            panic!("get_itm for Rational failed");
-        }
-    };
-
-    (Symbol: $e:expr) => {
-        if let crate::base::Base::Symbol(e) = $e {
-            e
-        } else {
-            panic!("get_itm for Symbol failed");
-        }
-    };
-
-    (Add: $e:expr) => {
-        if let crate::base::Base::Add(e) = $e {
-            e
-        } else {
-            panic!("get_itm for Add failed");
-        }
-    };
-
-    (Mul: $e:expr) => {
-        if let crate::base::Base::Mul(e) = $e {
-            e
-        } else {
-            panic!("get_itm for Mul failed");
-        }
-    };
-
-    (Pow: $e:expr) => {
-        if let crate::base::Base::Pow(e) = $e {
-            e
-        } else {
-            panic!("get_itm for Pow failed");
-        }
-    };
-}
-pub(crate) use get_itm;

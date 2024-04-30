@@ -1,20 +1,22 @@
+extern crate core;
 pub extern crate self as calcu_rs;
+
 pub use calcurs_macros::{calc, identity};
 
-pub mod base;
+pub mod expression;
 pub mod derivative;
 pub mod numeric;
-pub mod operator;
+pub mod operator2;
+pub use operator2 as operator;
 pub mod pattern;
 pub mod rational;
 
 pub mod prelude {
     pub use crate::{
-        base::{self, Base, CalcursType, Symbol},
+        expression::{self, Expr, CalcursType, Construct, Symbol},
         calc,
-        derivative::Differentiable,
         numeric::{Float, Infinity, Numeric, Sign},
-        operator::{Add, Div, Mul, Pow, Sub},
+        operator::{Sum, Quot, Prod, Pow, Diff},
         rational::Rational,
     };
 }

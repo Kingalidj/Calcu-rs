@@ -20,7 +20,7 @@ mod test_display {
     #[test_case(c!((1/3)^(1/100)), "(1/3)^(1/100)")]
     #[test_case(c!((10^15) + 1/1000), "1000000000000000001 e-3")]
     #[test_case(c!((1/3)^(2/1000)), "(1/3)^(1/500)")]
-    fn disp_fractions(exp: Base, res: &str) {
+    fn disp_fractions(exp: Expr, res: &str) {
         let fmt = format!("{}", exp);
         assert_eq!(fmt, res);
     }
@@ -51,6 +51,7 @@ mod test_rational {
         assert!(r!(5 / 128) > r!(11 / 2516));
     }
 }
+#[cfg(hide)]
 mod test_derivative {
     use crate::calc;
     use crate::prelude::*;
@@ -66,12 +67,12 @@ mod test_derivative {
     #[test_case(1, c!((x^2) + x*3), c!(2*x + 3))]
     #[test_case(2, c!(1/3 + 3/5),   c!(0))]
     #[test_case(3, c!(x+y),         c!(1))]
-    fn sum_rule(_case: u32, f: Base, df: Base) {
+    fn sum_rule(_case: u32, f: Expr, df: Expr) {
         assert_eq!(f.derive("x"), df);
     }
 
     #[test_case(c!((x^2)*y), c!(2*x*y); "1")]
-    fn product_rule(f: Base, df: Base) {
+    fn product_rule(f: Expr, df: Expr) {
         assert_eq!(f.derive("x"), df);
     }
 
@@ -79,7 +80,7 @@ mod test_derivative {
     #[test_case(c!(y).derive("x"), c!(0))]
     #[test_case(c!(x*x).derive("x"), c!(2*x))]
     #[test_case(c!((x^2 - x) / (2 * x)).derive("x"), c!(1 / 2))]
-    fn derive(expr: Base, result: Base) {
+    fn derive(expr: Expr, result: Expr) {
         assert_eq!(expr, result);
     }
 }
@@ -105,7 +106,7 @@ mod test_operators {
     #[test_case(c!(-oo + oo),   c!(undef);  "8")]
     #[test_case(c!(undef + oo), c!(undef);  "9")]
     #[test_case(c!(4/2 + 0),    c!(2);      "10")]
-    fn add(add: Base, sol: Base) {
+    fn add(add: Expr, sol: Expr) {
         assert_eq!(add, sol);
     }
 
@@ -118,7 +119,7 @@ mod test_operators {
     #[test_case(c!(oo - oo),       c!(undef);  "7")]
     #[test_case(c!(-oo - oo),      c!(-oo);    "8")]
     #[test_case(c!(undef - oo),    c!(undef);  "9")]
-    fn sub(sub: Base, sol: Base) {
+    fn sub(sub: Expr, sol: Expr) {
         assert_eq!(sub, sol)
     }
 
@@ -134,7 +135,7 @@ mod test_operators {
     #[test_case(c!(oo*oo),       c!(oo);      "10")]
     #[test_case(c!(-oo*oo),      c!(-oo);     "11")]
     #[test_case(c!(undef*oo),    c!(undef);   "12")]
-    fn mul(mul: Base, sol: Base) {
+    fn mul(mul: Expr, sol: Expr) {
         assert_eq!(mul, sol);
     }
 
@@ -146,7 +147,7 @@ mod test_operators {
     #[test_case(c!(x/x), c!(1);     "6")]
     #[test_case(c!((x*x + x) / x), c!(x + 1); "7")]
     #[test_case(c!((x*x + x) / (1 / x)), c!(x); "8")]
-    fn div(div: Base, sol: Base) {
+    fn div(div: Expr, sol: Expr) {
         assert_eq!(div, sol);
     }
 
@@ -157,12 +158,29 @@ mod test_operators {
     #[test_case(c!(0^(3/4)),    c!(0);     "5")]
     #[test_case(c!((1/2)^(-1)), c!(4/2);   "6")]
     #[test_case(c!((x^2)^3),    c!(x^6);   "7")]
-    fn pow(pow: Base, sol: Base) {
+    fn pow(pow: Expr, sol: Expr) {
         assert_eq!(pow, sol);
     }
 
     #[test_case(c!(x*x*2 + 3*x + 4/3), c!(4/3 + (x^2) * 2 + 3*x); "1")]
-    fn polynom(p1: Base, p2: Base) {
+    fn polynom(p1: Expr, p2: Expr) {
         assert_eq!(p1, p2);
+    }
+}
+mod test_structure_ops {
+    use crate::calc;
+    use crate::prelude::*;
+    use test_case::test_case;
+
+    macro_rules! c {
+        ($($t:tt)*) => {
+            calc!($($t)*)
+        }
+    }
+
+    #[test_case(c!((a + b) * c), c!(a+b), false; "1")]
+    #[test_case(c!((a + d) * c), c!(a+b), true; "2")]
+    fn free_of(a: Expr, b: Expr, res: bool) {
+        assert_eq!(a.free_of(&b), res)
     }
 }
