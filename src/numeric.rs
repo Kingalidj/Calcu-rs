@@ -6,7 +6,7 @@ use num::Zero;
 
 use crate::{
     expression::{Expr, CalcursType},
-    pattern::{self, Item},
+    pattern::Item,
     rational::{Rational, UNonZero},
 };
 

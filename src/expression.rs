@@ -22,15 +22,25 @@ pub trait Construct: CalcursType {
         !self.free_of(other)
     }
 
+    /// Checks if expression is a general polynomial expression (GPE) in [vars]
+    /// note that: \
+    /// every sub-expresion must also be a GPE in [vars] \
+    /// 0.is_polynomial(...) -> true \
+    /// (y^2 + y).is_polynomial(x) -> true
     fn is_polynomial_in(&self, vars: &[Expr]) -> bool {
-        todo!()
+        for v in self.operands() {
+            if !(v.is_polynomial_in(vars)) {
+                return false;
+            }
+        }
+        true
     }
 
-    /// returns all variables in the expression (e.g x, but also sin(x))
+    /// returns all generalized variables in the expression (e.g x, but also sin(x))
     /// normally you should call [variables]
     fn all_variables(&self) -> Vec<Expr>;
 
-    /// returns all unique variables in the expression (e.g x, but also sin(x))
+    /// returns all unique generalized variables in the expression (e.g x, but also sin(x))
     fn variables(&self) -> Vec<Expr> {
         let vars = self.variables();
         let unique_vars: HashSet<Expr> = vars.into_iter().collect();
@@ -39,30 +49,41 @@ pub trait Construct: CalcursType {
 
     /// returns a list of all operands of the main operator
     /// if no operator is present we return a single operand
-    fn operands(&mut self) -> Vec<&mut Expr>;
+    fn operands_mut(&mut self) -> Vec<&mut Expr>;
+    fn operands(&self) -> Vec<&Expr>;
 
 
     /// This function returns the ith operand of self
     //  For example, Operand(m ∗ x + b, 2) -> b
     #[inline]
     fn operand(&mut self, i: usize) -> Option<&mut Expr> {
-        let ops = self.operands();
+        let ops = self.operands_mut();
 
         if i < ops.len() {
-            Some(self.operands().swap_remove(i))
+            Some(self.operands_mut().swap_remove(i))
         } else {
             None
         }
     }
 
-    /// returns the first operand of the main operator if available
-    #[inline]
-    fn first(&mut self) -> Option<&mut Expr> {
-        self.operand(0)
-    }
+    /// in general: \
+    /// exponent(x) -> 1, when x is a [Symbol], [Product], [Rational] etc...
+    /// exponent(x) -> x.operand(2), when x is a power,
+    /// exponent(x) -> None, when x is [Infinity], [Undefined]
+    ///
+    /// will not return None if x.base() is not None
+    fn exponent(&self) -> Option<&Expr>;
+
+    /// in general: \
+    /// base(x) -> x, when x is a [Symbol], [Product], [Rational] etc... \
+    /// base(x) -> x.operand(1), when x is a power, \
+    /// base(x) -> None, when x is [Infinity], [Undefined]
+    ///
+    /// when base(x) is Some(...), exponent(x) should also return Some(...)
+    fn base(&self) -> Option<&Expr>;
 
     fn map(&mut self, function: impl Fn(&mut Expr)) {
-        self.operands().iter_mut().for_each(|x| function(*x))
+        self.operands_mut().iter_mut().for_each(|x| function(*x))
     }
 
     fn simplify(self) -> Expr;
@@ -112,39 +133,6 @@ impl Expr {
         Pow::pow(self, other).into()
     }
 
-    /// base(x) -> x, when x is a [Symbol], [Product] etc...
-    /// base(x) -> x.operand(1), when x is a power,
-    /// base(x) -> None, when x is a constant e.g [Rational], [Float], etc...
-    pub fn base(&self) -> Option<&Expr> {
-        use Expr as E;
-        match self {
-            E::Symbol(_)
-            | E::Sum(_)
-            | E::Prod(_) => Some(self),
-            E::Pow(p) => Some(&p.base),
-            E::Rational(_)
-            | E::Float(_)
-            | E::Infinity(_)
-            | E::Undefined => None,
-        }
-    }
-
-    /// base(x) -> 1, when x is a [Symbol], [Product] etc...
-    /// base(x) -> x.operand(2), when x is a power,
-    /// base(x) -> None, when x is a constant e.g [Rational], [Float], etc...
-    pub fn exponent(&self) -> Option<&Expr> {
-        use Expr as E;
-        match self {
-            E::Symbol(_)
-            | E::Sum(_)
-            | E::Prod(_) => Some(&Rational::ONE),
-            E::Pow(p) => Some(&p.exponent),
-            E::Rational(_)
-            | E::Float(_)
-            | E::Infinity(_)
-            | E::Undefined => None,
-        }
-    }
 }
 
 impl CalcursType for Expr {
@@ -187,8 +175,50 @@ impl Construct for Expr {
         }
     }
 
+    /// atomic expression is always polynomial
+    fn is_polynomial_in(&self, vars: &[Expr]) -> bool {
+        match self {
+            Expr::Symbol(_)
+            | Expr::Rational(_)
+            | Expr::Float(_)
+            | Expr::Infinity(_)
+            | Expr::Undefined => true,
+
+            Expr::Sum(sum) => sum.is_polynomial_in(vars),
+            Expr::Prod(prod) => prod.is_polynomial_in(vars),
+            Expr::Pow(pow) => pow.is_polynomial_in(vars),
+        }
+    }
+
+    fn all_variables(&self) -> Vec<Expr> {
+        match self {
+            Expr::Rational(_)
+            | Expr::Float(_)
+            | Expr::Infinity(_)
+            | Expr::Undefined => vec![],
+
+            Expr::Symbol(_) => vec![self.clone()],
+            Expr::Sum(sum) => sum.all_variables(),
+            Expr::Prod(prod) => prod.all_variables(),
+            Expr::Pow(pow) => pow.all_variables(),
+        }
+    }
+
     #[inline]
-    fn operands(&mut self) -> Vec<&mut Expr> {
+    fn operands_mut(&mut self) -> Vec<&mut Expr> {
+        use Expr as E;
+        match self {
+            E::Sum(sum) => sum.operands_mut(),
+            E::Prod(prod) => prod.operands_mut(),
+            E::Pow(pow) => pow.operands_mut(),
+            E::Symbol(_) | E::Rational(_) | E::Float(_) | E::Infinity(_) | E::Undefined => {
+                vec![self]
+            }
+        }
+    }
+
+    #[inline]
+    fn operands(&self) -> Vec<&Expr> {
         use Expr as E;
         match self {
             E::Sum(sum) => sum.operands(),
@@ -212,19 +242,34 @@ impl Construct for Expr {
         }
     }
 
-    fn all_variables(&self) -> Vec<Expr> {
+    fn exponent(&self) -> Option<&Expr> {
+        use Expr as E;
         match self {
-            Expr::Rational(_)
-            | Expr::Float(_)
-            | Expr::Infinity(_)
-            | Expr::Undefined => vec![],
-
-            Expr::Symbol(_) => vec![self.clone()],
-            Expr::Sum(sum) => sum.all_variables(),
-            Expr::Prod(prod) => prod.all_variables(),
-            Expr::Pow(pow) => pow.all_variables(),
+            E::Symbol(_)
+            | E::Sum(_)
+            | E::Prod(_) => Some(&Rational::ONE),
+            E::Pow(p) => Some(&p.exponent),
+            E::Rational(_)
+            | E::Float(_) => Some(self),
+            E::Infinity(_)
+            | E::Undefined => None,
         }
     }
+
+    fn base(&self) -> Option<&Expr> {
+        use Expr as E;
+        match self {
+            E::Symbol(_)
+            | E::Sum(_)
+            | E::Prod(_) => Some(self),
+            E::Pow(p) => Some(&p.base),
+            E::Rational(_)
+            | E::Float(_)
+            | E::Infinity(_)
+            | E::Undefined => Some(self),
+        }
+    }
+
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Ord, Eq, Hash)]

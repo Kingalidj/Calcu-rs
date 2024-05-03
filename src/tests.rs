@@ -167,7 +167,7 @@ mod test_operators {
         assert_eq!(p1, p2);
     }
 }
-mod test_structure_ops {
+mod test_construct_ops {
     use crate::calc;
     use crate::prelude::*;
     use test_case::test_case;
@@ -182,5 +182,14 @@ mod test_structure_ops {
     #[test_case(c!((a + d) * c), c!(a+b), true; "2")]
     fn free_of(a: Expr, b: Expr, res: bool) {
         assert_eq!(a.free_of(&b), res)
+    }
+
+    #[test_case(c!(x*x + 2 * y + z), vec!(c!(x)), true; "1")]
+    #[test_case(c!(x*x + 2 * y + z), vec!(c!(y), c!(z)), true; "2")]
+    #[test_case(c!(x*x + 2 * y + z), vec!(c!(w), c!(y), c!(z)), true; "3")]
+    #[test_case(c!(1 / x), vec!(c!(x)), false; "4")]
+    #[test_case(c!(x).pow(c!(1 / 2)), vec!(c!(x)), false; "5")]
+    fn is_polynomial(a: Expr, b: Vec<Expr>, res: bool) {
+        assert_eq!(a.is_polynomial_in(&b[..]), res);
     }
 }

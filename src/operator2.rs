@@ -43,8 +43,43 @@ impl Sum {
         Self { operands: Default::default() }
     }
 
-    fn merge_sums(s1: &[Expr], s2: &[Expr]) -> OperandVec {
-        todo!()
+    fn merge_sums(s: &[Expr], t: &[Expr]) -> OperandVec {
+        if s.is_empty() {
+            return t.iter().cloned().collect();
+        } else if t.is_empty() {
+            return s.iter().cloned().collect();
+        }
+        let s1 = s.get(0).unwrap();
+        let t1 = s.get(0).unwrap();
+
+        let mut h = OperandVec::from([s1.clone(), t1.clone()]);
+        Self::simplify_rec(&mut h);
+
+        if h.is_empty() {
+            // s1, t1 cancel out
+            return Self::merge_sums(&s[1..], &t[1..]);
+        } else if h.len() == 1 {
+            // s1, t1 merged into h1
+            h.append(&mut Self::merge_sums(&s[1..], &t[1..]));
+            h
+        } else if h.len() == 2 {
+            // s1, t1 could not be merged
+            if h.get(0) == Some(s1) {
+                // h = [s1, t1]
+                let mut merged = Self::merge_sums(&s[1..], t);
+                merged.push_front(s1.clone());
+                merged
+
+            } else {
+                // h = [t1, s1]
+                debug_assert_eq!(h.get(0), Some(t1));
+                let mut merged = Self::merge_sums(s, &t[1..]);
+                merged.push_front(t1.clone());
+                merged
+            }
+        } else {
+            unreachable!("two elements simplified should not become more elements")
+        }
     }
 
     /// helper function for [Self::simplify_rec]
@@ -139,8 +174,12 @@ impl Construct for Sum {
     }
 
     #[inline]
-    fn operands(&mut self) -> Vec<&mut Expr> {
+    fn operands_mut(&mut self) -> Vec<&mut Expr> {
         self.operands.iter_mut().collect()
+    }
+    #[inline]
+    fn operands(&self) -> Vec<&Expr> {
+        self.operands.iter().collect()
     }
 
     fn simplify(mut self) -> Expr {
@@ -173,6 +212,14 @@ impl Construct for Sum {
             vars.append(&mut op.all_variables());
         }
         vars
+    }
+
+    fn exponent(&self) -> Option<&Expr> {
+        Some(&Rational::ONE)
+    }
+
+    fn base(&self) -> Option<&Expr> {
+        None
     }
 }
 
@@ -211,41 +258,40 @@ impl Prod {
     /// merges two operand slices
     fn merge_prods(p: &[Expr], q: &[Expr]) -> OperandVec {
         if q.is_empty() {
-            p.iter().cloned().collect()
+            return p.iter().cloned().collect();
         } else if p.is_empty() {
-            q.iter().cloned().collect()
-        } else {
-            let p1 = p.get(0).unwrap();
-            let q1 = q.get(0).unwrap();
+            return q.iter().cloned().collect();
+        }
+        let p1 = p.get(0).unwrap();
+        let q1 = q.get(0).unwrap();
 
-            let mut h = OperandVec::from([p1.clone(), q1.clone()]);
-            Self::simplify_rec(&mut h);
+        let mut h = OperandVec::from([p1.clone(), q1.clone()]);
+        Self::simplify_rec(&mut h);
 
-            if h.is_empty() {
-                // p1, q1 cancel out
-                return Self::merge_prods(&p[1..], &q[1..]);
-            } else if h.len() == 1 {
-                // p1, q1 merged into h1
-                h.append(&mut Self::merge_prods(&p[1..], &q[1..]));
-                h
-            } else if h.len() == 2 {
-                // p1, q1 could not be merged
-                if h.get(0) == Some(p1) {
-                    // h = [p1, q1]
-                    let mut merged = Self::merge_prods(&p[1..], q);
-                    merged.push_front(p1.clone());
-                    merged
+        if h.is_empty() {
+            // p1, q1 cancel out
+            return Self::merge_prods(&p[1..], &q[1..]);
+        } else if h.len() == 1 {
+            // p1, q1 merged into h1
+            h.append(&mut Self::merge_prods(&p[1..], &q[1..]));
+            h
+        } else if h.len() == 2 {
+            // p1, q1 could not be merged
+            if h.get(0) == Some(p1) {
+                // h = [p1, q1]
+                let mut merged = Self::merge_prods(&p[1..], q);
+                merged.push_front(p1.clone());
+                merged
 
-                } else {
-                    // h = [q1, p1]
-                    debug_assert_eq!(h.get(0), Some(q1));
-                    let mut merged = Self::merge_prods(p, &q[1..]);
-                    merged.push_front(q1.clone());
-                    merged
-                }
             } else {
-                unreachable!("two elements simplified should not become more elements")
+                // h = [q1, p1]
+                debug_assert_eq!(h.get(0), Some(q1));
+                let mut merged = Self::merge_prods(p, &q[1..]);
+                merged.push_front(q1.clone());
+                merged
             }
+        } else {
+            unreachable!("two elements simplified should not become more elements")
         }
     }
 
@@ -351,8 +397,12 @@ impl Construct for Prod {
     }
 
     #[inline]
-    fn operands(&mut self) -> Vec<&mut Expr> {
+    fn operands_mut(&mut self) -> Vec<&mut Expr> {
         self.operands.iter_mut().collect()
+    }
+    #[inline]
+    fn operands(&self) -> Vec<&Expr> {
+        self.operands.iter().collect()
     }
 
     fn simplify(mut self) -> Expr {
@@ -388,6 +438,14 @@ impl Construct for Prod {
             vars.append(&mut op.all_variables());
         }
         vars
+    }
+
+    fn exponent(&self) -> Option<&Expr> {
+        Some(&Rational::ONE)
+    }
+
+    fn base(&self) -> Option<&Expr> {
+        None
     }
 }
 
@@ -461,9 +519,21 @@ impl Construct for Pow {
         true
     }
 
+    fn all_variables(&self) -> Vec<Expr> {
+        if self.exponent.desc().is(Item::Constant) {
+            self.base.all_variables()
+        } else {
+            vec![]
+        }
+    }
     #[inline]
-    fn operands(&mut self) -> Vec<&mut Expr> {
+    fn operands_mut(&mut self) -> Vec<&mut Expr> {
         vec![&mut self.base, &mut self.exponent]
+    }
+
+    #[inline]
+    fn operands(&self) -> Vec<&Expr> {
+        vec![&self.base, &self.exponent]
     }
 
     fn simplify(self) -> Expr {
@@ -521,13 +591,30 @@ impl Construct for Pow {
         }
     }
 
-    fn all_variables(&self) -> Vec<Expr> {
-        if self.exponent.desc().is(Item::Constant) {
-            self.base.all_variables()
-        } else {
-            //TODO: what here?
-            vec![]
+    /// [Pow] is NOT polynomial in x when: \
+    /// exponent: contains x, is negative or is a non-integer number
+    fn is_polynomial_in(&self, vars: &[Expr]) -> bool {
+        let ed = self.exponent.desc();
+
+        if ed.is(Item::Neg) || (ed.is(Item::Rational) && ed.is_not(Item::Int)) {
+            return false;
         }
+
+        for v in vars {
+            if !self.exponent.free_of(v) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    fn exponent(&self) -> Option<&Expr> {
+        Some(&self.exponent)
+    }
+
+    fn base(&self) -> Option<&Expr> {
+        Some(&self.base)
     }
 }
 
