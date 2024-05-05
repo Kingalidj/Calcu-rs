@@ -25,23 +25,24 @@ bitflags! {
         const Atom     = bit!(1);
         const Symbol   = bit!(2)  | bit!(Atom);
         const Constant  = bit!(3)  | bit!(Atom);
+        const Finite    = bit!(4) | bit!(Constant);
 
-        const Undef    = bit!(4)  | bit!(Constant);
-        const Inf      = bit!(5)  | bit!(Constant);
-        const Rational = bit!(6)  | bit!(Constant);
-        const Float    = bit!(7)  | bit!(Constant);
+        const Undef    = bit!(5)  | bit!(Constant);
+        const Inf      = bit!(6)  | bit!(Constant);
+        const Rational = bit!(7)  | bit!(Finite);
+        const Float    = bit!(8)  | bit!(Finite);
 
-        const Int      = bit!(8)  | bit!(Rational);
-        const UOne     = bit!(9)  | bit!(Int);
+        const Int      = bit!(9)  | bit!(Rational);
+        const UOne     = bit!(10)  | bit!(Int);
 
-        const Binary   = bit!(10);
-        const Sum      = bit!(11) | bit!(Binary);
-        const Prod      = bit!(12) | bit!(Binary);
-        const Pow      = bit!(13) | bit!(Binary);
+        const Binary   = bit!(11);
+        const Sum      = bit!(12) | bit!(Binary);
+        const Prod      = bit!(13) | bit!(Binary);
+        const Pow      = bit!(14) | bit!(Binary);
 
-        const Zero     = bit!(14) | bit!(Int);
-        const Pos      = bit!(15);
-        const Neg      = bit!(16);
+        const Zero     = bit!(15) | bit!(Int);
+        const Pos      = bit!(16);
+        const Neg      = bit!(17);
 
         //const AtomicBinary = bit!(Atom) | bit!(Binary);
         //const AtomicAdd    = bit!(Add)  | bit!(AtomicBinary);

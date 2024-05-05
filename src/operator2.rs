@@ -117,7 +117,16 @@ impl Sum {
         } else if u1.base().is_some() && u1.base() == u2.base() {
             // n*b + m*b = (n + m) * b
             let u = u1.base().unwrap().clone();
-            todo!()
+            let c1 = u1.coefficient().unwrap().clone();
+            let c2 = u2.coefficient().unwrap().clone();
+
+            let c = Sum::add(c1, c2).simplify();
+            let sum = Prod::mul(c, u).simplify();
+
+            if sum.desc().is_not(Item::Zero) {
+                out.push_back(sum)
+            }
+
         } else if u2 < u1 {
             out.push_back(u2);
             out.push_back(u1);
@@ -213,19 +222,11 @@ impl Construct for Sum {
         }
         vars
     }
-
-    fn exponent(&self) -> Option<&Expr> {
-        Some(&Rational::ONE)
-    }
-
-    fn base(&self) -> Option<&Expr> {
-        None
-    }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Prod {
-    operands: OperandVec,
+    pub operands: OperandVec,
 }
 pub type Quot = Prod;
 
@@ -439,14 +440,6 @@ impl Construct for Prod {
         }
         vars
     }
-
-    fn exponent(&self) -> Option<&Expr> {
-        Some(&Rational::ONE)
-    }
-
-    fn base(&self) -> Option<&Expr> {
-        None
-    }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
@@ -519,6 +512,23 @@ impl Construct for Pow {
         true
     }
 
+    /// [Pow] is NOT polynomial in x when: \
+    /// exponent: contains x, is negative or is a non-integer number
+    fn is_polynomial_in(&self, vars: &[Expr]) -> bool {
+        let ed = self.exponent.desc();
+
+        if ed.is(Item::Neg) || (ed.is(Item::Rational) && ed.is_not(Item::Int)) {
+            return false;
+        }
+
+        for v in vars {
+            if !self.exponent.free_of(v) {
+                return false;
+            }
+        }
+
+        return true;
+    }
     fn all_variables(&self) -> Vec<Expr> {
         if self.exponent.desc().is(Item::Constant) {
             self.base.all_variables()
@@ -526,6 +536,7 @@ impl Construct for Pow {
             vec![]
         }
     }
+
     #[inline]
     fn operands_mut(&mut self) -> Vec<&mut Expr> {
         vec![&mut self.base, &mut self.exponent]
@@ -589,32 +600,6 @@ impl Construct for Pow {
             }
             (base, exp) => E::Pow(Pow { base, exponent: exp }.into()),
         }
-    }
-
-    /// [Pow] is NOT polynomial in x when: \
-    /// exponent: contains x, is negative or is a non-integer number
-    fn is_polynomial_in(&self, vars: &[Expr]) -> bool {
-        let ed = self.exponent.desc();
-
-        if ed.is(Item::Neg) || (ed.is(Item::Rational) && ed.is_not(Item::Int)) {
-            return false;
-        }
-
-        for v in vars {
-            if !self.exponent.free_of(v) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    fn exponent(&self) -> Option<&Expr> {
-        Some(&self.exponent)
-    }
-
-    fn base(&self) -> Option<&Expr> {
-        Some(&self.base)
     }
 }
 

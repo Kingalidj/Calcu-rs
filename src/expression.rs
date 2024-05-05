@@ -1,6 +1,7 @@
 use calcu_rs::rational::Rational;
 use std::{fmt, ops};
 use std::collections::HashSet;
+use log::debug;
 
 use crate::numeric::{Float, Infinity};
 use crate::{
@@ -66,22 +67,6 @@ pub trait Construct: CalcursType {
         }
     }
 
-    /// in general: \
-    /// exponent(x) -> 1, when x is a [Symbol], [Product], [Rational] etc...
-    /// exponent(x) -> x.operand(2), when x is a power,
-    /// exponent(x) -> None, when x is [Infinity], [Undefined]
-    ///
-    /// will not return None if x.base() is not None
-    fn exponent(&self) -> Option<&Expr>;
-
-    /// in general: \
-    /// base(x) -> x, when x is a [Symbol], [Product], [Rational] etc... \
-    /// base(x) -> x.operand(1), when x is a power, \
-    /// base(x) -> None, when x is [Infinity], [Undefined]
-    ///
-    /// when base(x) is Some(...), exponent(x) should also return Some(...)
-    fn base(&self) -> Option<&Expr>;
-
     fn map(&mut self, function: impl Fn(&mut Expr)) {
         self.operands_mut().iter_mut().for_each(|x| function(*x))
     }
@@ -93,10 +78,10 @@ pub type PTR<T> = Box<T>;
 
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Expr {
-    Symbol(Symbol),
     Rational(Rational),
     Float(Float),
     Infinity(Infinity),
+    Symbol(Symbol),
 
     Sum(Sum),
     Prod(Prod),
@@ -133,6 +118,69 @@ impl Expr {
         Pow::pow(self, other).into()
     }
 
+    /// in general: \
+    /// exponent(x) -> 1, when x is a [Symbol], [Product], [Rational] etc...
+    /// exponent(x) -> x.operand(2), when x is a power,
+    /// exponent(x) -> None, when x is [Infinity], [Undefined]
+    ///
+    /// will not return None if x.base() is not None
+    pub fn exponent(&self) -> Option<&Expr> {
+        use Expr as E;
+        match self {
+            E::Symbol(_)
+            | E::Sum(_)
+            | E::Prod(_) => Some(&Rational::ONE),
+            E::Pow(p) => Some(&p.exponent),
+            E::Rational(_)
+            | E::Float(_)
+            | E::Infinity(_)
+            | E::Undefined => None,
+        }
+    }
+
+    /// in general: \
+    /// base(x) -> x, when x is a [Symbol], [Product], [Rational] etc... \
+    /// base(x) -> x.operand(1), when x is a power, \
+    /// base(x) -> None, when x is [Infinity], [Undefined]
+    ///
+    /// when base(x) is Some(...), exponent(x) should also return Some(...)
+    pub fn base(&self) -> Option<&Expr> {
+        use Expr as E;
+        match self {
+            E::Symbol(_)
+            | E::Sum(_)
+            | E::Prod(_) => Some(self),
+            E::Pow(p) => Some(&p.base),
+            E::Rational(_)
+            | E::Float(_)
+            | E::Infinity(_)
+            | E::Undefined => None,
+        }
+    }
+
+    pub fn coefficient(&self) -> Option<&Expr> {
+        use Expr as E;
+        match self {
+            E::Rational(_)
+            | E::Float(_)
+            | E::Infinity(_)
+            | E::Undefined => None,
+
+            E::Prod(prod) if prod.operands.len() >= 2 => {
+                let coeff = prod.operands.get(0).unwrap();
+                if coeff.desc().is(Item::Finite) {
+                    Some(coeff)
+                } else {
+                    Some(&Rational::ONE)
+                }
+            }
+
+            E::Sum(_)
+            | E::Pow(_)
+            | E::Prod(_)
+            | E::Symbol(_) => Some(&Rational::ONE),
+        }
+    }
 }
 
 impl CalcursType for Expr {
@@ -242,33 +290,6 @@ impl Construct for Expr {
         }
     }
 
-    fn exponent(&self) -> Option<&Expr> {
-        use Expr as E;
-        match self {
-            E::Symbol(_)
-            | E::Sum(_)
-            | E::Prod(_) => Some(&Rational::ONE),
-            E::Pow(p) => Some(&p.exponent),
-            E::Rational(_)
-            | E::Float(_) => Some(self),
-            E::Infinity(_)
-            | E::Undefined => None,
-        }
-    }
-
-    fn base(&self) -> Option<&Expr> {
-        use Expr as E;
-        match self {
-            E::Symbol(_)
-            | E::Sum(_)
-            | E::Prod(_) => Some(self),
-            E::Pow(p) => Some(&p.base),
-            E::Rational(_)
-            | E::Float(_)
-            | E::Infinity(_)
-            | E::Undefined => Some(self),
-        }
-    }
 
 }
 

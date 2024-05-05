@@ -20,6 +20,7 @@ version = "0.1.0"
 dependencies = [
  "bitflags",
  "calcurs_macros",
+ "log",
  "num",
  "num-rational",
  "pretty_assertions",
@@ -46,6 +47,12 @@ name = "diff"
 version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56254986775e3233ffa9c4d7d3faaf6d36a2c09d30b20687e9f88bc8bafc16c8"
+
+[[package]]
+name = "log"
+version = "0.4.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90ed8c1e510134f979dbc4f070f87d4313098b704861a105fe34231c70a3901c"
 
 [[package]]
 name = "num"
