@@ -3,11 +3,11 @@ use std::fmt::Formatter;
 
 use num::{integer::Roots, Integer};
 use std::num::NonZeroU64;
+use calcu_rs::numeric::{Float, Sign};
 use calcu_rs::operator2::Pow;
 
 use crate::{
     expression::{Expr, CalcursType},
-    numeric::{Float, Numeric, Sign},
     pattern::{Item, Pattern},
 };
 
@@ -99,10 +99,6 @@ impl Rational {
             exponent,
         }
         .reduce()
-    }
-
-    pub fn num(self) -> Numeric {
-        self.into()
     }
 
     #[inline]
@@ -293,47 +289,47 @@ impl Rational {
 
         r
     }
-    pub(crate) fn convert_add(self, rhs: Rational) -> Numeric {
+    pub(crate) fn convert_add(self, rhs: Rational) -> Expr {
         if let Some(sum) = self + rhs {
             sum.into()
         } else {
             let f_lhs: f64 = self.into();
             let f_rhs: f64 = rhs.into();
             let sum = f_lhs + f_rhs;
-            sum.into()
+            Expr::Float(Float(sum))
         }
     }
 
-    pub(crate) fn convert_sub(self, rhs: Rational) -> Numeric {
+    pub(crate) fn convert_sub(self, rhs: Rational) -> Expr {
         if let Some(diff) = self - rhs {
             diff.into()
         } else {
             let f_lhs: f64 = self.into();
             let f_rhs: f64 = rhs.into();
             let diff = f_lhs - f_rhs;
-            diff.into()
+            Expr::Float(Float(diff))
         }
     }
 
-    pub(crate) fn convert_mul(self, rhs: Rational) -> Numeric {
+    pub(crate) fn convert_mul(self, rhs: Rational) -> Expr {
         if let Some(prod) = self * rhs {
             prod.into()
         } else {
             let f_lhs: f64 = self.into();
             let f_rhs: f64 = rhs.into();
             let mul = f_lhs * f_rhs;
-            mul.into()
+            Expr::Float(Float(mul))
         }
     }
 
-    pub(crate) fn convert_div(self, rhs: Rational) -> Numeric {
+    pub(crate) fn convert_div(self, rhs: Rational) -> Expr {
         if let Some(prod) = self / rhs {
             prod.into()
         } else {
             let f_lhs: f64 = self.into();
             let f_rhs: f64 = rhs.into();
             let mul = f_lhs / f_rhs;
-            mul.into()
+            Expr::Float(Float(mul))
         }
     }
 

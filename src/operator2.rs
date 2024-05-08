@@ -11,7 +11,7 @@ pub type OperandVec = VecDeque<Expr>;
 
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Sum {
-    operands: OperandVec,
+    pub operands: OperandVec,
 }
 pub type Diff = Sum;
 
@@ -105,7 +105,27 @@ impl Sum {
             }
 
         } else if d1.is(Item::Constant) && d2.is(Item::Constant) {
-            let s = Sum::add(u1, u2).simplify();
+            //let s = Sum::add(u1, u2).simplify();
+
+            let s =
+            match (u1, u2) {
+                (E::Undefined, _) | (_, E::Undefined) => E::Undefined,
+                (E::Infinity(i1), E::Infinity(i2)) if i1.sign == i2.sign => E::Infinity(i1),
+                (E::Infinity(i1), E::Infinity(i2)) => E::Undefined,
+                (E::Infinity(i), _) | (_, E::Infinity(i)) => E::Infinity(i),
+
+                (E::Rational(r1), E::Rational(r2)) => r1.convert_add(r2),
+                (E::Rational(r), E::Float(f)) => E::Float(r.to_float() + f),
+                (E::Float(f), E::Rational(r)) => E::Float(f + r.to_float()),
+                (Expr::Float(f1), Expr::Float(f2)) => E::Float(f1 + f2),
+
+                (E::Sum(_), _) | (_, E::Sum(_))
+                | (E::Prod(_), _) | (_, E::Prod(_))
+                | (E::Pow(_), _) | (_, E::Pow(_))
+                | (E::Symbol(_), _) | (_, E::Symbol(_)) => unreachable!("value must be const"),
+
+                (E::PlaceHolder(_), _) | (_, E::PlaceHolder(_)) => panic!("use placeholder only in e-graph"),
+            };
 
             if s.desc().is_not(Item::Zero) {
                 out.push_back(s);
@@ -192,6 +212,12 @@ impl Construct for Sum {
     }
 
     fn simplify(mut self) -> Expr {
+        for op in &mut self.operands {
+            let mut e = Expr::Undefined;
+            std::mem::swap(&mut e, op);
+            *op = e.simplify();
+        }
+
         if self.operands.len() == 1 {
             return self.operands.pop_front().unwrap();
         }
@@ -397,16 +423,30 @@ impl Construct for Prod {
         true
     }
 
+    fn all_variables(&self) -> Vec<Expr> {
+        let mut vars = vec![];
+        for op in &self.operands {
+            vars.append(&mut op.all_variables());
+        }
+        vars
+    }
     #[inline]
     fn operands_mut(&mut self) -> Vec<&mut Expr> {
         self.operands.iter_mut().collect()
     }
+
     #[inline]
     fn operands(&self) -> Vec<&Expr> {
         self.operands.iter().collect()
     }
 
     fn simplify(mut self) -> Expr {
+        for op in &mut self.operands {
+            let mut e = Expr::Undefined;
+            std::mem::swap(&mut e, op);
+            *op = e.simplify();
+        }
+
         if self.operands.len() == 1 {
             return self.operands.pop_front().unwrap();
         }
@@ -431,14 +471,6 @@ impl Construct for Prod {
         } else {
             Expr::Prod(self)
         }
-    }
-
-    fn all_variables(&self) -> Vec<Expr> {
-        let mut vars = vec![];
-        for op in &self.operands {
-            vars.append(&mut op.all_variables());
-        }
-        vars
     }
 }
 
@@ -547,9 +579,16 @@ impl Construct for Pow {
         vec![&self.base, &self.exponent]
     }
 
-    fn simplify(self) -> Expr {
+    fn simplify(mut self) -> Expr {
         use Expr as E;
         use Item as I;
+
+        let mut b = E::Undefined;
+        std::mem::swap(&mut b, &mut self.base);
+        self.base = b.simplify();
+        let mut e = E::Undefined;
+        std::mem::swap(&mut e, &mut self.exponent);
+        self.exponent = e.simplify();
 
         let base_desc = self.base.desc();
         let exp_desc = self.exponent.desc();

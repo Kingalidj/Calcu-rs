@@ -1,6 +1,7 @@
 use calcu_rs::rational::Rational;
 use std::{fmt, ops};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use egg::{ENodeOrVar, Id, Language, Pattern, RecExpr};
 use log::debug;
 
 use crate::numeric::{Float, Infinity};
@@ -91,6 +92,8 @@ pub enum Expr {
     ///
     /// not the same as [f64::NAN]
     Undefined,
+
+    PlaceHolder(&'static str)
 }
 
 macro_rules! impl_from_for_expr {
@@ -135,6 +138,8 @@ impl Expr {
             | E::Float(_)
             | E::Infinity(_)
             | E::Undefined => None,
+
+            E::PlaceHolder(_) => panic!(),
         }
     }
 
@@ -155,6 +160,8 @@ impl Expr {
             | E::Float(_)
             | E::Infinity(_)
             | E::Undefined => None,
+
+            E::PlaceHolder(_) => panic!(),
         }
     }
 
@@ -179,6 +186,8 @@ impl Expr {
             | E::Pow(_)
             | E::Prod(_)
             | E::Symbol(_) => Some(&Rational::ONE),
+
+            E::PlaceHolder(_) => panic!(),
         }
     }
 }
@@ -195,6 +204,7 @@ impl CalcursType for Expr {
             E::Prod(m) => m.desc(),
             E::Pow(p) => p.desc(),
             E::Undefined => Item::Undef,
+            E::PlaceHolder(_) => panic!(),
         }
     }
 }
@@ -220,6 +230,8 @@ impl Construct for Expr {
             | (E::Infinity(_), _)
             | (E::Undefined, _)
             => true,
+
+            (E::PlaceHolder(_), _) | (_, E::PlaceHolder(_)) => panic!(),
         }
     }
 
@@ -235,6 +247,8 @@ impl Construct for Expr {
             Expr::Sum(sum) => sum.is_polynomial_in(vars),
             Expr::Prod(prod) => prod.is_polynomial_in(vars),
             Expr::Pow(pow) => pow.is_polynomial_in(vars),
+
+            Expr::PlaceHolder(_) => panic!(),
         }
     }
 
@@ -243,7 +257,8 @@ impl Construct for Expr {
             Expr::Rational(_)
             | Expr::Float(_)
             | Expr::Infinity(_)
-            | Expr::Undefined => vec![],
+            | Expr::Undefined
+            | Expr::PlaceHolder(_) => vec![],
 
             Expr::Symbol(_) => vec![self.clone()],
             Expr::Sum(sum) => sum.all_variables(),
@@ -259,12 +274,13 @@ impl Construct for Expr {
             E::Sum(sum) => sum.operands_mut(),
             E::Prod(prod) => prod.operands_mut(),
             E::Pow(pow) => pow.operands_mut(),
-            E::Symbol(_) | E::Rational(_) | E::Float(_) | E::Infinity(_) | E::Undefined => {
+            E::Symbol(_) | E::Rational(_) | E::Float(_) | E::Infinity(_) | E::Undefined | E::PlaceHolder(_) => {
                 vec![self]
             }
         }
     }
 
+    //TODO: return empty op
     #[inline]
     fn operands(&self) -> Vec<&Expr> {
         use Expr as E;
@@ -272,14 +288,14 @@ impl Construct for Expr {
             E::Sum(sum) => sum.operands(),
             E::Prod(prod) => prod.operands(),
             E::Pow(pow) => pow.operands(),
-            E::Symbol(_) | E::Rational(_) | E::Float(_) | E::Infinity(_) | E::Undefined => {
+            E::Symbol(_) | E::Rational(_) | E::Float(_) | E::Infinity(_) | E::Undefined | E::PlaceHolder(_) => {
                 vec![self]
             }
         }
     }
 
     #[inline]
-    fn simplify(self) -> Expr {
+    fn simplify(mut self) -> Expr {
         use Expr as E;
         match self {
             E::Symbol(_) | E::Rational(_) | E::Float(_) | E::Infinity(_) | E::Undefined => self,
@@ -287,6 +303,7 @@ impl Construct for Expr {
             E::Sum(sum) => sum.simplify(),
             E::Prod(prod) => prod.simplify(),
             E::Pow(pow) => pow.simplify(),
+            E::PlaceHolder(_) => panic!(),
         }
     }
 
@@ -319,13 +336,34 @@ impl CalcursType for &Symbol {
         Item::Symbol
     }
 }
-
 impl From<&Symbol> for Expr {
     #[inline(always)]
     fn from(value: &Symbol) -> Expr {
         panic!("only used for derivative")
     }
 }
+
+
+type ID = usize;
+
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+pub struct ENode {
+    expr: Expr,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+struct EGroup {
+    id: ID,
+    /// equivalent nodes
+    nodes: Vec<ENode>
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+struct EGraph {
+   nodes: Vec<ENode>,
+    groups: EGroup,
+}
+
 
 impl ops::Add for Expr {
     type Output = Expr;
@@ -424,9 +462,11 @@ impl fmt::Display for Expr {
             E::Pow(p) => write!(f, "{p}"),
 
             E::Undefined => write!(f, "undefined"),
+            E::PlaceHolder(ph) => write!(f, "{ph}"),
         }
     }
 }
+
 impl fmt::Display for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name)
@@ -451,6 +491,7 @@ impl fmt::Debug for Expr {
             E::Pow(p) => write!(f, "{:?}", p),
 
             E::Undefined => write!(f, "undefined"),
+            E::PlaceHolder(ph) => write!(f, "{:?}", ph),
         }
     }
 }

@@ -1,7 +1,8 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::punctuated as punc;
+use syn::{punctuated as punc, Token};
 use syn::parse;
+use syn::parse::ParseStream;
 
 #[derive(Debug, Clone, PartialEq)]
 enum Condition {
@@ -255,11 +256,14 @@ fn eval_unary(u: syn::ExprUnary) -> TokenStream {
 }
 
 fn eval_ident(p: &syn::Ident) -> TokenStream {
-    let id = p.to_string();
+    let mut id = p.to_string();
     if id == "oo" {
         quote!(calcu_rs::prelude::Expr::from(calcu_rs::prelude::Infinity::pos()))
     } else if id == "undef" {
         quote!(calcu_rs::prelude::Expr::from(calcu_rs::prelude::Numeric::Undefined))
+    } else if id.starts_with('_') {
+        let id = id.replacen('_', "?", 1);
+        quote!(calcu_rs::prelude::Expr::PlaceHolder(#id))
     } else {
         quote!(calcu_rs::prelude::Expr::from(calcu_rs::prelude::Symbol::new(#id)))
     }
@@ -278,7 +282,7 @@ fn eval_expr(e: syn::Expr) -> TokenStream {
         E::Paren(p) => eval_paren(p),
         E::Unary(u) => eval_unary(u),
         E::Path(p) => eval_path(p),
-        _ => panic!("unknown expression"),
+        _ => panic!("unknown expression: {:?}", e),
     }
 }
 

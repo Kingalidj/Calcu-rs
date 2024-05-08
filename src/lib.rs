@@ -10,12 +10,13 @@ pub mod operator2;
 pub use operator2 as operator;
 pub mod pattern;
 pub mod rational;
+pub mod e_graph;
 
 pub mod prelude {
     pub use crate::{
         expression::{self, Expr, CalcursType, Construct, Symbol},
         calc,
-        numeric::{Float, Infinity, Numeric, Sign},
+        numeric::{Float, Infinity, Sign},
         operator::{Sum, Quot, Prod, Pow, Diff},
         rational::Rational,
     };
