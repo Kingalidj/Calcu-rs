@@ -1,7 +1,5 @@
 use calcu_rs::rational::Rational;
-use egg::{ENodeOrVar, Id, Language, Pattern, RecExpr};
-use log::debug;
-use std::collections::{HashMap, HashSet};
+
 use std::{fmt, ops};
 
 use crate::numeric::{Float, Infinity};
@@ -93,7 +91,7 @@ impl_from_for_expr!(Pow);
 
 impl Expr {
     pub fn pow(self, other: impl CalcursType) -> Expr {
-        Pow::pow(self, other).into()
+        Pow::pow(self, other)
     }
 
     pub fn operands(&self) -> Vec<&Expr> {
@@ -166,7 +164,7 @@ impl Expr {
             E::Rational(_) | E::Float(_) | E::Infinity(_) | E::Undefined => None,
 
             E::Prod(prod) if prod.operands.len() >= 2 => {
-                let coeff = prod.operands.get(0).unwrap();
+                let coeff = prod.operands.first().unwrap();
                 if coeff.desc().is(Item::Finite) {
                     Some(coeff)
                 } else {
@@ -200,7 +198,7 @@ impl CalcursType for Expr {
 
 impl Construct for Expr {
     #[inline]
-    fn simplify(mut self) -> Expr {
+    fn simplify(self) -> Expr {
         use Expr as E;
         match self {
             E::Symbol(_) | E::Rational(_) | E::Float(_) | E::Infinity(_) | E::Undefined => self,
@@ -241,7 +239,7 @@ impl CalcursType for &Symbol {
 }
 impl From<&Symbol> for Expr {
     #[inline(always)]
-    fn from(value: &Symbol) -> Expr {
+    fn from(_value: &Symbol) -> Expr {
         panic!("only used for derivative")
     }
 }

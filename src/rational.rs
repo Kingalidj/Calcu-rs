@@ -8,7 +8,7 @@ use std::num::NonZeroU64;
 
 use crate::{
     expression::{CalcursType, Expr},
-    pattern::{Item, Pattern},
+    pattern::{Item},
 };
 
 const NNZ_ONE: UNonZero = UNonZero::new_unchecked(1);
@@ -86,7 +86,7 @@ impl Rational {
             true => Sign::Negative,
         };
 
-        let numer = num.unsigned_abs() as u64;
+        let numer = num.unsigned_abs();
         let denom = UNonZero::new(den.unsigned_abs()).unwrap();
         Self::reduced(sign, numer, denom, 0)
     }
@@ -254,9 +254,9 @@ impl Rational {
         if d.is(Item::Zero) {
             Self::one()
         } else if d.is(Item::PosInt) {
-            let mut res = self.numer;
+            let mut res = 1;
 
-            for i in 1..res {
+            for i in 1..self.numer {
                 res *= i;
             }
 
@@ -338,7 +338,7 @@ impl Rational {
     fn checked_int_pow(&self, exponent: u64) -> Option<Self> {
         let numer = self.numer.checked_pow(exponent.try_into().ok()?)?;
         let denom = self.denom().checked_pow(exponent.try_into().ok()?)?;
-        return Some(Rational::from((numer, denom)));
+        Some(Rational::from((numer, denom)))
     }
 
     /// tries to calculate the power. It is possible to apply just part of the
@@ -759,7 +759,7 @@ impl From<i64> for Rational {
         }
         Rational::reduced(
             Sign::from(numer),
-            numer.unsigned_abs() as u64,
+            numer.unsigned_abs(),
             UNonZero::new(1).unwrap(),
             0,
         )
@@ -809,7 +809,7 @@ impl From<Rational> for f64 {
         let mut val: f64 = value.numer() as f64 * 10f64.powf(value.exponent as f64);
         val /= value.denom() as f64;
 
-        return val;
+        val
     }
 }
 impl From<Fraction> for Rational {

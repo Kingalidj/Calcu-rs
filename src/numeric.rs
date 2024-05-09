@@ -1,13 +1,12 @@
-use num::integer::Roots;
+
 use std::{cmp::Ordering, fmt, ops};
 //use std::os::watchos;
-use num::pow::Pow;
+
 use num::Zero;
 
 use crate::{
     expression::{CalcursType, Expr},
     pattern::Item,
-    rational::{Rational, UNonZero},
 };
 
 /// defines all numeric types

@@ -12,6 +12,6 @@ fn main() {
         .with_expr(&eexpr)
         .run(&ExprGraph::make_rules());
     let extractor = Extractor::new(&runner.egraph, egg::AstSize);
-    let (bc, be) = extractor.find_best(runner.roots[0]);
+    let (_bc, be) = extractor.find_best(runner.roots[0]);
     println!("{} => {}", eexpr, be);
 }

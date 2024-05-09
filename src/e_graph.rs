@@ -1,8 +1,7 @@
 use calcu_rs::expression::{Expr, Symbol};
 use calcu_rs::prelude::{Prod, Rational, Sum, Pow};
-use std::collections::BTreeMap;
+
 use std::fmt;
-use std::fmt::Write;
 use std::str::FromStr;
 
 pub trait GraphFromExpr: Sized + egg::Language {
@@ -22,7 +21,7 @@ impl<E: GraphExpression> From<&Expr> for egg::Pattern<E> {
 impl<L: GraphExpression> GraphFromExpr for egg::ENodeOrVar<L> {
     fn from_expr(expr: &Expr, children: &[egg::Id]) -> Result<Self, &'static str> {
         if let Expr::PlaceHolder(ph) = expr {
-            Ok(egg::ENodeOrVar::Var(egg::Var::from_str(*ph).unwrap()))
+            Ok(egg::ENodeOrVar::Var(egg::Var::from_str(ph).unwrap()))
         } else {
             L::from_expr(expr, children).map(egg::ENodeOrVar::ENode)
         }
@@ -68,9 +67,7 @@ impl ExprGraph {
 fn array_ref_to_array<const N: usize, T: Copy>(arr_ref: &[T]) -> [T; N] {
     let mut arr: [T; N] = unsafe { std::mem::zeroed() };
     assert_eq!(arr_ref.len(), N);
-    for i in 0..N {
-        arr[i] = arr_ref[i]
-    }
+    arr[..].copy_from_slice(arr_ref);
     arr
 }
 
@@ -79,31 +76,31 @@ impl GraphFromExpr for ExprGraph {
         use Expr as E;
         match expr {
             E::Sum(_) => {
-                return if children.len() != 2 {
+                if children.len() != 2 {
                     Err("Expected 2 child ids for Add")
                 } else {
                     Ok(ExprGraph::Add(array_ref_to_array(children)))
                 }
             }
             E::Prod(_) => {
-                return if children.len() != 2 {
+                if children.len() != 2 {
                     Err("Expected 2 child ids for Mul")
                 } else {
                     Ok(ExprGraph::Mul(array_ref_to_array(children)))
                 }
             }
             E::Pow(_) => {
-                return if children.len() != 2 {
+                if children.len() != 2 {
                     Err("Expected 2 child ids for Pow")
                 } else {
                     Ok(ExprGraph::Pow(array_ref_to_array(children)))
                 }
             }
             E::Rational(r) => {
-                return Ok(ExprGraph::Rational(r.clone()));
+                Ok(ExprGraph::Rational(*r))
             }
             E::Symbol(s) => {
-                return Ok(ExprGraph::Symbol(s.clone()));
+                Ok(ExprGraph::Symbol(s.clone()))
             }
             E::Float(_) => todo!(),
             E::Infinity(_) => todo!(),
@@ -124,11 +121,11 @@ impl GraphExpression for ExprGraph {
             if ops.is_empty() {
                 return Ok(expr.add(L::from_expr(e, &[])?));
             } else if ops.len() == 1 {
-                return Ok(expr.add(L::from_expr(ops.get(0).unwrap(), &[])?));
+                return Ok(expr.add(L::from_expr(ops.first().unwrap(), &[])?));
             }
 
             let op_expr = e;
-            let n1 = build_from_expr(ops.get(0).unwrap(), expr)?;
+            let n1 = build_from_expr(ops.first().unwrap(), expr)?;
             let n2 = build_from_expr(ops.get(1).unwrap(), expr)?;
             let mut node = expr.add(L::from_expr(op_expr, &[n1, n2])?);
 
@@ -187,7 +184,7 @@ impl From<&egg::RecExpr<ExprGraph>> for Expr {
         for (i, n) in e.as_ref().iter().enumerate() {
             match n {
                 EE::Rational(r) => {
-                    exprs.push(E::Rational(r.clone()));
+                    exprs.push(E::Rational(*r));
                 }
                 EE::Symbol(s) => {
                     exprs.push(E::Symbol(s.clone()));
