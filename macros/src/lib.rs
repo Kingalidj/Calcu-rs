@@ -1,6 +1,6 @@
 use proc_macro2::{TokenStream, Span};
 use quote::quote;
-use syn::{punctuated as punc, Token, parse::{ParseStream, Parse, self}, spanned::Spanned};
+use syn::{parse::{self, discouraged::Speculative, Parse, ParseStream}, punctuated as punc, spanned::Spanned, Token};
 
 #[derive(Debug, Clone, PartialEq)]
 enum Condition {
@@ -262,7 +262,7 @@ enum Expr {
 }
 
 impl Expr {
-    fn parse_operand(s: &mut ParseStream) -> syn::Result<Expr> {
+    fn parse_operand(s: ParseStream) -> syn::Result<Expr> {
         if let Ok(id) = syn::Ident::parse(s) {
             let id = id.to_string();
             if id == "oo" {
@@ -286,12 +286,11 @@ impl Expr {
             syn::parenthesized!(content in s);
             Expr::parse(&content)
         } else {
-            let err_expr = syn::Expr::parse(s)?;
-            Err(syn::parse::Error::new(err_expr.span(), "bad expression"))
+            Err(syn::parse::Error::new(s.span(), "bad expression"))
         }
     }
 
-    fn parse_unary_expr(s: &mut ParseStream) -> syn::Result<Expr> {
+    fn parse_unary_expr(s: ParseStream) -> syn::Result<Expr> {
         if let Ok(op) = Op::parse(s) {
             match op.kind {
                 OpKind::Sub => {
@@ -308,7 +307,7 @@ impl Expr {
             Self::parse_operand(s)
         }
     }
-    fn parse_bin_expr(s: &mut ParseStream, prec_in: i32) -> syn::Result<Expr> {
+    fn parse_bin_expr(s: ParseStream, prec_in: i32) -> syn::Result<Expr> {
         let mut expr = Self::parse_unary_expr(s)?;
         loop
         {
@@ -316,73 +315,214 @@ impl Expr {
                 break;
             }
 
-            {
-                let tmp_s = s.fork();
-                let op = Op::parse(&tmp_s)?;
-                let op_prec = op.precedence();
-                if op_prec < prec_in {
-                    break;
-                }
+            if s.peek(Token![->]) || (s.peek(Token![<]) && s.peek2(Token![->])) || s.peek(Token![;]) {
+                break;
             }
 
-            let op = Op::parse(s)?;
-            let op_prec = op.precedence();
+            let ahead = s.fork();
+            let op = match Op::parse(&ahead) {
+                Ok(op) if op.precedence() < prec_in => break,
+                Ok(op) => op,
+                Err(_) => break,
+            };
 
-            let rhs = Expr::parse_bin_expr(s, op_prec + 1)?;
+            s.advance_to(&ahead);
+
+            let rhs = Expr::parse_bin_expr(s, op.precedence() + 1)?;
             expr = Expr::Binary(op.kind, expr.into(), rhs.into());
         }
 
         Ok(expr)
     }
+
+    fn eval_op(op: OpKind, lhs: TokenStream, rhs: TokenStream) -> TokenStream {
+        match op {
+            OpKind::Add => quote!((#lhs + #rhs)),
+            OpKind::Sub => quote!((#lhs - #rhs)),
+            OpKind::Mul => quote!((#lhs * #rhs)),
+            OpKind::Div => quote!((#lhs / #rhs)),
+            OpKind::Pow => quote!((#lhs.pow(#rhs))),
+        }
+    }
+
+    fn quote(&self) -> TokenStream {
+        match self {
+            Expr::Num(v) =>
+                quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Rational::from(#v))),
+            Expr::Float(v) =>
+                quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Float::from(#v))),
+            Expr::Symbol(s) =>
+                quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Symbol::new(#s))),
+                Expr::Binary(op, l, r) => {
+                    let lhs = l.quote();
+                    let rhs = r.quote();
+                    Self::eval_op(*op, lhs, rhs)
+                }
+            Expr::Infinity { sign } => {
+                if sign.is_negative() {
+                    quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Infinity::neg()))
+                } else {
+                    quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Infinity::pos()))
+                }
+            }
+            Expr::Undef => {
+                quote!(::calcu_rs::prelude::Expr::Undefined)
+            }
+            Expr::PlaceHolder(s) => {
+                quote!(::calcu_rs::prelude::Expr::PlaceHolder(#s))
+            }
+        }
+    }
+
 }
 
 impl syn::parse::Parse for Expr {
-    fn parse(mut input: ParseStream) -> syn::Result<Self> {
-        Expr::parse_bin_expr(&mut input, 0 + 1)
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        Expr::parse_bin_expr(input, 0 + 1)
     }
 }
 
-fn eval_op(op: OpKind, lhs: TokenStream, rhs: TokenStream) -> TokenStream {
-    match op {
-        OpKind::Add => quote!((#lhs + #rhs)),
-        OpKind::Sub => quote!((#lhs - #rhs)),
-        OpKind::Mul => quote!((#lhs * #rhs)),
-        OpKind::Div => quote!((#lhs / #rhs)),
-        OpKind::Pow => quote!((#lhs.pow(#rhs))),
-    }
+//fn eval_expr(expr: &Expr) -> TokenStream {
+//    match expr {
+//        Expr::Num(v) =>
+//            quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Rational::from(#v))),
+//        Expr::Float(v) =>
+//            quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Float::from(#v))),
+//        Expr::Symbol(s) =>
+//            quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Symbol::new(#s))),
+//        Expr::Binary(op, l, r) => {
+//            let lhs = eval_expr(l);
+//            let rhs = eval_expr(r);
+//            eval_op(*op, lhs, rhs)
+//        }
+//        Expr::Infinity { sign } => {
+//            if sign.is_negative() {
+//                quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Infinity::neg()))
+//            } else {
+//                quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Infinity::pos()))
+//            }
+//        }
+//        Expr::Undef => {
+//            quote!(::calcu_rs::prelude::Expr::Undefined)
+//        }
+//        Expr::PlaceHolder(s) => {
+//            quote!(::calcu_rs::prelude::Expr::PlaceHolder(#s))
+//        }
+//    }
+//}
+
+#[proc_macro]
+pub fn calc(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    syn::parse_macro_input!(input as Expr).quote().into()
 }
 
-fn eval_expr2(expr: &Expr) -> TokenStream {
-    match expr {
-        Expr::Num(v) =>
-            quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Rational::from(#v))),
-        Expr::Float(v) =>
-            quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Float::from(#v))),
-        Expr::Symbol(s) =>
-            quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Symbol::new(#s))),
-        Expr::Binary(op, l, r) => {
-            let lhs = eval_expr2(l);
-            let rhs = eval_expr2(r);
-            eval_op(*op, lhs, rhs)
+#[derive(Debug, Clone)]
+struct RewriteRule {
+    name: String,
+    lhs: Expr,
+    rhs: Expr,
+    bidir: bool,
+}
+
+impl RewriteRule {
+
+    fn quote_lhs_to_rhs(name: &String, lhs: &Expr, rhs: &Expr) -> TokenStream {
+        let lhs = lhs.quote();
+        let rhs = rhs.quote();
+
+        quote!({
+            let __searcher = ::egg::Pattern::from(&#lhs);
+            let __applier  = ::egg::Pattern::from(&#rhs);
+            ::egg::Rewrite::new(#name.to_string(), __searcher, __applier).unwrap()
+        })
+    }
+
+    fn quote(&self) -> TokenStream {
+        if self.bidir {
+            let n1 = self.name.clone();
+            let mut n2 = self.name.clone();
+            n2.push_str("_rev");
+            let r1 = Self::quote_lhs_to_rhs(&n1, &self.lhs, &self.rhs);
+            let r2 = Self::quote_lhs_to_rhs(&n2, &self.rhs, &self.lhs);
+            quote!(#r1, #r2)
+        } else {
+            Self::quote_lhs_to_rhs(&self.name, &self.lhs, &self.rhs)
         }
-        Expr::Infinity { sign } => {
-            if sign.is_negative() {
-                quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Infinity::neg()))
+    }
+}
+
+impl Parse for RewriteRule {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut name = syn::Ident::parse(input)?.to_string();
+
+        while let Ok(n) = syn::Ident::parse(input) {
+            name.push_str(&n.to_string());
+        }
+
+        let _ = input.parse::<Token![:]>()?;
+
+        let lhs = Expr::parse(input)?;
+
+        let bidir = 
+            if input.peek(Token![->]) {
+                let _ = input.parse::<Token![->]>()?;    
+                false
+            } else if input.peek(Token![<]) && input.peek2(Token![->]) {
+                let _ = input.parse::<Token![-]>()?;    
+                let _ = input.parse::<Token![->]>()?;    
+                true
             } else {
-                quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Infinity::pos()))
+                return Err(syn::parse::Error::new(input.span(), "expected -> or <->"));
+            };
+
+        let rhs = Expr::parse(input)?;
+
+        Ok(RewriteRule { name, lhs, rhs, bidir })
+    }
+}
+
+#[derive(Debug, Clone)]
+struct RuleSet {
+    gen_name: syn::Ident,
+    rules: Vec<RewriteRule>,
+}
+
+impl RuleSet {
+    fn quote(&self) -> TokenStream {
+        let gen_name = &self.gen_name;
+        let n = self.rules.len();
+
+        let mut rules = TokenStream::new();
+        for r in &self.rules {
+            let r = r.quote();
+            rules.extend(quote!(#r,))
+        }
+
+        quote!(
+            pub fn #gen_name() -> [::egg::Rewrite<GraphExpr, ()>; #n] {
+                [ #rules ]
             }
-        }
-        Expr::Undef => {
-            quote!(::calcu_rs::prelude::Expr::Undefined)
-        }
-        Expr::PlaceHolder(s) => {
-            quote!(::calcu_rs::prelude::Expr::PlaceHolder(#s))
-        }
+        )
+    }
+}
+
+impl Parse for RuleSet {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let gen_name = syn::Ident::parse(input)?;
+        let _ = input.parse::<Token![:]>();
+        ////let rules: Vec<_> = punc::Punctuated::<RewriteRule, syn::Token![,]>::parse_terminated(&input)?.
+        //    //into_iter().collect();
+        //let rules = vec![RewriteRule::parse(input)?];
+        //let _ = input.parse::<Token![;]>();
+
+        let rules = vec![RewriteRule::parse(input)?];
+        let _ = input.parse::<Token![;]>();
+        Ok(RuleSet { gen_name, rules })
     }
 }
 
 #[proc_macro]
-pub fn calc(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    //eval_expr(syn::parse_macro_input!(input as syn::Expr)).into()
-    eval_expr2(&syn::parse_macro_input!(input as Expr)).into()
+pub fn define_rules(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let rule_set = syn::parse_macro_input!(input as RuleSet);
+    rule_set.quote().into()
 }

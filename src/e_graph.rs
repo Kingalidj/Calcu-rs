@@ -1,5 +1,4 @@
-use calcu_rs::expression::{Expr, Symbol};
-use calcu_rs::prelude::{Prod, Rational, Sum, Pow};
+use calcu_rs::{prelude::{Pow, Prod, Rational, Sum}, expression::{Expr, Symbol}, define_rules};
 
 use std::fmt;
 use std::str::FromStr;
@@ -39,28 +38,32 @@ pub enum GraphExpr {
 }
 
 macro_rules! rw {
-    ( $name:tt; ($($lhs:tt)+) => ($($rhs:tt)+)) =>
+    ( $name:ident; [$($lhs:tt)+] => [$($rhs:tt)+]) =>
     {{
         let searcher = egg::Pattern::from(&$crate::calc!($($lhs)+));
         let applier = egg::Pattern::from(&$crate::calc!($($rhs)+));
         //println!("{} => {}", searcher, applier);
         egg::Rewrite::new(stringify!($name).to_string(), searcher, applier).unwrap()
     }};
-    }
+}
 
 impl GraphExpr {
-    pub fn make_rules() -> [egg::Rewrite<GraphExpr, ()>; 8] {
-        [
-            rw!(commute_add; (?a + ?b) => (?b + ?a)),
-            rw!(commute_add_2; (?a + ?b + ?c) => (13)),
-            rw!(commute_mul; (?a * ?b) => (?b * ?a)),
-            rw!(add_0; (?a + 0) => (?a)),
-            rw!(mul_0; (?a * 0) => (0)),
-            rw!(mul_1; (?a * 1) => (?a)),
-            rw!(pow_0; (?a^0) => (1)),
-            rw!(pow_1; (?a^1) => (?a)),
+    pub fn make_rules() -> Vec<egg::Rewrite<GraphExpr, ()>> {
+        vec![
+            rw!(commutative_add; [?a + ?b]         => [?b + ?a]),
+            rw!(commutative_mul; [?a * ?b]         => [?b * ?a]),
+            rw!(distributive;    [?a * (?b + ?c)]  => [?a * ?b + ?a * ?c]),
+            rw!(add_0;           [?a + 0]          => [?a]),
+            rw!(mul_0;           [?a * 0]          => [0]),
+            rw!(mul_1;           [?a * 1]          => [?a]),
+            rw!(pow_0;           [?a^0]            => [1]),
+            rw!(pow_1;           [?a^1]            => [?a]),
         ]
     }
+
+    define_rules!(basic_rules:
+        add_0: ?a -> ?a;
+    );
 }
 
 #[inline(always)]
@@ -96,16 +99,12 @@ impl GraphFromExpr for GraphExpr {
                     Ok(GraphExpr::Pow(array_ref_to_array(children)))
                 }
             }
-            E::Rational(r) => {
-                Ok(GraphExpr::Rational(*r))
-            }
-            E::Symbol(s) => {
-                Ok(GraphExpr::Symbol(s.clone()))
-            }
+            E::Rational(r) => Ok(GraphExpr::Rational(*r)),
+            E::Symbol(s) => Ok(GraphExpr::Symbol(s.clone())),
             E::Float(_) => todo!(),
             E::Infinity(_) => todo!(),
             E::Undefined => todo!(),
-            Expr::PlaceHolder(_) => panic!("placeholder should be handled as ENodeOrVar")
+            Expr::PlaceHolder(_) => panic!("placeholder should be handled as ENodeOrVar"),
         }
     }
 }
@@ -176,8 +175,8 @@ impl egg::Language for GraphExpr {
 
 impl From<&egg::RecExpr<GraphExpr>> for Expr {
     fn from(e: &egg::RecExpr<GraphExpr>) -> Self {
-        use GraphExpr as EE;
         use Expr as E;
+        use GraphExpr as EE;
 
         let mut exprs = Vec::with_capacity(e.as_ref().len());
 
@@ -225,7 +224,7 @@ impl fmt::Display for GraphExpr {
             E::Rational(data) => fmt::Display::fmt(data, f),
             E::Add(..) => f.write_str("+"),
             E::Mul(..) => f.write_str("*"),
-            E::Pow(..) => f.write_str("^")
+            E::Pow(..) => f.write_str("^"),
         }
     }
 }

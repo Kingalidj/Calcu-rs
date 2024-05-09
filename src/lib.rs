@@ -1,7 +1,7 @@
 extern crate core;
 pub extern crate self as calcu_rs;
 
-pub use calcurs_macros::{calc, identity};
+pub use calcurs_macros::{calc, identity, define_rules};
 
 pub mod derivative;
 pub mod expression;

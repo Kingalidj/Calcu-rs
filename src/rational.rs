@@ -8,7 +8,7 @@ use std::num::NonZeroU64;
 
 use crate::{
     expression::{CalcursType, Expr},
-    pattern::{Item},
+    pattern::Item,
 };
 
 const NNZ_ONE: UNonZero = UNonZero::new_unchecked(1);
