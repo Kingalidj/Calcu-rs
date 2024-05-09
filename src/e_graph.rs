@@ -29,7 +29,7 @@ impl<L: GraphExpression> GraphFromExpr for egg::ENodeOrVar<L> {
 }
 
 #[derive(PartialOrd, Ord, PartialEq, Eq, Debug, Hash, Clone)]
-pub enum ExprGraph {
+pub enum GraphExpr {
     Rational(Rational),
     Symbol(Symbol),
 
@@ -48,8 +48,8 @@ macro_rules! rw {
     }};
     }
 
-impl ExprGraph {
-    pub fn make_rules() -> [egg::Rewrite<ExprGraph, ()>; 8] {
+impl GraphExpr {
+    pub fn make_rules() -> [egg::Rewrite<GraphExpr, ()>; 8] {
         [
             rw!(commute_add; (?a + ?b) => (?b + ?a)),
             rw!(commute_add_2; (?a + ?b + ?c) => (13)),
@@ -71,7 +71,7 @@ fn array_ref_to_array<const N: usize, T: Copy>(arr_ref: &[T]) -> [T; N] {
     arr
 }
 
-impl GraphFromExpr for ExprGraph {
+impl GraphFromExpr for GraphExpr {
     fn from_expr(expr: &Expr, children: &[egg::Id]) -> Result<Self, &'static str> {
         use Expr as E;
         match expr {
@@ -79,28 +79,28 @@ impl GraphFromExpr for ExprGraph {
                 if children.len() != 2 {
                     Err("Expected 2 child ids for Add")
                 } else {
-                    Ok(ExprGraph::Add(array_ref_to_array(children)))
+                    Ok(GraphExpr::Add(array_ref_to_array(children)))
                 }
             }
             E::Prod(_) => {
                 if children.len() != 2 {
                     Err("Expected 2 child ids for Mul")
                 } else {
-                    Ok(ExprGraph::Mul(array_ref_to_array(children)))
+                    Ok(GraphExpr::Mul(array_ref_to_array(children)))
                 }
             }
             E::Pow(_) => {
                 if children.len() != 2 {
                     Err("Expected 2 child ids for Pow")
                 } else {
-                    Ok(ExprGraph::Pow(array_ref_to_array(children)))
+                    Ok(GraphExpr::Pow(array_ref_to_array(children)))
                 }
             }
             E::Rational(r) => {
-                Ok(ExprGraph::Rational(*r))
+                Ok(GraphExpr::Rational(*r))
             }
             E::Symbol(s) => {
-                Ok(ExprGraph::Symbol(s.clone()))
+                Ok(GraphExpr::Symbol(s.clone()))
             }
             E::Float(_) => todo!(),
             E::Infinity(_) => todo!(),
@@ -110,7 +110,7 @@ impl GraphFromExpr for ExprGraph {
     }
 }
 
-impl GraphExpression for ExprGraph {
+impl GraphExpression for GraphExpr {
     fn build<L: GraphFromExpr>(e: &Expr) -> Result<egg::RecExpr<L>, &'static str> {
         fn build_from_expr<L: GraphFromExpr>(
             e: &Expr,
@@ -142,10 +142,10 @@ impl GraphExpression for ExprGraph {
     }
 }
 
-impl egg::Language for ExprGraph {
+impl egg::Language for GraphExpr {
     #[inline(always)]
     fn matches(&self, other: &Self) -> bool {
-        use ExprGraph as E;
+        use GraphExpr as E;
         std::mem::discriminant(self) == std::mem::discriminant(other)
             && match (self, other) {
                 (E::Rational(data1), E::Rational(data2)) => data1 == data2,
@@ -158,7 +158,7 @@ impl egg::Language for ExprGraph {
     }
 
     fn children(&self) -> &[egg::Id] {
-        use ExprGraph as E;
+        use GraphExpr as E;
         match self {
             E::Rational(_) | E::Symbol(_) => &[],
             E::Add(ids) | E::Mul(ids) | E::Pow(ids) => ids,
@@ -166,7 +166,7 @@ impl egg::Language for ExprGraph {
     }
 
     fn children_mut(&mut self) -> &mut [egg::Id] {
-        use ExprGraph as E;
+        use GraphExpr as E;
         match self {
             E::Rational(_) | E::Symbol(_) => &mut [],
             E::Add(ids) | E::Mul(ids) | E::Pow(ids) => ids,
@@ -174,9 +174,9 @@ impl egg::Language for ExprGraph {
     }
 }
 
-impl From<&egg::RecExpr<ExprGraph>> for Expr {
-    fn from(e: &egg::RecExpr<ExprGraph>) -> Self {
-        use ExprGraph as EE;
+impl From<&egg::RecExpr<GraphExpr>> for Expr {
+    fn from(e: &egg::RecExpr<GraphExpr>) -> Self {
+        use GraphExpr as EE;
         use Expr as E;
 
         let mut exprs = Vec::with_capacity(e.as_ref().len());
@@ -211,15 +211,15 @@ impl From<&egg::RecExpr<ExprGraph>> for Expr {
     }
 }
 
-impl From<egg::RecExpr<ExprGraph>> for Expr {
-    fn from(e: egg::RecExpr<ExprGraph>) -> Self {
+impl From<egg::RecExpr<GraphExpr>> for Expr {
+    fn from(e: egg::RecExpr<GraphExpr>) -> Self {
         Expr::from(&e)
     }
 }
 
-impl fmt::Display for ExprGraph {
+impl fmt::Display for GraphExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use ExprGraph as E;
+        use GraphExpr as E;
         match self {
             E::Symbol(data) => fmt::Display::fmt(data, f),
             E::Rational(data) => fmt::Display::fmt(data, f),
