@@ -1,13 +1,13 @@
 use core::{cmp, fmt, hash::Hash, ops};
 use std::fmt::Formatter;
 
-use num::{integer::Roots, Integer};
-use std::num::NonZeroU64;
 use calcu_rs::numeric::{Float, Sign};
 use calcu_rs::operator2::Pow;
+use num::{integer::Roots, Integer};
+use std::num::NonZeroU64;
 
 use crate::{
-    expression::{Expr, CalcursType},
+    expression::{CalcursType, Expr},
     pattern::{Item, Pattern},
 };
 
@@ -32,21 +32,21 @@ impl Rational {
         numer: 1,
         denom: NNZ_ONE,
         sign: Sign::Positive,
-        exponent: 0
+        exponent: 0,
     });
 
     pub const MINUS_ONE: Expr = Expr::Rational(Rational {
         numer: 1,
         denom: NNZ_ONE,
         sign: Sign::Negative,
-        exponent: 0
+        exponent: 0,
     });
 
     pub const ZERO: Expr = Expr::Rational(Rational {
         numer: 0,
         denom: NNZ_ONE,
         sign: Sign::Positive,
-        exponent: 0
+        exponent: 0,
     });
 
     pub const fn one() -> Self {
@@ -418,7 +418,7 @@ impl Rational {
     }
 
     pub(crate) fn to_float(self) -> Float {
-        let mut f= self.numer as f64 / self.denom() as f64;
+        let mut f = self.numer as f64 / self.denom() as f64;
         f *= 10f64.powi(self.exponent);
         Float(f)
     }

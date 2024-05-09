@@ -1,8 +1,7 @@
-use proc_macro2::TokenStream;
+use proc_macro2::{TokenStream, Span};
 use quote::quote;
-use syn::{punctuated as punc, Token};
-use syn::parse;
-use syn::parse::ParseStream;
+use syn::{punctuated as punc, Token, parse::{ParseStream, Parse, self}, spanned::Spanned};
+use syn::token::Token;
 
 #[derive(Debug, Clone, PartialEq)]
 enum Condition {
@@ -11,8 +10,8 @@ enum Condition {
     IsNot(syn::Expr),
 }
 
-impl parse::Parse for Condition {
-    fn parse(input: parse::ParseStream) -> syn::Result<Self> {
+impl Parse for Condition {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
 
         let not = input.parse::<syn::Token![!]>().is_ok(); 
 
@@ -33,8 +32,8 @@ struct CondTuple {
     elems: Vec<Condition>,
 }
 
-impl parse::Parse for CondTuple {
-    fn parse(input: parse::ParseStream) -> parse::Result<Self> {
+impl Parse for CondTuple {
+    fn parse(input: ParseStream) -> parse::Result<Self> {
         let tuple_bod;
         syn::parenthesized!(tuple_bod in input);
 
@@ -286,7 +285,188 @@ fn eval_expr(e: syn::Expr) -> TokenStream {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, PartialOrd, Ord)]
+enum OpKind {
+    Add, Sub,
+    Mul, Div,
+    Pow,
+}
+
+struct Op {
+    kind: OpKind,
+    span: Span,
+}
+
+
+impl OpKind {
+   fn precedence(&self) -> i32 {
+        match self {
+            OpKind::Add | OpKind::Sub => 1,
+            OpKind::Mul | OpKind::Div => 2,
+            OpKind::Pow => 3,
+        }
+   }
+}
+
+impl Op {
+    fn precedence(&self) -> i32 {
+        self.kind.precedence()
+    }
+}
+
+impl Parse for Op {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let (kind, span) =
+            if let Ok(op) = input.parse::<Token![+]>() {
+                (OpKind::Add, op.span)
+            } else if let Ok(op) = input.parse::<Token![-]>() {
+                (OpKind::Sub, op.span)
+            } else if let Ok(op) = input.parse::<Token![*]>() {
+                (OpKind::Mul, op.span)
+            } else if let Ok(op) = input.parse::<Token![/]>() {
+                (OpKind::Div, op.span)
+            } else if let Ok(op) = input.parse::<Token![^]>() {
+                (OpKind::Pow, op.span)
+            } else {
+                return Err(syn::parse::Error::new(input.span(), "expected operator { +, -, *, / }"));
+            };
+        Ok(Self {kind, span})
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, PartialOrd)]
+enum Expr {
+    Num(i32),
+    Float(f32),
+    Symbol(String),
+    Binary(OpKind, Box<Expr>, Box<Expr>),
+    Infinity{sign: i8},
+    Undef,
+    PlaceHolder(String),
+}
+
+impl Expr {
+    fn parse_operand(s: &mut ParseStream) -> syn::Result<Expr> {
+        if let Ok(id) = syn::Ident::parse(s) {
+            let id = id.to_string();
+            if id == "oo" {
+                Ok(Expr::Infinity { sign: 1 })
+            } else if id == "undef" {
+                Ok(Expr::Undef)
+            } else {
+                Ok(Expr::Symbol(id.to_string()))
+            }
+
+        } else if let Ok(i) = syn::LitInt::parse(s) {
+            let val: i32 = i.base10_parse().unwrap();
+            Ok(Expr::Num(val))
+
+        } else if let Ok(f) = syn::LitFloat::parse(s) {
+            let val: f32 = f.base10_parse().unwrap();
+            Ok(Expr::Float(val))
+
+        } else if s.peek(syn::token::Paren) {
+            let content;
+            syn::parenthesized!(content in s);
+            Expr::parse(&content)
+        } else {
+            let err_expr = syn::Expr::parse(s)?;
+            Err(syn::parse::Error::new(err_expr.span(), "bad expression"))
+        }
+    }
+
+    fn parse_unary_expr(s: &mut ParseStream) -> syn::Result<Expr> {
+        if let Ok(op) = Op::parse(s) {
+            match op.kind {
+                OpKind::Sub => {
+                    let operand = Self::parse_operand(s)?;
+                    Ok(Expr::Binary(OpKind::Mul, Expr::Num(-1).into(), operand.into()))
+                }
+                _ => Err(syn::parse::Error::new(op.span, "expected unary operator"))
+            }
+        }  else if let Ok(_) = s.parse::<Token![?]>() {
+            let mut id = "?".to_string();
+            id.push_str(&syn::Ident::parse(s)?.to_string());
+            Ok(Expr::PlaceHolder(id.to_string()))
+        } else {
+            Self::parse_operand(s)
+        }
+    }
+    fn parse_bin_expr(s: &mut ParseStream, prec_in: i32) -> syn::Result<Expr> {
+        let mut expr = Self::parse_unary_expr(s)?;
+        loop
+        {
+            if s.is_empty() {
+                break;
+            }
+
+            {
+                let tmp_s = s.fork();
+                let op = Op::parse(&tmp_s)?;
+                let op_prec = op.precedence();
+                if op_prec < prec_in {
+                    break;
+                }
+            }
+
+            let op = Op::parse(s)?;
+            let op_prec = op.precedence();
+
+            let rhs = Expr::parse_bin_expr(s, op_prec + 1)?;
+            expr = Expr::Binary(op.kind, expr.into(), rhs.into());
+        }
+
+        Ok(expr)
+    }
+}
+
+impl syn::parse::Parse for Expr {
+    fn parse(mut input: ParseStream) -> syn::Result<Self> {
+        Expr::parse_bin_expr(&mut input, 0 + 1)
+    }
+}
+
+fn eval_op(op: OpKind, lhs: TokenStream, rhs: TokenStream) -> TokenStream {
+    match op {
+        OpKind::Add => quote!((#lhs + #rhs)),
+        OpKind::Sub => quote!((#lhs - #rhs)),
+        OpKind::Mul => quote!((#lhs * #rhs)),
+        OpKind::Div => quote!((#lhs / #rhs)),
+        OpKind::Pow => quote!((#lhs.pow(#rhs))),
+    }
+}
+
+fn eval_expr2(expr: &Expr) -> TokenStream {
+    match expr {
+        Expr::Num(v) =>
+            quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Rational::from(#v))),
+        Expr::Float(v) =>
+            quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Float::from(#v))),
+        Expr::Symbol(s) =>
+            quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Symbol::new(#s))),
+        Expr::Binary(op, l, r) => {
+            let lhs = eval_expr2(l);
+            let rhs = eval_expr2(r);
+            eval_op(*op, lhs, rhs)
+        }
+        Expr::Infinity { sign } => {
+            if sign.is_negative() {
+                quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Infinity::neg()))
+            } else {
+                quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Infinity::pos()))
+            }
+        }
+        Expr::Undef => {
+            quote!(::calcu_rs::prelude::Expr::Undefined)
+        }
+        Expr::PlaceHolder(s) => {
+            quote!(::calcu_rs::prelude::Expr::PlaceHolder(#s))
+        }
+    }
+}
+
 #[proc_macro]
 pub fn calc(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    eval_expr(syn::parse_macro_input!(input as syn::Expr)).into()
+    //eval_expr(syn::parse_macro_input!(input as syn::Expr)).into()
+    eval_expr2(&syn::parse_macro_input!(input as Expr)).into()
 }

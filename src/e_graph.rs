@@ -1,25 +1,26 @@
+use calcu_rs::expression::{Expr, Symbol};
+use calcu_rs::prelude::{Prod, Rational, Sum, Pow};
+use std::collections::BTreeMap;
 use std::fmt;
+use std::fmt::Write;
 use std::str::FromStr;
-use calcu_rs::expression::{Construct, Expr, Symbol};
-use calcu_rs::prelude::Rational;
 
-pub trait NodeFromExpr: Sized + egg::Language {
-    fn from_expr(expr: &Expr, children: Vec<egg::Id>) -> Result<Self, &'static str>;
+pub trait GraphFromExpr: Sized + egg::Language {
+    fn from_expr(expr: &Expr, children: &[egg::Id]) -> Result<Self, &'static str>;
 }
 
-
-pub trait EExpr: egg::Language + NodeFromExpr {
-    fn build<L: NodeFromExpr>(e: &Expr) -> Result<egg::RecExpr<L>, &'static str>;
+pub trait GraphExpression: egg::Language + GraphFromExpr {
+    fn build<L: GraphFromExpr>(e: &Expr) -> Result<egg::RecExpr<L>, &'static str>;
 }
 
-impl<E: EExpr> From<&Expr> for egg::Pattern<E> {
+impl<E: GraphExpression> From<&Expr> for egg::Pattern<E> {
     fn from(value: &Expr) -> Self {
         egg::Pattern::new(E::build::<egg::ENodeOrVar<E>>(value).unwrap())
     }
 }
 
-impl<L: EExpr> NodeFromExpr for egg::ENodeOrVar<L> {
-    fn from_expr(expr: &Expr, children: Vec<egg::Id>) -> Result<Self, &'static str> {
+impl<L: GraphExpression> GraphFromExpr for egg::ENodeOrVar<L> {
+    fn from_expr(expr: &Expr, children: &[egg::Id]) -> Result<Self, &'static str> {
         if let Expr::PlaceHolder(ph) = expr {
             Ok(egg::ENodeOrVar::Var(egg::Var::from_str(*ph).unwrap()))
         } else {
@@ -29,12 +30,13 @@ impl<L: EExpr> NodeFromExpr for egg::ENodeOrVar<L> {
 }
 
 #[derive(PartialOrd, Ord, PartialEq, Eq, Debug, Hash, Clone)]
-pub enum EggExpr {
+pub enum ExprGraph {
     Rational(Rational),
     Symbol(Symbol),
 
     Add([egg::Id; 2]),
     Mul([egg::Id; 2]),
+    Pow([egg::Id; 2]),
 }
 
 macro_rules! rw {
@@ -47,84 +49,92 @@ macro_rules! rw {
     }};
     }
 
-impl EggExpr {
-    pub fn make_rules() -> Vec<egg::Rewrite<EggExpr, ()>> {
-        vec![
-            rw!(commute_add; (_a + _b) => (_b + _a)),
-            rw!(commute_mul; (_a * _b) => (_b * _a)),
-            rw!(add_0; (_a + 0) => (_a)),
-            rw!(mul_0; (_a * 0) => (0)),
-            rw!(mul_1; (_a * 1) => (_a)),
-            rw!(test; (_a * _b + _a * _c) => (_a * (_b + _c)))
+impl ExprGraph {
+    pub fn make_rules() -> [egg::Rewrite<ExprGraph, ()>; 8] {
+        [
+            rw!(commute_add; (?a + ?b) => (?b + ?a)),
+            rw!(commute_add_2; (?a + ?b + ?c) => (13)),
+            rw!(commute_mul; (?a * ?b) => (?b * ?a)),
+            rw!(add_0; (?a + 0) => (?a)),
+            rw!(mul_0; (?a * 0) => (0)),
+            rw!(mul_1; (?a * 1) => (?a)),
+            rw!(pow_0; (?a^0) => (1)),
+            rw!(pow_1; (?a^1) => (?a)),
         ]
     }
 }
 
+#[inline(always)]
+fn array_ref_to_array<const N: usize, T: Copy>(arr_ref: &[T]) -> [T; N] {
+    let mut arr: [T; N] = unsafe { std::mem::zeroed() };
+    assert_eq!(arr_ref.len(), N);
+    for i in 0..N {
+        arr[i] = arr_ref[i]
+    }
+    arr
+}
 
-impl NodeFromExpr for EggExpr {
-    fn from_expr(expr: &Expr, children: Vec<egg::Id>) -> Result<Self, &'static str> {
+impl GraphFromExpr for ExprGraph {
+    fn from_expr(expr: &Expr, children: &[egg::Id]) -> Result<Self, &'static str> {
         use Expr as E;
         match expr {
             E::Sum(_) => {
                 return if children.len() != 2 {
                     Err("Expected 2 child ids for Add")
                 } else {
-                    Ok(EggExpr::Add(egg::LanguageChildren::from_vec(children)))
+                    Ok(ExprGraph::Add(array_ref_to_array(children)))
                 }
             }
             E::Prod(_) => {
                 return if children.len() != 2 {
                     Err("Expected 2 child ids for Mul")
                 } else {
-                    Ok(EggExpr::Mul(egg::LanguageChildren::from_vec(children)))
+                    Ok(ExprGraph::Mul(array_ref_to_array(children)))
                 }
             }
-            E::Pow(_) => {}
-            _ => {
-                if !children.is_empty() {
-                    return Err("provided children id's for non recursive variant");
+            E::Pow(_) => {
+                return if children.len() != 2 {
+                    Err("Expected 2 child ids for Pow")
+                } else {
+                    Ok(ExprGraph::Pow(array_ref_to_array(children)))
                 }
             }
-
-        }
-
-        match expr {
             E::Rational(r) => {
-                return Ok(EggExpr::Rational(r.clone()));
+                return Ok(ExprGraph::Rational(r.clone()));
             }
             E::Symbol(s) => {
-                return Ok(EggExpr::Symbol(s.clone()));
+                return Ok(ExprGraph::Symbol(s.clone()));
             }
-            E::Float(_) => {}
-            E::Infinity(_) => {}
-            E::Undefined => {}
-            _ => {}
+            E::Float(_) => todo!(),
+            E::Infinity(_) => todo!(),
+            E::Undefined => todo!(),
+            Expr::PlaceHolder(_) => panic!("placeholder should be handled as ENodeOrVar")
         }
-        panic!("unhandled variant");
     }
 }
 
-impl EExpr for EggExpr {
-    fn build<L: NodeFromExpr>(e: &Expr) -> Result<egg::RecExpr<L>, &'static str> {
-        fn build_from_expr<L: NodeFromExpr>(
+impl GraphExpression for ExprGraph {
+    fn build<L: GraphFromExpr>(e: &Expr) -> Result<egg::RecExpr<L>, &'static str> {
+        fn build_from_expr<L: GraphFromExpr>(
             e: &Expr,
             expr: &mut egg::RecExpr<L>,
         ) -> Result<egg::Id, &'static str> {
             let ops = e.operands();
-            if ops.len() == 1 {
-                // TODO: unary check
-                return Ok(expr.add(L::from_expr(ops.get(0).unwrap(), vec![])?));
+
+            if ops.is_empty() {
+                return Ok(expr.add(L::from_expr(e, &[])?));
+            } else if ops.len() == 1 {
+                return Ok(expr.add(L::from_expr(ops.get(0).unwrap(), &[])?));
             }
 
             let op_expr = e;
             let n1 = build_from_expr(ops.get(0).unwrap(), expr)?;
             let n2 = build_from_expr(ops.get(1).unwrap(), expr)?;
-            let mut node = expr.add(L::from_expr(op_expr, vec![n1, n2])?);
+            let mut node = expr.add(L::from_expr(op_expr, &[n1, n2])?);
 
             for i in 2..ops.len() {
-                println!("{:?}", ops.get(i).unwrap());
                 let n = build_from_expr(ops.get(i).unwrap(), expr)?;
-                node = expr.add(L::from_expr(op_expr, vec![node, n])?);
+                node = expr.add(L::from_expr(op_expr, &[node, n])?);
             }
             Ok(node)
         }
@@ -135,50 +145,90 @@ impl EExpr for EggExpr {
     }
 }
 
-impl egg::Language for EggExpr {
-
+impl egg::Language for ExprGraph {
     #[inline(always)]
     fn matches(&self, other: &Self) -> bool {
-        use EggExpr as E;
-        std::mem::discriminant(self) == std::mem::discriminant(other) &&
-            match (self, other) {
+        use ExprGraph as E;
+        std::mem::discriminant(self) == std::mem::discriminant(other)
+            && match (self, other) {
                 (E::Rational(data1), E::Rational(data2)) => data1 == data2,
                 (E::Symbol(data1), E::Symbol(data2)) => data1 == data2,
-                (E::Mul(l), E::Mul(r))
-                | (E::Add(l), E::Add(r)) => true,
 
-                _ => false
+                (E::Mul(_), E::Mul(_)) | (E::Add(_), E::Add(_)) | (E::Pow(_), E::Pow(_)) => true,
+
+                _ => false,
             }
     }
 
     fn children(&self) -> &[egg::Id] {
-        use EggExpr as E;
+        use ExprGraph as E;
         match self {
             E::Rational(_) | E::Symbol(_) => &[],
-            E::Add(ids)
-            | E::Mul(ids) => ids
+            E::Add(ids) | E::Mul(ids) | E::Pow(ids) => ids,
         }
     }
 
     fn children_mut(&mut self) -> &mut [egg::Id] {
-        use EggExpr as E;
+        use ExprGraph as E;
         match self {
             E::Rational(_) | E::Symbol(_) => &mut [],
-            E::Add(ids)
-            | E::Mul(ids) => ids
+            E::Add(ids) | E::Mul(ids) | E::Pow(ids) => ids,
         }
     }
 }
 
-impl fmt::Display for EggExpr {
+impl From<&egg::RecExpr<ExprGraph>> for Expr {
+    fn from(e: &egg::RecExpr<ExprGraph>) -> Self {
+        use ExprGraph as EE;
+        use Expr as E;
+
+        let mut exprs = Vec::with_capacity(e.as_ref().len());
+
+        for (i, n) in e.as_ref().iter().enumerate() {
+            match n {
+                EE::Rational(r) => {
+                    exprs.push(E::Rational(r.clone()));
+                }
+                EE::Symbol(s) => {
+                    exprs.push(E::Symbol(s.clone()));
+                }
+                EE::Add([lhs, rhs]) => {
+                    let lhs = exprs.get(usize::from(*lhs)).unwrap().clone();
+                    let rhs = exprs.get(usize::from(*rhs)).unwrap().clone();
+                    exprs.insert(i, Sum::add(lhs, rhs));
+                }
+                EE::Mul([lhs, rhs]) => {
+                    let lhs = exprs.get(usize::from(*lhs)).unwrap().clone();
+                    let rhs = exprs.get(usize::from(*rhs)).unwrap().clone();
+                    exprs.insert(i, Prod::mul(lhs, rhs));
+                }
+                EE::Pow([lhs, rhs]) => {
+                    let lhs = exprs.get(usize::from(*lhs)).unwrap().clone();
+                    let rhs = exprs.get(usize::from(*rhs)).unwrap().clone();
+                    exprs.insert(i, Pow::pow(lhs, rhs));
+                }
+            }
+        }
+
+        exprs.pop().unwrap()
+    }
+}
+
+impl From<egg::RecExpr<ExprGraph>> for Expr {
+    fn from(e: egg::RecExpr<ExprGraph>) -> Self {
+        Expr::from(&e)
+    }
+}
+
+impl fmt::Display for ExprGraph {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use EggExpr as E;
+        use ExprGraph as E;
         match self {
             E::Symbol(data) => fmt::Display::fmt(data, f),
             E::Rational(data) => fmt::Display::fmt(data, f),
             E::Add(..) => f.write_str("+"),
             E::Mul(..) => f.write_str("*"),
+            E::Pow(..) => f.write_str("^")
         }
     }
 }
-

@@ -3,21 +3,21 @@ pub extern crate self as calcu_rs;
 
 pub use calcurs_macros::{calc, identity};
 
-pub mod expression;
 pub mod derivative;
+pub mod expression;
 pub mod numeric;
 pub mod operator2;
 pub use operator2 as operator;
+pub mod e_graph;
 pub mod pattern;
 pub mod rational;
-pub mod e_graph;
 
 pub mod prelude {
     pub use crate::{
-        expression::{self, Expr, CalcursType, Construct, Symbol},
         calc,
+        expression::{self, CalcursType, Construct, Expr, Symbol},
         numeric::{Float, Infinity, Sign},
-        operator::{Sum, Quot, Prod, Pow, Diff},
+        operator::{Diff, Pow, Prod, Quot, Sum},
         rational::Rational,
     };
 }

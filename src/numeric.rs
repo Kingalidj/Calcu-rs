@@ -5,7 +5,7 @@ use num::pow::Pow;
 use num::Zero;
 
 use crate::{
-    expression::{Expr, CalcursType},
+    expression::{CalcursType, Expr},
     pattern::Item,
     rational::{Rational, UNonZero},
 };
@@ -148,7 +148,6 @@ use crate::{
 //    //    panic!("should have been called by parent")
 //    //}
 //}
-
 
 //impl From<Numeric> for Expr {
 //    fn from(value: Numeric) -> Self {

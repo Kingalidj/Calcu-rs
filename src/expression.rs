@@ -1,76 +1,53 @@
 use calcu_rs::rational::Rational;
-use std::{fmt, ops};
-use std::collections::{HashMap, HashSet};
 use egg::{ENodeOrVar, Id, Language, Pattern, RecExpr};
 use log::debug;
+use std::collections::{HashMap, HashSet};
+use std::{fmt, ops};
 
 use crate::numeric::{Float, Infinity};
 use crate::{
-    operator::{Sum, Quot, Prod, Pow, Diff},
+    operator::{Diff, Pow, Prod, Quot, Sum},
     pattern::Item,
 };
 
 /// implemented by every symbolic math type
-pub trait CalcursType: Clone + fmt::Debug + Into<Expr>{
+pub trait CalcursType: Clone + fmt::Debug + Into<Expr> {
     fn desc(&self) -> Item;
 }
 
 /// contains one or multiple expressions of type [Expr]
 pub trait Construct: CalcursType {
-    ///This operator returns false when [other] is identical
-    /// to some complete subexpression of [self] and otherwise returns true
-    fn free_of(&self, other: &Expr) -> bool;
-    fn contains(&self, other: &Expr) -> bool {
-        !self.free_of(other)
-    }
+    //This operator returns false when [other] is identical
+    // to some complete subexpression of [self] and otherwise returns true
+    //fn free_of(&self, other: &Expr) -> bool;
+    //fn contains(&self, other: &Expr) -> bool {
+    //    !self.free_of(other)
+    //}
 
-    /// Checks if expression is a general polynomial expression (GPE) in [vars]
-    /// note that: \
-    /// every sub-expresion must also be a GPE in [vars] \
-    /// 0.is_polynomial(...) -> true \
-    /// (y^2 + y).is_polynomial(x) -> true
-    fn is_polynomial_in(&self, vars: &[Expr]) -> bool {
-        for v in self.operands() {
-            if !(v.is_polynomial_in(vars)) {
-                return false;
-            }
-        }
-        true
-    }
+    // Checks if expression is a general polynomial expression (GPE) in [vars]
+    // note that: \
+    // every sub-expresion must also be a GPE in [vars] \
+    // 0.is_polynomial(...) -> true \
+    // (y^2 + y).is_polynomial(x) -> true
+    //fn is_polynomial_in(&self, vars: &[Expr]) -> bool {
+    //    for v in self.operands() {
+    //        if !(v.is_polynomial_in(vars)) {
+    //            return false;
+    //        }
+    //    }
+    //    true
+    //}
 
-    /// returns all generalized variables in the expression (e.g x, but also sin(x))
-    /// normally you should call [variables]
-    fn all_variables(&self) -> Vec<Expr>;
+    // returns all generalized variables in the expression (e.g x, but also sin(x))
+    // normally you should call [variables]
+    //fn all_variables(&self) -> Vec<Expr>;
 
-    /// returns all unique generalized variables in the expression (e.g x, but also sin(x))
-    fn variables(&self) -> Vec<Expr> {
-        let vars = self.variables();
-        let unique_vars: HashSet<Expr> = vars.into_iter().collect();
-        unique_vars.into_iter().collect()
-    }
-
-    /// returns a list of all operands of the main operator
-    /// if no operator is present we return a single operand
-    fn operands_mut(&mut self) -> Vec<&mut Expr>;
-    fn operands(&self) -> Vec<&Expr>;
-
-
-    /// This function returns the ith operand of self
-    //  For example, Operand(m ∗ x + b, 2) -> b
-    #[inline]
-    fn operand(&mut self, i: usize) -> Option<&mut Expr> {
-        let ops = self.operands_mut();
-
-        if i < ops.len() {
-            Some(self.operands_mut().swap_remove(i))
-        } else {
-            None
-        }
-    }
-
-    fn map(&mut self, function: impl Fn(&mut Expr)) {
-        self.operands_mut().iter_mut().for_each(|x| function(*x))
-    }
+    // returns all unique generalized variables in the expression (e.g x, but also sin(x))
+    //fn variables(&self) -> Vec<Expr> {
+    //    let vars = self.variables();
+    //    let unique_vars: HashSet<Expr> = vars.into_iter().collect();
+    //    unique_vars.into_iter().collect()
+    //}
 
     fn simplify(self) -> Expr;
 }
@@ -93,7 +70,7 @@ pub enum Expr {
     /// not the same as [f64::NAN]
     Undefined,
 
-    PlaceHolder(&'static str)
+    PlaceHolder(&'static str),
 }
 
 macro_rules! impl_from_for_expr {
@@ -114,11 +91,39 @@ impl_from_for_expr!(Sum);
 impl_from_for_expr!(Prod);
 impl_from_for_expr!(Pow);
 
-
-
 impl Expr {
     pub fn pow(self, other: impl CalcursType) -> Expr {
         Pow::pow(self, other).into()
+    }
+
+    pub fn operands(&self) -> Vec<&Expr> {
+        use Expr as E;
+        match self {
+            E::Rational(_)
+            | E::Float(_)
+            | E::Infinity(_)
+            | E::Symbol(_)
+            | E::Undefined
+            | E::PlaceHolder(_) => vec![],
+            E::Sum(sum) => sum.operands.iter().collect(),
+            E::Prod(prod) => prod.operands.iter().collect(),
+            E::Pow(pow) => vec![&pow.base, &pow.exponent],
+        }
+    }
+
+    pub fn operands_mut(&mut self) -> &mut [Expr] {
+        use Expr as E;
+        match self {
+            E::Rational(_)
+            | E::Float(_)
+            | E::Infinity(_)
+            | E::Symbol(_)
+            | E::Undefined
+            | E::PlaceHolder(_) => &mut [],
+            E::Sum(sum) => sum.operands.as_mut_slice(),
+            E::Prod(prod) => prod.operands.as_mut_slice(),
+            E::Pow(pow) => pow.operands_mut(),
+        }
     }
 
     /// in general: \
@@ -130,14 +135,9 @@ impl Expr {
     pub fn exponent(&self) -> Option<&Expr> {
         use Expr as E;
         match self {
-            E::Symbol(_)
-            | E::Sum(_)
-            | E::Prod(_) => Some(&Rational::ONE),
+            E::Symbol(_) | E::Sum(_) | E::Prod(_) => Some(&Rational::ONE),
             E::Pow(p) => Some(&p.exponent),
-            E::Rational(_)
-            | E::Float(_)
-            | E::Infinity(_)
-            | E::Undefined => None,
+            E::Rational(_) | E::Float(_) | E::Infinity(_) | E::Undefined => None,
 
             E::PlaceHolder(_) => panic!(),
         }
@@ -152,14 +152,9 @@ impl Expr {
     pub fn base(&self) -> Option<&Expr> {
         use Expr as E;
         match self {
-            E::Symbol(_)
-            | E::Sum(_)
-            | E::Prod(_) => Some(self),
+            E::Symbol(_) | E::Sum(_) | E::Prod(_) => Some(self),
             E::Pow(p) => Some(&p.base),
-            E::Rational(_)
-            | E::Float(_)
-            | E::Infinity(_)
-            | E::Undefined => None,
+            E::Rational(_) | E::Float(_) | E::Infinity(_) | E::Undefined => None,
 
             E::PlaceHolder(_) => panic!(),
         }
@@ -168,10 +163,7 @@ impl Expr {
     pub fn coefficient(&self) -> Option<&Expr> {
         use Expr as E;
         match self {
-            E::Rational(_)
-            | E::Float(_)
-            | E::Infinity(_)
-            | E::Undefined => None,
+            E::Rational(_) | E::Float(_) | E::Infinity(_) | E::Undefined => None,
 
             E::Prod(prod) if prod.operands.len() >= 2 => {
                 let coeff = prod.operands.get(0).unwrap();
@@ -182,10 +174,7 @@ impl Expr {
                 }
             }
 
-            E::Sum(_)
-            | E::Pow(_)
-            | E::Prod(_)
-            | E::Symbol(_) => Some(&Rational::ONE),
+            E::Sum(_) | E::Pow(_) | E::Prod(_) | E::Symbol(_) => Some(&Rational::ONE),
 
             E::PlaceHolder(_) => panic!(),
         }
@@ -209,91 +198,7 @@ impl CalcursType for Expr {
     }
 }
 
-
 impl Construct for Expr {
-    fn free_of(&self, other: &Expr) -> bool {
-        use Expr as E;
-        match (self, other) {
-            (E::Symbol(s1), E::Symbol(s2)) => s1 != s2,
-            (E::Rational(r1), E::Rational(r2)) => r1 != r2,
-            (E::Float(f1), E::Float(f2)) => f1 != f2,
-            (E::Infinity(i1), E::Infinity(i2)) => i1 != i2,
-            (E::Undefined, E::Undefined) => false,
-
-            (E::Sum(sum), _) => sum.free_of(other),
-            (E::Prod(prod), _) => prod.free_of(other),
-            (E::Pow(pow), _) => pow.free_of(other),
-
-            (E::Symbol(_), _)
-            | (E::Rational(_), _)
-            | (E::Float(_), _)
-            | (E::Infinity(_), _)
-            | (E::Undefined, _)
-            => true,
-
-            (E::PlaceHolder(_), _) | (_, E::PlaceHolder(_)) => panic!(),
-        }
-    }
-
-    /// atomic expression is always polynomial
-    fn is_polynomial_in(&self, vars: &[Expr]) -> bool {
-        match self {
-            Expr::Symbol(_)
-            | Expr::Rational(_)
-            | Expr::Float(_)
-            | Expr::Infinity(_)
-            | Expr::Undefined => true,
-
-            Expr::Sum(sum) => sum.is_polynomial_in(vars),
-            Expr::Prod(prod) => prod.is_polynomial_in(vars),
-            Expr::Pow(pow) => pow.is_polynomial_in(vars),
-
-            Expr::PlaceHolder(_) => panic!(),
-        }
-    }
-
-    fn all_variables(&self) -> Vec<Expr> {
-        match self {
-            Expr::Rational(_)
-            | Expr::Float(_)
-            | Expr::Infinity(_)
-            | Expr::Undefined
-            | Expr::PlaceHolder(_) => vec![],
-
-            Expr::Symbol(_) => vec![self.clone()],
-            Expr::Sum(sum) => sum.all_variables(),
-            Expr::Prod(prod) => prod.all_variables(),
-            Expr::Pow(pow) => pow.all_variables(),
-        }
-    }
-
-    #[inline]
-    fn operands_mut(&mut self) -> Vec<&mut Expr> {
-        use Expr as E;
-        match self {
-            E::Sum(sum) => sum.operands_mut(),
-            E::Prod(prod) => prod.operands_mut(),
-            E::Pow(pow) => pow.operands_mut(),
-            E::Symbol(_) | E::Rational(_) | E::Float(_) | E::Infinity(_) | E::Undefined | E::PlaceHolder(_) => {
-                vec![self]
-            }
-        }
-    }
-
-    //TODO: return empty op
-    #[inline]
-    fn operands(&self) -> Vec<&Expr> {
-        use Expr as E;
-        match self {
-            E::Sum(sum) => sum.operands(),
-            E::Prod(prod) => prod.operands(),
-            E::Pow(pow) => pow.operands(),
-            E::Symbol(_) | E::Rational(_) | E::Float(_) | E::Infinity(_) | E::Undefined | E::PlaceHolder(_) => {
-                vec![self]
-            }
-        }
-    }
-
     #[inline]
     fn simplify(mut self) -> Expr {
         use Expr as E;
@@ -306,8 +211,6 @@ impl Construct for Expr {
             E::PlaceHolder(_) => panic!(),
         }
     }
-
-
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Ord, Eq, Hash)]
@@ -343,7 +246,6 @@ impl From<&Symbol> for Expr {
     }
 }
 
-
 type ID = usize;
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
@@ -355,15 +257,14 @@ pub struct ENode {
 struct EGroup {
     id: ID,
     /// equivalent nodes
-    nodes: Vec<ENode>
+    nodes: Vec<ENode>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 struct EGraph {
-   nodes: Vec<ENode>,
+    nodes: Vec<ENode>,
     groups: EGroup,
 }
-
 
 impl ops::Add for Expr {
     type Output = Expr;

@@ -1,17 +1,16 @@
-use std::collections::VecDeque;
 use crate::expression::Expr;
 use calcu_rs::expression::{CalcursType, Construct};
 use calcu_rs::pattern::Item;
 use calcu_rs::rational::Rational;
+use calcurs_macros::identity;
 use std::fmt;
 use std::fmt::Formatter;
-use calcurs_macros::identity;
 
-pub type OperandVec = VecDeque<Expr>;
+pub type OperandSet = Vec<Expr>;
 
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Sum {
-    pub operands: OperandVec,
+    pub operands: OperandSet,
 }
 pub type Diff = Sum;
 
@@ -34,15 +33,18 @@ impl Sum {
         use Expr as E;
         match b {
             E::Sum(mut add) => self.operands.append(&mut add.operands),
-            _ => self.operands.push_back(b),
+            _ => self.operands.push(b),
         }
         self
     }
 
     pub fn zero() -> Self {
-        Self { operands: Default::default() }
+        Self {
+            operands: Default::default(),
+        }
     }
 
+    /*
     fn merge_sums(s: &[Expr], t: &[Expr]) -> OperandVec {
         if s.is_empty() {
             return t.iter().cloned().collect();
@@ -67,14 +69,14 @@ impl Sum {
             if h.get(0) == Some(s1) {
                 // h = [s1, t1]
                 let mut merged = Self::merge_sums(&s[1..], t);
-                merged.push_front(s1.clone());
+                merged.push(s1.clone());
                 merged
 
             } else {
                 // h = [t1, s1]
                 debug_assert_eq!(h.get(0), Some(t1));
                 let mut merged = Self::merge_sums(s, &t[1..]);
-                merged.push_front(t1.clone());
+                merged.push(t1.clone());
                 merged
             }
         } else {
@@ -93,7 +95,7 @@ impl Sum {
         if d1.is(Item::Sum) || d2.is(Item::Sum) {
             match (u1, u2) {
                 (E::Sum(mut s1), E::Sum(mut s2)) => {
-                    out = Self::merge_sums(s1.operands.make_contiguous(), s2.operands.make_contiguous());
+                    out = Self::merge_sums(s1.operands., s2.operands.make_contiguous());
                 }
                 (E::Sum(mut s), u2) => {
                     out = Self::merge_sums(s.operands.make_contiguous(), &[u2]);
@@ -178,6 +180,8 @@ impl Sum {
             }
         }
     }
+
+     */
 }
 
 impl CalcursType for Sum {
@@ -187,72 +191,31 @@ impl CalcursType for Sum {
 }
 
 impl Construct for Sum {
-    fn free_of(&self, other: &Expr) -> bool {
-        if let Expr::Sum(add) = other {
-            if self == add {
-                return false;
-            }
-        }
-
-        for op in &self.operands {
-            if !op.free_of(other) {
-                return false;
-            }
-        }
-        true
-    }
-
-    #[inline]
-    fn operands_mut(&mut self) -> Vec<&mut Expr> {
-        self.operands.iter_mut().collect()
-    }
-    #[inline]
-    fn operands(&self) -> Vec<&Expr> {
-        self.operands.iter().collect()
-    }
-
     fn simplify(mut self) -> Expr {
         for op in &mut self.operands {
             let mut e = Expr::Undefined;
             std::mem::swap(&mut e, op);
             *op = e.simplify();
-        }
 
-        if self.operands.len() == 1 {
-            return self.operands.pop_front().unwrap();
-        }
-
-        for op in &self.operands {
-            let d = op.desc();
-
-            if d.is(Item::Undef) {
+            if let Expr::Undefined = op {
                 return Expr::Undefined;
             }
         }
 
-        Self::simplify_rec(&mut self.operands);
-
         if self.operands.is_empty() {
-            Rational::ZERO
+            return Rational::ZERO;
         } else if self.operands.len() == 1 {
-            self.operands.pop_front().unwrap()
-        } else {
-            Expr::Sum(self)
+            return self.operands.pop().unwrap();
         }
-    }
 
-    fn all_variables(&self) -> Vec<Expr> {
-        let mut vars = vec![];
-        for op in &self.operands {
-            vars.append(&mut op.all_variables());
-        }
-        vars
+        self.operands.sort();
+        self.into()
     }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Prod {
-    pub operands: OperandVec,
+    pub operands: OperandSet,
 }
 pub type Quot = Prod;
 
@@ -272,16 +235,19 @@ impl Prod {
     fn arg(mut self, b: Expr) -> Self {
         match b {
             Expr::Prod(mut mul) => self.operands.append(&mut mul.operands),
-            _ => self.operands.push_back(b),
+            _ => self.operands.push(b),
         }
 
         self
     }
 
     fn zero() -> Self {
-        Self { operands: Default::default() }
+        Self {
+            operands: Default::default(),
+        }
     }
 
+    /*
     /// merges two operand slices
     fn merge_prods(p: &[Expr], q: &[Expr]) -> OperandVec {
         if q.is_empty() {
@@ -399,82 +365,42 @@ impl Prod {
             }
         }
     }
+     */
 }
 
 impl CalcursType for Prod {
     fn desc(&self) -> Item {
         Item::Prod
     }
-
 }
 
 impl Construct for Prod {
-    fn free_of(&self, other: &Expr) -> bool {
-        if let Expr::Prod(mul) = other {
-            if self == mul {
-                return false;
-            }
-        }
-        for op in &self.operands {
-            if !op.free_of(other) {
-                return false;
-            }
-        }
-        true
-    }
-
-    fn all_variables(&self) -> Vec<Expr> {
-        let mut vars = vec![];
-        for op in &self.operands {
-            vars.append(&mut op.all_variables());
-        }
-        vars
-    }
-    #[inline]
-    fn operands_mut(&mut self) -> Vec<&mut Expr> {
-        self.operands.iter_mut().collect()
-    }
-
-    #[inline]
-    fn operands(&self) -> Vec<&Expr> {
-        self.operands.iter().collect()
-    }
-
     fn simplify(mut self) -> Expr {
         for op in &mut self.operands {
             let mut e = Expr::Undefined;
             std::mem::swap(&mut e, op);
             *op = e.simplify();
-        }
 
-        if self.operands.len() == 1 {
-            return self.operands.pop_front().unwrap();
-        }
-
-        // filter out zero and undefined
-        for op in &self.operands {
-            let d = op.desc();
-
-            if d.is(Item::Zero) {
+            if op.desc().is(Item::Zero) {
                 return Rational::ZERO;
-            } else if d.is(Item::Undef) {
+            } else if let Expr::Undefined = op {
                 return Expr::Undefined;
             }
         }
 
-        Self::simplify_rec(&mut self.operands);
-
         if self.operands.is_empty() {
-            Rational::ONE
+            return Rational::ONE;
         } else if self.operands.len() == 1 {
-            self.operands.pop_front().unwrap()
-        } else {
-            Expr::Prod(self)
+            return self.operands.pop().unwrap();
         }
+
+        self.operands.sort();
+        Expr::Prod(self)
     }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
+#[repr(C)]
 pub struct Pow {
     pub(crate) base: Expr,
     pub(crate) exponent: Expr,
@@ -491,6 +417,40 @@ impl Pow {
     #[inline]
     pub fn pow(b: impl CalcursType, e: impl CalcursType) -> Expr {
         Expr::Pow(Self::new(b, e).into())
+    }
+
+    pub fn operands(&self) -> &[Expr] {
+        let ptr = unsafe {
+            core::slice::from_raw_parts(
+                (self as *const Pow) as *const Expr,
+                core::mem::size_of::<Self>(),
+            )
+        };
+
+        assert_eq!(
+            core::mem::size_of::<Self>(),
+            2 * core::mem::size_of::<Expr>()
+        );
+        assert_eq!(ptr[0], self.base);
+        assert_eq!(ptr[1], self.exponent);
+        ptr
+    }
+
+    pub fn operands_mut(&mut self) -> &mut [Expr] {
+        let ptr = unsafe {
+            core::slice::from_raw_parts_mut(
+                (self as *mut Pow) as *mut Expr,
+                core::mem::size_of::<Self>(),
+            )
+        };
+
+        assert_eq!(
+            core::mem::size_of::<Self>(),
+            2 * core::mem::size_of::<Expr>()
+        );
+        assert_eq!(ptr[0], self.base);
+        assert_eq!(ptr[1], self.exponent);
+        ptr
     }
 
     // x^n where x is an integer
@@ -513,12 +473,14 @@ impl Pow {
             }
             // v^n = (v1 * ... * vm)^n = v1^n * ... * vm^n
             E::Prod(mut prod) => {
-                prod.map(|elem| {
-                    *elem = Self::simplify_int_pow(elem.clone(), n);
-                });
+                prod.operands = prod
+                    .operands
+                    .into_iter()
+                    .map(|e| Self::simplify_int_pow(e, n))
+                    .collect();
                 prod.simplify()
             }
-            _ => E::Pow(Pow::new(base, Rational::from(n)).into())
+            _ => E::Pow(Pow::new(base, Rational::from(n)).into()),
         }
     }
 }
@@ -530,65 +492,13 @@ impl CalcursType for Pow {
 }
 
 impl Construct for Pow {
-    fn free_of(&self, other: &Expr) -> bool {
-        if let Expr::Pow(pow) = other {
-            if self == pow.as_ref() {
-                return false;
-            }
-        } else if self.exponent.desc().is(Item::One) {
-            if !self.base.free_of(other) {
-                return false;
-            }
-        }
-
-        true
-    }
-
-    /// [Pow] is NOT polynomial in x when: \
-    /// exponent: contains x, is negative or is a non-integer number
-    fn is_polynomial_in(&self, vars: &[Expr]) -> bool {
-        let ed = self.exponent.desc();
-
-        if ed.is(Item::Neg) || (ed.is(Item::Rational) && ed.is_not(Item::Int)) {
-            return false;
-        }
-
-        for v in vars {
-            if !self.exponent.free_of(v) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-    fn all_variables(&self) -> Vec<Expr> {
-        if self.exponent.desc().is(Item::Constant) {
-            self.base.all_variables()
-        } else {
-            vec![]
-        }
-    }
-
     #[inline]
-    fn operands_mut(&mut self) -> Vec<&mut Expr> {
-        vec![&mut self.base, &mut self.exponent]
-    }
-
-    #[inline]
-    fn operands(&self) -> Vec<&Expr> {
-        vec![&self.base, &self.exponent]
-    }
-
     fn simplify(mut self) -> Expr {
         use Expr as E;
         use Item as I;
 
-        let mut b = E::Undefined;
-        std::mem::swap(&mut b, &mut self.base);
-        self.base = b.simplify();
-        let mut e = E::Undefined;
-        std::mem::swap(&mut e, &mut self.exponent);
-        self.exponent = e.simplify();
+        self.base = self.base.simplify();
+        self.exponent = self.exponent.simplify();
 
         let base_desc = self.base.desc();
         let exp_desc = self.exponent.desc();
@@ -621,23 +531,19 @@ impl Construct for Pow {
         });
 
         match (self.base, self.exponent) {
-            (E::Rational(r1), E::Rational(r2)) => {
-                E::Pow(r1.apply_pow(r2).into())
-            }
-            (E::Float(f1), E::Float(f2)) => {
-                E::Float(f1.pow(f2))
-            }
-            (E::Float(f), E::Rational(r)) => {
-                E::Float(f.pow(r.to_float()))
-            }
-            (E::Rational(r), E::Float(f)) => {
-                E::Float(r.to_float().pow(f))
-            }
+            (E::Rational(r1), E::Rational(r2)) => E::Pow(r1.apply_pow(r2).into()),
+            (E::Float(f1), E::Float(f2)) => E::Float(f1.pow(f2)),
+            (E::Float(f), E::Rational(r)) => E::Float(f.pow(r.to_float())),
+            (E::Rational(r), E::Float(f)) => E::Float(r.to_float().pow(f)),
             // integer power
-            (base, E::Rational(n)) if n.is_int() => {
-                Self::simplify_int_pow(base, n.to_int())
-            }
-            (base, exp) => E::Pow(Pow { base, exponent: exp }.into()),
+            (base, E::Rational(n)) if n.is_int() => Self::simplify_int_pow(base, n.to_int()),
+            (base, exp) => E::Pow(
+                Pow {
+                    base,
+                    exponent: exp,
+                }
+                .into(),
+            ),
         }
     }
 }
