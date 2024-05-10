@@ -266,10 +266,7 @@ struct EGraph {
 
 impl ops::Add for Expr {
     type Output = Expr;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Sum::add(self, rhs)
-    }
+    fn add(self, rhs: Self) -> Self::Output { Sum::add(self, rhs) }
 }
 impl ops::AddAssign for Expr {
     fn add_assign(&mut self, rhs: Self) {

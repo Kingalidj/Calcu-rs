@@ -49,13 +49,27 @@ impl egg::Analysis<GraphExpr> for ExprFolding {
             GraphExpr::Rational(r) => Some(*r),
             GraphExpr::Add([a, b]) => x(a)? + x(b)?,
             GraphExpr::Mul([a, b]) => x(a)? * x(b)?,
-            GraphExpr::Pow(_)
-            | GraphExpr::Symbol(_) => None,
+            GraphExpr::Pow([a, b]) => {
+                None
+                //let (base, exp) = (x(a)?, x(b)?);
+                //let p = base.apply_pow(exp);
+                //if p.1 == Rational::one() {
+                //    Some(p.0)
+                //} else {
+                //    None
+                //}
+            },
+            GraphExpr::Symbol(_) => None,
         }
     }
 
     fn merge(&mut self, a: &mut Self::Data, b: Self::Data) -> egg::DidMerge {
-        egg::merge_max(a, b)
+        egg::merge_option(a, b, |to, mut from| {
+            if to != &mut from {
+                println!("{} vs {}", to, from);
+            }
+            egg::DidMerge(false, false)
+        })
     }
 
     fn modify(egraph: &mut egg::EGraph<GraphExpr, Self>, id: egg::Id) {
@@ -78,15 +92,18 @@ impl egg::Analysis<GraphExpr> for ExprFolding {
 //}
 
 impl GraphExpr {
-    define_rules!(basic_rules:
+    define_rules!(debug basic_rules:
         commutative add: ?a + ?b -> ?b + ?a,
         commutative mul: ?a * ?b -> ?b * ?a,
         distributive:    ?a * (?b + ?c) <-> ?a * ?b + ?a * ?c,
         add identity:    ?a + 0 -> ?a,
-        mul identity:    ?a * 1 <-> ?a,
+        mul identity:    ?a * 1 -> ?a,
         mul zero:        ?a * 0 -> 0,
         pow 0:           ?a^0 -> 1,
         pow 1:           ?a^1 -> ?a,
+        pow 2.1:         ?a^?b * ?a^?c <-> ?a^(?b + ?c),
+        pow 2.2:         ?a^?b * ?a -> ?a^(?b + 1), // avoid rule a -> a^1
+        pow 2.3:         ?a * ?a -> ?a^2,
     );
 
     #[inline]
@@ -105,6 +122,9 @@ impl GraphExpr {
 
         let extractor = egg::Extractor::new(&runner.egraph, cost_fn);
         let (_bc, be) = extractor.find_best(runner.roots[0]);
+
+        runner.egraph.dot().to_dot("graph.dot").unwrap();
+
         Expr::from(&be)
     }
 

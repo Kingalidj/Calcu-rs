@@ -1,5 +1,5 @@
 use proc_macro2::{TokenStream, Span};
-use quote::quote;
+use quote::{quote, ToTokens};
 use syn::{parse::{self, discouraged::Speculative, Parse, ParseStream}, punctuated as punc, spanned::Spanned, Token};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -468,17 +468,15 @@ impl Parse for RewriteRule {
         let mut name = syn::Ident::parse(input)?.to_string();
 
         loop {
-            let n =
-                if let Ok(n) = syn::Ident::parse(input) {
-                    n.to_string()
-                } else if let Ok(n) = syn::LitInt::parse(input) {
-                    n.to_string()
-                } else {
-                    break;
-                };
-
-            name.push_str(" ");
-            name.push_str(&n);
+            if let Ok(n) = syn::Ident::parse(input) {
+                name.push_str(" ");
+                name.push_str(&n.to_string());
+            } else if let Ok(n) = syn::Lit::parse(input) {
+                name.push_str(" ");
+                name.push_str(&n.to_token_stream().to_string());
+            } else {
+                break;
+            }
         }
 
         let _ = input.parse::<Token![:]>()?;

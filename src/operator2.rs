@@ -531,7 +531,10 @@ impl Construct for Pow {
         });
 
         match (self.base, self.exponent) {
-            (E::Rational(r1), E::Rational(r2)) => E::Pow(r1.apply_pow(r2).into()),
+            (E::Rational(r1), E::Rational(r2)) => {
+                let p = r1.apply_pow(r2);
+                Pow::pow(r1, r2)
+            },
             (E::Float(f1), E::Float(f2)) => E::Float(f1.pow(f2)),
             (E::Float(f), E::Rational(r)) => E::Float(f.pow(r.to_float())),
             (E::Rational(r), E::Float(f)) => E::Float(r.to_float().pow(f)),

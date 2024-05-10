@@ -205,10 +205,13 @@ impl Rational {
     #[inline]
     pub(crate) fn try_apply_expon(mut self) -> Option<Self> {
         if self.exponent > 0 {
-            self.numer *= 10u64.checked_pow(self.exponent.try_into().ok()?)?;
+            let rhs = 10u64.checked_pow(self.exponent.try_into().ok()?)?;
+            self.numer = self.numer.checked_mul(rhs)?;
         } else {
-            self.denom *=
-                UNonZero::new(10u64.checked_pow(self.exponent.abs().try_into().ok()?)?).unwrap();
+            let rhs = 10u64.checked_pow(self.exponent.abs().try_into().ok()?)?;
+            let lhs = self.denom();
+            let denom = lhs.checked_mul(rhs)?;
+            self.denom = UNonZero::new(denom)?;
         }
         self.exponent = 0;
         Some(self)
@@ -347,12 +350,12 @@ impl Rational {
     /// eg:
     /// a, b, c: Integers, (q, r) = (quotient, reminder) of b / c
     /// a^(b / c) -> a.apply_pow(b / c) -> out: (a^q, a^r) -> a^q * a^r
-    pub(crate) fn apply_pow(self, exponent: Rational) -> Pow {
+    pub(crate) fn apply_pow(self, exponent: Rational) -> (Rational, Rational) {
         let (mut base, mut exp) =
             if let (Some(b), Some(e)) = (self.try_apply_expon(), exponent.try_apply_expon()) {
                 (b, e)
             } else {
-                return Pow::new(self, exponent);
+                return (self, exponent);
             };
 
         exp.reduce_frac();
@@ -374,7 +377,7 @@ impl Rational {
             // (a / b) ^ (c / 1) => (a / b) ^ c => a^c / b^c
             let exponent = exp.numer;
             if let Some(res) = self.checked_int_pow(exponent) {
-                return Pow::new(res, Rational::one());
+                return (res, Rational::one());
             }
         }
 
@@ -400,10 +403,10 @@ impl Rational {
             base.numer = root.0;
             base.denom = UNonZero::new(root.1).unwrap();
             exp.denom = NNZ_ONE;
-            return Pow::new(base, exp);
+            return (base, exp);
         }
 
-        Pow::new(base, exp)
+        (base, exp)
     }
 
     pub(crate) fn inverse(&mut self) -> Option<Self> {
