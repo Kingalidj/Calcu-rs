@@ -426,28 +426,40 @@ struct RewriteRule {
 
 impl RewriteRule {
 
-    fn quote_lhs_to_rhs(name: &String, lhs: &Expr, rhs: &Expr) -> TokenStream {
+    fn quote_lhs_to_rhs(name: &String, lhs: &Expr, rhs: &Expr, dbg: bool) -> TokenStream {
         let lhs = lhs.quote();
         let rhs = rhs.quote();
+
+        let mut debug = TokenStream::new();
+        if dbg {
+            debug = quote!(
+                println!("  {}: {} => {},", #name, __searcher, __applier);
+            )
+        }
 
         quote!({
             let __searcher = ::egg::Pattern::from(&#lhs);
             let __applier  = ::egg::Pattern::from(&#rhs);
+            #debug
             ::egg::Rewrite::new(#name.to_string(), __searcher, __applier).unwrap()
         })
     }
 
-    fn quote(&self) -> TokenStream {
+    fn quote_debug(&self, dbg: bool) -> TokenStream {
         if self.bidir {
             let n1 = self.name.clone();
             let mut n2 = self.name.clone();
-            n2.push_str("_rev");
-            let r1 = Self::quote_lhs_to_rhs(&n1, &self.lhs, &self.rhs);
-            let r2 = Self::quote_lhs_to_rhs(&n2, &self.rhs, &self.lhs);
+            n2.push_str(" REV");
+            let r1 = Self::quote_lhs_to_rhs(&n1, &self.lhs, &self.rhs, dbg);
+            let r2 = Self::quote_lhs_to_rhs(&n2, &self.rhs, &self.lhs, dbg);
             quote!(#r1, #r2)
         } else {
-            Self::quote_lhs_to_rhs(&self.name, &self.lhs, &self.rhs)
+            Self::quote_lhs_to_rhs(&self.name, &self.lhs, &self.rhs, dbg)
         }
+    }
+
+    fn quote(&self) -> TokenStream {
+        self.quote_debug(false)
     }
 }
 
@@ -465,6 +477,7 @@ impl Parse for RewriteRule {
                     break;
                 };
 
+            name.push_str(" ");
             name.push_str(&n);
         }
 
@@ -494,6 +507,7 @@ impl Parse for RewriteRule {
 struct RuleSet {
     gen_name: syn::Ident,
     rules: Vec<RewriteRule>,
+    debug: bool,
 }
 
 impl RuleSet {
@@ -512,12 +526,19 @@ impl RuleSet {
 
         let mut rules = TokenStream::new();
         for r in &self.rules {
-            let r = r.quote();
+            let r = r.quote_debug(self.debug);
             rules.extend(quote!(#r,))
         }
 
+        let mut debug = TokenStream::new();
+        if self.debug {
+            let name = gen_name.to_string();
+            debug = quote!(println!("{}:", #name););
+        }
+
         quote!(
-            pub fn #gen_name() -> [::egg::Rewrite<GraphExpr, ()>; #n] {
+            pub fn #gen_name() -> [::egg::Rewrite<Self, <Self as GraphExpression>::Analyser>; #n] {
+                #debug
                 [ #rules ]
             }
         )
@@ -526,12 +547,19 @@ impl RuleSet {
 
 impl Parse for RuleSet {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let gen_name = syn::Ident::parse(input)?;
+        let mut gen_name = syn::Ident::parse(input)?;
+        let mut debug = false;
+
+        if gen_name == "debug" {
+            debug = true;
+            gen_name = syn::Ident::parse(input)?;
+        }
+
         let _ = input.parse::<Token![:]>();
         let rules: Vec<_> = punc::Punctuated::<RewriteRule, syn::Token![,]>::parse_terminated(&input)?.
             into_iter().collect();
 
-        Ok(RuleSet { gen_name, rules })
+        Ok(RuleSet { gen_name, rules, debug })
     }
 }
 

@@ -8,6 +8,7 @@ pub trait GraphFromExpr: Sized + egg::Language {
 }
 
 pub trait GraphExpression: egg::Language + GraphFromExpr {
+    type Analyser;
     fn build<L: GraphFromExpr>(e: &Expr) -> Result<egg::RecExpr<L>, &'static str>;
 }
 
@@ -37,6 +38,35 @@ pub enum GraphExpr {
     Pow([egg::Id; 2]),
 }
 
+#[derive(Debug, Copy, Clone, Default)]
+pub struct ExprFolding;
+impl egg::Analysis<GraphExpr> for ExprFolding {
+    type Data = Option<Rational>;
+
+    fn make(egraph: &egg::EGraph<GraphExpr, Self>, enode: &GraphExpr) -> Self::Data {
+        let x = |i: &egg::Id| egraph[*i].data;
+        match enode {
+            GraphExpr::Rational(r) => Some(*r),
+            GraphExpr::Add([a, b]) => x(a)? + x(b)?,
+            GraphExpr::Mul([a, b]) => x(a)? * x(b)?,
+            GraphExpr::Pow(_)
+            | GraphExpr::Symbol(_) => None,
+        }
+    }
+
+    fn merge(&mut self, a: &mut Self::Data, b: Self::Data) -> egg::DidMerge {
+        egg::merge_max(a, b)
+    }
+
+    fn modify(egraph: &mut egg::EGraph<GraphExpr, Self>, id: egg::Id) {
+        if let Some(i) = egraph[id].data {
+            let new_id = egraph.add(GraphExpr::Rational(i));
+            egraph.union(id, new_id);
+        }
+    }
+}
+
+
 //macro_rules! rw {
 //    ( $name:ident; [$($lhs:tt)+] => [$($rhs:tt)+]) =>
 //    {{
@@ -48,30 +78,36 @@ pub enum GraphExpr {
 //}
 
 impl GraphExpr {
-    //pub fn make_rules() -> Vec<egg::Rewrite<GraphExpr, ()>> {
-    //    vec![
-    //        rw!(commutative_add; [?a + ?b]         => [?b + ?a]),
-    //        rw!(commutative_mul; [?a * ?b]         => [?b * ?a]),
-    //        rw!(distributive;    [?a * (?b + ?c)]  => [?a * ?b + ?a * ?c]),
-    //        rw!(add_0;           [?a + 0]          => [?a]),
-    //        rw!(mul_0;           [?a * 0]          => [0]),
-    //        rw!(mul_1;           [?a * 1]          => [?a]),
-    //        rw!(pow_0;           [?a^0]            => [1]),
-    //        rw!(pow_1;           [?a^1]            => [?a]),
-    //    ]
-    //}
-
     define_rules!(basic_rules:
-
         commutative add: ?a + ?b -> ?b + ?a,
         commutative mul: ?a * ?b -> ?b * ?a,
         distributive:    ?a * (?b + ?c) <-> ?a * ?b + ?a * ?c,
         add identity:    ?a + 0 -> ?a,
-        mul identity:    ?a * 1 -> ?a,
+        mul identity:    ?a * 1 <-> ?a,
         mul zero:        ?a * 0 -> 0,
-        pow zero:        ?a^0 -> 1,
-        pow one:         ?a^1 -> ?a,
+        pow 0:           ?a^0 -> 1,
+        pow 1:           ?a^1 -> ?a,
     );
+
+    #[inline]
+    pub fn analyse<CF: egg::CostFunction<Self>>(
+        expr: &Expr,
+        time_limit: std::time::Duration,
+        rules: &[egg::Rewrite<Self, <Self as GraphExpression>::Analyser>],
+        cost_fn: CF,
+    ) -> Expr
+    {
+        let expr = Self::build(expr).unwrap();
+        let runner = egg::Runner::default()
+            .with_expr(&expr)
+            .with_time_limit(time_limit)
+            .run(rules);
+
+        let extractor = egg::Extractor::new(&runner.egraph, cost_fn);
+        let (_bc, be) = extractor.find_best(runner.roots[0]);
+        Expr::from(&be)
+    }
+
 }
 
 #[inline(always)]
@@ -118,6 +154,8 @@ impl GraphFromExpr for GraphExpr {
 }
 
 impl GraphExpression for GraphExpr {
+    type Analyser = ExprFolding;
+
     fn build<L: GraphFromExpr>(e: &Expr) -> Result<egg::RecExpr<L>, &'static str> {
         fn build_from_expr<L: GraphFromExpr>(
             e: &Expr,
@@ -147,6 +185,7 @@ impl GraphExpression for GraphExpr {
         build_from_expr(e, &mut expr)?;
         Ok(expr)
     }
+
 }
 
 impl egg::Language for GraphExpr {
@@ -217,6 +256,7 @@ impl From<&egg::RecExpr<GraphExpr>> for Expr {
         exprs.pop().unwrap()
     }
 }
+
 
 impl From<egg::RecExpr<GraphExpr>> for Expr {
     fn from(e: egg::RecExpr<GraphExpr>) -> Self {
