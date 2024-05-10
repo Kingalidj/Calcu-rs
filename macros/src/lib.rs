@@ -455,8 +455,17 @@ impl Parse for RewriteRule {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut name = syn::Ident::parse(input)?.to_string();
 
-        while let Ok(n) = syn::Ident::parse(input) {
-            name.push_str(&n.to_string());
+        loop {
+            let n =
+                if let Ok(n) = syn::Ident::parse(input) {
+                    n.to_string()
+                } else if let Ok(n) = syn::LitInt::parse(input) {
+                    n.to_string()
+                } else {
+                    break;
+                };
+
+            name.push_str(&n);
         }
 
         let _ = input.parse::<Token![:]>()?;
@@ -468,7 +477,7 @@ impl Parse for RewriteRule {
                 let _ = input.parse::<Token![->]>()?;    
                 false
             } else if input.peek(Token![<]) && input.peek2(Token![->]) {
-                let _ = input.parse::<Token![-]>()?;    
+                let _ = input.parse::<Token![<]>()?;    
                 let _ = input.parse::<Token![->]>()?;    
                 true
             } else {
@@ -490,7 +499,16 @@ struct RuleSet {
 impl RuleSet {
     fn quote(&self) -> TokenStream {
         let gen_name = &self.gen_name;
-        let n = self.rules.len();
+
+        let mut n: usize = 0;
+        for r in &self.rules {
+            n += 
+                if r.bidir {
+                    2
+                } else {
+                    1
+                };
+        }
 
         let mut rules = TokenStream::new();
         for r in &self.rules {
@@ -510,19 +528,14 @@ impl Parse for RuleSet {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let gen_name = syn::Ident::parse(input)?;
         let _ = input.parse::<Token![:]>();
-        ////let rules: Vec<_> = punc::Punctuated::<RewriteRule, syn::Token![,]>::parse_terminated(&input)?.
-        //    //into_iter().collect();
-        //let rules = vec![RewriteRule::parse(input)?];
-        //let _ = input.parse::<Token![;]>();
+        let rules: Vec<_> = punc::Punctuated::<RewriteRule, syn::Token![,]>::parse_terminated(&input)?.
+            into_iter().collect();
 
-        let rules = vec![RewriteRule::parse(input)?];
-        let _ = input.parse::<Token![;]>();
         Ok(RuleSet { gen_name, rules })
     }
 }
 
 #[proc_macro]
 pub fn define_rules(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let rule_set = syn::parse_macro_input!(input as RuleSet);
-    rule_set.quote().into()
+    syn::parse_macro_input!(input as RuleSet).quote().into()
 }

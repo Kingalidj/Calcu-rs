@@ -10,7 +10,8 @@ fn main() {
     let eexpr: RecExpr<GraphExpr> = GraphExpr::build(&calc!(0 * (a + b))).unwrap();
     let runner = Runner::default()
         .with_expr(&eexpr)
-        .run(&GraphExpr::make_rules());
+        .with_time_limit(std::time::Duration::from_millis(100))
+        .run(&GraphExpr::basic_rules());
     let extractor = Extractor::new(&runner.egraph, egg::AstSize);
     let (_bc, be) = extractor.find_best(runner.roots[0]);
     println!("{} => {}", eexpr, be);

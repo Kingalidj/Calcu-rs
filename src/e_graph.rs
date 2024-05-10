@@ -37,32 +37,40 @@ pub enum GraphExpr {
     Pow([egg::Id; 2]),
 }
 
-macro_rules! rw {
-    ( $name:ident; [$($lhs:tt)+] => [$($rhs:tt)+]) =>
-    {{
-        let searcher = egg::Pattern::from(&$crate::calc!($($lhs)+));
-        let applier = egg::Pattern::from(&$crate::calc!($($rhs)+));
-        //println!("{} => {}", searcher, applier);
-        egg::Rewrite::new(stringify!($name).to_string(), searcher, applier).unwrap()
-    }};
-}
+//macro_rules! rw {
+//    ( $name:ident; [$($lhs:tt)+] => [$($rhs:tt)+]) =>
+//    {{
+//        let searcher = egg::Pattern::from(&$crate::calc!($($lhs)+));
+//        let applier = egg::Pattern::from(&$crate::calc!($($rhs)+));
+//        //println!("{} => {}", searcher, applier);
+//        egg::Rewrite::new(stringify!($name).to_string(), searcher, applier).unwrap()
+//    }};
+//}
 
 impl GraphExpr {
-    pub fn make_rules() -> Vec<egg::Rewrite<GraphExpr, ()>> {
-        vec![
-            rw!(commutative_add; [?a + ?b]         => [?b + ?a]),
-            rw!(commutative_mul; [?a * ?b]         => [?b * ?a]),
-            rw!(distributive;    [?a * (?b + ?c)]  => [?a * ?b + ?a * ?c]),
-            rw!(add_0;           [?a + 0]          => [?a]),
-            rw!(mul_0;           [?a * 0]          => [0]),
-            rw!(mul_1;           [?a * 1]          => [?a]),
-            rw!(pow_0;           [?a^0]            => [1]),
-            rw!(pow_1;           [?a^1]            => [?a]),
-        ]
-    }
+    //pub fn make_rules() -> Vec<egg::Rewrite<GraphExpr, ()>> {
+    //    vec![
+    //        rw!(commutative_add; [?a + ?b]         => [?b + ?a]),
+    //        rw!(commutative_mul; [?a * ?b]         => [?b * ?a]),
+    //        rw!(distributive;    [?a * (?b + ?c)]  => [?a * ?b + ?a * ?c]),
+    //        rw!(add_0;           [?a + 0]          => [?a]),
+    //        rw!(mul_0;           [?a * 0]          => [0]),
+    //        rw!(mul_1;           [?a * 1]          => [?a]),
+    //        rw!(pow_0;           [?a^0]            => [1]),
+    //        rw!(pow_1;           [?a^1]            => [?a]),
+    //    ]
+    //}
 
     define_rules!(basic_rules:
-        add_0: ?a -> ?a;
+
+        commutative add: ?a + ?b -> ?b + ?a,
+        commutative mul: ?a * ?b -> ?b * ?a,
+        distributive:    ?a * (?b + ?c) <-> ?a * ?b + ?a * ?c,
+        add identity:    ?a + 0 -> ?a,
+        mul identity:    ?a * 1 -> ?a,
+        mul zero:        ?a * 0 -> 0,
+        pow zero:        ?a^0 -> 1,
+        pow one:         ?a^1 -> ?a,
     );
 }
 

@@ -421,15 +421,15 @@ impl Pow {
 
     pub fn operands(&self) -> &[Expr] {
         let ptr = unsafe {
-            core::slice::from_raw_parts(
+            std::slice::from_raw_parts(
                 (self as *const Pow) as *const Expr,
-                core::mem::size_of::<Self>(),
+                std::mem::size_of::<Self>(),
             )
         };
 
         assert_eq!(
-            core::mem::size_of::<Self>(),
-            2 * core::mem::size_of::<Expr>()
+            std::mem::size_of::<Self>(),
+            2 * std::mem::size_of::<Expr>()
         );
         assert_eq!(ptr[0], self.base);
         assert_eq!(ptr[1], self.exponent);
@@ -438,15 +438,15 @@ impl Pow {
 
     pub fn operands_mut(&mut self) -> &mut [Expr] {
         let ptr = unsafe {
-            core::slice::from_raw_parts_mut(
+            std::slice::from_raw_parts_mut(
                 (self as *mut Pow) as *mut Expr,
-                core::mem::size_of::<Self>(),
+                std::mem::size_of::<Self>(),
             )
         };
 
         assert_eq!(
-            core::mem::size_of::<Self>(),
-            2 * core::mem::size_of::<Expr>()
+            std::mem::size_of::<Self>(),
+            2 * std::mem::size_of::<Expr>()
         );
         assert_eq!(ptr[0], self.base);
         assert_eq!(ptr[1], self.exponent);
