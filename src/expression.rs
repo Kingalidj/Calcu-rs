@@ -208,26 +208,6 @@ impl From<&Symbol> for Expr {
     }
 }
 
-type ID = usize;
-
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
-pub struct ENode {
-    expr: Expr,
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
-struct EGroup {
-    id: ID,
-    /// equivalent nodes
-    nodes: Vec<ENode>,
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
-struct EGraph {
-    nodes: Vec<ENode>,
-    groups: EGroup,
-}
-
 impl ops::Add for Expr {
     type Output = Expr;
     fn add(self, rhs: Self) -> Self::Output {

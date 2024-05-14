@@ -166,6 +166,7 @@ mod test_operators {
     #[test_case(c!(0^(3/4)),    c!(0),     "5")]
     #[test_case(c!((1/2)^(-1)), c!(4/2),   "6")]
     #[test_case(c!((x^2)^3),    c!(x^6),   "7")]
+    #[test_case(c!((x+y)^2),    c!(x^2 + 2*x*y + y^2),   "8")]
     fn pow(pow: Expr, sol: Expr, n: &'static str) {
         let pow = pow.simplify();
         let sol = sol.simplify();

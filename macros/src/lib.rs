@@ -1,6 +1,6 @@
 use proc_macro2::{TokenStream, Span};
 use quote::{quote, ToTokens};
-use syn::{parse::{self, discouraged::Speculative, Parse, ParseStream}, punctuated as punc, spanned::Spanned, Token};
+use syn::{parse::{self, discouraged::Speculative, Parse, ParseStream}, punctuated as punc, Token};
 use std::fmt::Write;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -480,10 +480,6 @@ impl RewriteRule {
         } else {
             Self::quote_lhs_to_rhs(&self.name, &self.lhs, &self.rhs, &self.cond, dbg)
         }
-    }
-
-    fn quote(&self) -> TokenStream {
-        self.quote_debug(false)
     }
 }
 

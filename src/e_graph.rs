@@ -5,8 +5,8 @@ use crate::{
 };
 
 use crate::scalar::Scalar;
-use crate::{expression::CalcursType, pattern::Item};
-use std::{fmt, ops};
+use crate::pattern::Item;
+use std::fmt;
 use std::fmt::Formatter;
 use std::str::FromStr;
 use calcu_rs::expression::PTR;
@@ -93,8 +93,8 @@ impl egg::Analysis<GraphExpr> for ExprFolding {
     }
 
     fn merge(&mut self, a: &mut Self::Data, b: Self::Data) -> egg::DidMerge {
-        egg::merge_option(a, b, |to, mut from| {
-            //debug_assert_eq!(to.0, from.0, "from: {} to: {}", from.1, to.1);
+        egg::merge_option(a, b, |to, from| {
+            debug_assert_eq!(to.0, from.0, "from: {} to: {}", from.1, to.1);
             egg::DidMerge(false, false)
         })
     }
@@ -155,17 +155,6 @@ impl egg::CostFunction<GraphExpr> for GraphExprCostFn {
 //        egg::Rewrite::new(stringify!($name).to_string(), searcher, applier).unwrap()
 //    }};
 //}
-
-fn desc(var: &str) -> impl Fn(&mut EGraph, Id, &egg::Subst) -> Option<Item> {
-    let var = var.parse().unwrap();
-    move |egraph, _, subst| {
-        if let Some(n) = &egraph[subst[var]].data {
-            Some(n.0.desc())
-        } else {
-            None
-        }
-    }
-}
 
 trait RuleCondition: Fn(&mut EGraph, Id, &egg::Subst) -> bool {}
 impl<F: Fn(&mut EGraph, Id, &egg::Subst) -> bool> RuleCondition for F {}
@@ -267,6 +256,7 @@ impl GraphExpr {
 
         power distributivity 1:  (?a * ?b)^?c -> ?a^?c * ?b^?c,
         power distributivity 2:  (?a^?b)^?c -> ?a^(?b * ?c),
+        power distributivity 3:  (?a + ?b)^2 <-> ?a^2 + 2*?a*?b + ?b^2,
     );
 
     #[inline]
@@ -277,7 +267,7 @@ impl GraphExpr {
         cost_fn: CF,
     ) -> Expr {
         let expr = Self::build(expr).unwrap();
-        let mut runner = egg::Runner::default()
+        let runner = egg::Runner::default()
             .with_explanations_enabled()
             .with_expr(&expr)
             .with_time_limit(time_limit)

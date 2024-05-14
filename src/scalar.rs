@@ -1,5 +1,4 @@
 use std::{cmp::Ordering, fmt, ops};
-use std::ops::{Add, Div, Mul};
 use ordered_float::Float as OrdFloat;
 
 use crate::{
