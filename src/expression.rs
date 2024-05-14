@@ -1,12 +1,11 @@
-use calcu_rs::rational::Rational;
+use crate::rational::Rational;
 
 use std::{fmt, ops};
+use std::time::Duration;
 
-use crate::numeric::{Float, Infinity};
-use crate::{
-    operator::{Diff, Pow, Prod, Quot, Sum},
-    pattern::Item,
-};
+//use crate::scalar::{Float, Infinity};
+use crate::{e_graph, operator::{Diff, Pow, Prod, Quot, Sum}, pattern::Item};
+use crate::e_graph::GraphExpr;
 
 /// implemented by every symbolic math type
 pub trait CalcursType: Clone + fmt::Debug + Into<Expr> {
@@ -55,8 +54,6 @@ pub type PTR<T> = Box<T>;
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Expr {
     Rational(Rational),
-    Float(Float),
-    Infinity(Infinity),
     Symbol(Symbol),
 
     Sum(Sum),
@@ -82,9 +79,7 @@ macro_rules! impl_from_for_expr {
     };
 }
 
-impl_from_for_expr!(Float);
 impl_from_for_expr!(Rational);
-impl_from_for_expr!(Infinity);
 impl_from_for_expr!(Sum);
 impl_from_for_expr!(Prod);
 impl_from_for_expr!(Pow);
@@ -98,8 +93,6 @@ impl Expr {
         use Expr as E;
         match self {
             E::Rational(_)
-            | E::Float(_)
-            | E::Infinity(_)
             | E::Symbol(_)
             | E::Undefined
             | E::PlaceHolder(_) => vec![],
@@ -113,8 +106,6 @@ impl Expr {
         use Expr as E;
         match self {
             E::Rational(_)
-            | E::Float(_)
-            | E::Infinity(_)
             | E::Symbol(_)
             | E::Undefined
             | E::PlaceHolder(_) => &mut [],
@@ -123,85 +114,58 @@ impl Expr {
             E::Pow(pow) => pow.operands_mut(),
         }
     }
+}
 
-    /// in general: \
-    /// exponent(x) -> 1, when x is a [Symbol], [Product], [Rational] etc...
-    /// exponent(x) -> x.operand(2), when x is a power,
-    /// exponent(x) -> None, when x is [Infinity], [Undefined]
-    ///
-    /// will not return None if x.base() is not None
-    pub fn exponent(&self) -> Option<&Expr> {
-        use Expr as E;
-        match self {
-            E::Symbol(_) | E::Sum(_) | E::Prod(_) => Some(&Rational::ONE),
-            E::Pow(p) => Some(&p.exponent),
-            E::Rational(_) | E::Float(_) | E::Infinity(_) | E::Undefined => None,
-
-            E::PlaceHolder(_) => panic!(),
-        }
+// basic checks, e.g if Float, then not int
+#[inline]
+fn debug_desc_check(i: Item) {
+    use Item as I;
+    if i.is(I::Zero) {
+        debug_assert!(i.is_not(I::Pos));
+        debug_assert!(i.is_not(I::Neg));
+    } else if i.is(I::Scalar) {
+        debug_assert!(i.is(I::Pos) ^ i.is(I::Neg));
     }
 
-    /// in general: \
-    /// base(x) -> x, when x is a [Symbol], [Product], [Rational] etc... \
-    /// base(x) -> x.operand(1), when x is a power, \
-    /// base(x) -> None, when x is [Infinity], [Undefined]
-    ///
-    /// when base(x) is Some(...), exponent(x) should also return Some(...)
-    pub fn base(&self) -> Option<&Expr> {
-        use Expr as E;
-        match self {
-            E::Symbol(_) | E::Sum(_) | E::Prod(_) => Some(self),
-            E::Pow(p) => Some(&p.base),
-            E::Rational(_) | E::Float(_) | E::Infinity(_) | E::Undefined => None,
-
-            E::PlaceHolder(_) => panic!(),
-        }
-    }
-
-    pub fn coefficient(&self) -> Option<&Expr> {
-        use Expr as E;
-        match self {
-            E::Rational(_) | E::Float(_) | E::Infinity(_) | E::Undefined => None,
-
-            E::Prod(prod) if prod.operands.len() >= 2 => {
-                let coeff = prod.operands.first().unwrap();
-                if coeff.desc().is(Item::Finite) {
-                    Some(coeff)
-                } else {
-                    Some(&Rational::ONE)
-                }
-            }
-
-            E::Sum(_) | E::Pow(_) | E::Prod(_) | E::Symbol(_) => Some(&Rational::ONE),
-
-            E::PlaceHolder(_) => panic!(),
-        }
+    if i.is(I::Float) {
+        debug_assert!(i.is_not(I::Integer))
     }
 }
 
 impl CalcursType for Expr {
     fn desc(&self) -> Item {
         use Expr as E;
-        match self {
+        let d = match self {
             E::Symbol(s) => s.desc(),
             E::Rational(r) => r.desc(),
-            E::Float(f) => f.desc(),
-            E::Infinity(i) => i.desc(),
             E::Sum(a) => a.desc(),
             E::Prod(m) => m.desc(),
             E::Pow(p) => p.desc(),
             E::Undefined => Item::Undef,
             E::PlaceHolder(_) => panic!(),
-        }
+        };
+        debug_desc_check(d);
+        d
     }
 }
 
 impl Construct for Expr {
     #[inline]
-    fn simplify(self) -> Expr {
+    fn simplify(mut self) -> Expr {
         use Expr as E;
+
+        let simplified = GraphExpr::analyse(
+            &self,
+            Duration::from_millis(100),
+            &GraphExpr::scalar_rules(),
+            e_graph::GraphExprCostFn,
+        );
+
+        self = simplified;
+
+
         match self {
-            E::Symbol(_) | E::Rational(_) | E::Float(_) | E::Infinity(_) | E::Undefined => self,
+            E::Symbol(_) | E::Rational(_) | E::Undefined => self,
 
             E::Sum(sum) => sum.simplify(),
             E::Prod(prod) => prod.simplify(),
@@ -266,7 +230,9 @@ struct EGraph {
 
 impl ops::Add for Expr {
     type Output = Expr;
-    fn add(self, rhs: Self) -> Self::Output { Sum::add(self, rhs) }
+    fn add(self, rhs: Self) -> Self::Output {
+        Sum::add(self, rhs)
+    }
 }
 impl ops::AddAssign for Expr {
     fn add_assign(&mut self, rhs: Self) {
@@ -351,8 +317,6 @@ impl fmt::Display for Expr {
         match self {
             E::Symbol(v) => write!(f, "{v}"),
             E::Rational(r) => write!(f, "{r}"),
-            E::Float(v) => write!(f, "{}", v.0),
-            E::Infinity(i) => write!(f, "{i}"),
             E::Sum(a) => write!(f, "{a}"),
             E::Prod(m) => write!(f, "{m}"),
             E::Pow(p) => write!(f, "{p}"),
@@ -379,8 +343,6 @@ impl fmt::Debug for Expr {
         match self {
             E::Symbol(v) => write!(f, "{:?}", v),
             E::Rational(r) => write!(f, "{:?}", r),
-            E::Float(v) => write!(f, "{:?}", v),
-            E::Infinity(i) => write!(f, "{:?}", i),
 
             E::Sum(a) => write!(f, "{:?}", a),
             E::Prod(m) => write!(f, "{:?}", m),

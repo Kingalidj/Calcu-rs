@@ -1,5 +1,5 @@
 [package]
-name = "calcu-rs"
+name = "calcu_rs"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,12 +7,13 @@ edition = "2021"
 
 [dependencies]
 bitflags = "2.4.1"
-num = "0.4.1"
-num-rational = "0.4.1"
-calcurs_macros = { name = "calcurs_macro", path = "macros" }
+calcurs_macros = { path = "macros" }
 log = "0.4.21"
 egg = "0.9.5"
 env_logger = "0.9.3"
+ordered-float = "4.2.0"
+num = "0.4.3"
+malachite = "0.4.7"
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"

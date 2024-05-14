@@ -1,6 +1,7 @@
 use proc_macro2::{TokenStream, Span};
 use quote::{quote, ToTokens};
 use syn::{parse::{self, discouraged::Speculative, Parse, ParseStream}, punctuated as punc, spanned::Spanned, Token};
+use std::fmt::Write;
 
 #[derive(Debug, Clone, PartialEq)]
 enum Condition {
@@ -421,19 +422,41 @@ struct RewriteRule {
     name: String,
     lhs: Expr,
     rhs: Expr,
+    cond: Option<syn::Expr>,
     bidir: bool,
 }
 
 impl RewriteRule {
 
-    fn quote_lhs_to_rhs(name: &String, lhs: &Expr, rhs: &Expr, dbg: bool) -> TokenStream {
+    fn quote_lhs_to_rhs(name: &String, lhs: &Expr, rhs: &Expr, cond: &Option<syn::Expr>, dbg: bool) -> TokenStream {
         let lhs = lhs.quote();
         let rhs = rhs.quote();
 
         let mut debug = TokenStream::new();
         if dbg {
+            let cond_str =
+            match cond {
+                Some(cond) => {
+                    let mut str = " if ".to_string();
+                    write!(str, "{},", cond.clone().to_token_stream().to_string()).unwrap();
+                    str
+                },
+                None => ",".into(),
+            };
+
             debug = quote!(
-                println!("  {}: {} => {},", #name, __searcher, __applier);
+                println!("  {}: {} => {}{}", #name, __searcher, __applier, #cond_str);
+            )
+        }
+
+        let mut cond_applier = TokenStream::new();
+
+        if let Some(cond) = cond {
+            cond_applier = quote!(
+                let __applier = ::egg::ConditionalApplier {
+                    condition: #cond,
+                    applier: __applier,
+                };
             )
         }
 
@@ -441,6 +464,7 @@ impl RewriteRule {
             let __searcher = ::egg::Pattern::from(&#lhs);
             let __applier  = ::egg::Pattern::from(&#rhs);
             #debug
+            #cond_applier
             ::egg::Rewrite::new(#name.to_string(), __searcher, __applier).unwrap()
         })
     }
@@ -450,11 +474,11 @@ impl RewriteRule {
             let n1 = self.name.clone();
             let mut n2 = self.name.clone();
             n2.push_str(" REV");
-            let r1 = Self::quote_lhs_to_rhs(&n1, &self.lhs, &self.rhs, dbg);
-            let r2 = Self::quote_lhs_to_rhs(&n2, &self.rhs, &self.lhs, dbg);
+            let r1 = Self::quote_lhs_to_rhs(&n1, &self.lhs, &self.rhs, &self.cond, dbg);
+            let r2 = Self::quote_lhs_to_rhs(&n2, &self.rhs, &self.lhs, &self.cond, dbg);
             quote!(#r1, #r2)
         } else {
-            Self::quote_lhs_to_rhs(&self.name, &self.lhs, &self.rhs, dbg)
+            Self::quote_lhs_to_rhs(&self.name, &self.lhs, &self.rhs, &self.cond, dbg)
         }
     }
 
@@ -497,7 +521,14 @@ impl Parse for RewriteRule {
 
         let rhs = Expr::parse(input)?;
 
-        Ok(RewriteRule { name, lhs, rhs, bidir })
+        let cond =
+        if let Ok(_) = input.parse::<Token![if]>() {
+            Some(syn::Expr::parse(input)?)
+        } else {
+            None
+        };
+
+        Ok(RewriteRule { name, lhs, rhs, cond, bidir })
     }
 }
 
