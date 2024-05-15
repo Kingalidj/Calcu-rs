@@ -39,7 +39,7 @@ jobs:
         uses: actions/configure-pages@v4
       - name: build docs
         run: |
-          cargo doc --no-deps -p calcu-rs --document-private-items
+          cargo doc --no-deps -p calcu_rs --document-private-items
           
           echo '
           <!DOCTYPE html>
