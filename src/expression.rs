@@ -297,8 +297,8 @@ impl fmt::Display for Expr {
         match self {
             E::Symbol(v) => write!(f, "{v}"),
             E::Rational(r) => write!(f, "{r}"),
-            E::Sum(a) => write!(f, "{a}"),
-            E::Prod(m) => write!(f, "{m}"),
+            E::Sum(a) => write!(f, "({a})"),
+            E::Prod(m) => write!(f, "({m})"),
             E::Pow(p) => write!(f, "{p}"),
 
             E::Undefined => write!(f, "undefined"),
