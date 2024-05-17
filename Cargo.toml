@@ -8,8 +8,7 @@ edition = "2021"
 [dependencies]
 bitflags = "2.4.1"
 calcurs_macros = { path = "macros" }
-log = "0.4.21"
-egg = "0.9.5"
+egg = {version = "0.9.5", features = ["wasm-bindgen"]}
 env_logger = "0.9.3"
 ordered-float = "4.2.0"
 num = "0.4.3"
