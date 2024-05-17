@@ -8,47 +8,11 @@ use crate::{e_graph, operator::{Diff, Pow, Prod, Quot, Sum}, pattern::Item};
 use crate::e_graph::GraphExpr;
 
 /// implemented by every symbolic math type
-pub trait CalcursType: Clone + fmt::Debug + Into<Expr> {
+pub trait CalcursType: Clone + fmt::Debug + fmt::Display + Into<Expr> {
     fn desc(&self) -> Item;
 }
 
 /// contains one or multiple expressions of type [Expr]
-pub trait Construct: CalcursType {
-    //This operator returns false when [other] is identical
-    // to some complete subexpression of [self] and otherwise returns true
-    //fn free_of(&self, other: &Expr) -> bool;
-    //fn contains(&self, other: &Expr) -> bool {
-    //    !self.free_of(other)
-    //}
-
-    // Checks if expression is a general polynomial expression (GPE) in [vars]
-    // note that: \
-    // every sub-expresion must also be a GPE in [vars] \
-    // 0.is_polynomial(...) -> true \
-    // (y^2 + y).is_polynomial(x) -> true
-    //fn is_polynomial_in(&self, vars: &[Expr]) -> bool {
-    //    for v in self.operands() {
-    //        if !(v.is_polynomial_in(vars)) {
-    //            return false;
-    //        }
-    //    }
-    //    true
-    //}
-
-    // returns all generalized variables in the expression (e.g x, but also sin(x))
-    // normally you should call [variables]
-    //fn all_variables(&self) -> Vec<Expr>;
-
-    // returns all unique generalized variables in the expression (e.g x, but also sin(x))
-    //fn variables(&self) -> Vec<Expr> {
-    //    let vars = self.variables();
-    //    let unique_vars: HashSet<Expr> = vars.into_iter().collect();
-    //    unique_vars.into_iter().collect()
-    //}
-
-    fn simplify(self) -> Expr;
-}
-
 pub type PTR<T> = Box<T>;
 
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -85,20 +49,24 @@ impl_from_for_expr!(Prod);
 impl_from_for_expr!(Pow);
 
 impl Expr {
+    pub const ZERO: Self = Expr::Rational(Rational::ZERO);
+    pub const ONE: Self = Expr::Rational(Rational::ONE);
+    pub const MINUS_ONE: Self = Expr::Rational(Rational::MINUS_ONE);
+
     pub fn pow(self, other: impl CalcursType) -> Expr {
         Pow::pow(self, other)
     }
 
-    pub fn operands(&self) -> Vec<&Expr> {
+    pub fn operands(&self) -> &[Expr] {
         use Expr as E;
         match self {
             E::Rational(_)
             | E::Symbol(_)
             | E::Undefined
-            | E::PlaceHolder(_) => vec![],
-            E::Sum(sum) => sum.operands.iter().collect(),
-            E::Prod(prod) => prod.operands.iter().collect(),
-            E::Pow(pow) => vec![&pow.base, &pow.exponent],
+            | E::PlaceHolder(_) => &[],
+            E::Sum(sum) => sum.operands.as_slice(),
+            E::Prod(prod) => prod.operands.as_slice(),
+            E::Pow(pow) => &pow.operands,
         }
     }
 
@@ -111,8 +79,24 @@ impl Expr {
             | E::PlaceHolder(_) => &mut [],
             E::Sum(sum) => sum.operands.as_mut_slice(),
             E::Prod(prod) => prod.operands.as_mut_slice(),
-            E::Pow(pow) => pow.operands_mut(),
+            E::Pow(pow) => &mut pow.operands,
         }
+    }
+
+    pub fn simplify(&self) -> Expr {
+        let mut expr = GraphExpr::analyse(
+            &self,
+            Duration::from_millis(1000),
+            &GraphExpr::scalar_rules(),
+            e_graph::GraphExprCostFn,
+        );
+
+        match expr {
+            Expr::Sum(_)
+            | Expr::Prod(_) => expr.operands_mut().sort_unstable(),
+            _ => (),
+        }
+        expr
     }
 }
 
@@ -146,32 +130,6 @@ impl CalcursType for Expr {
         };
         debug_desc_check(d);
         d
-    }
-}
-
-impl Construct for Expr {
-    #[inline]
-    fn simplify(mut self) -> Expr {
-        use Expr as E;
-
-        let simplified = GraphExpr::analyse(
-            &self,
-            Duration::from_millis(100),
-            &GraphExpr::scalar_rules(),
-            e_graph::GraphExprCostFn,
-        );
-
-        self = simplified;
-
-
-        match self {
-            E::Symbol(_) | E::Rational(_) | E::Undefined => self,
-
-            E::Sum(sum) => sum.simplify(),
-            E::Prod(prod) => prod.simplify(),
-            E::Pow(pow) => pow.simplify(),
-            E::PlaceHolder(_) => panic!(),
-        }
     }
 }
 
@@ -211,7 +169,7 @@ impl From<&Symbol> for Expr {
 impl ops::Add for Expr {
     type Output = Expr;
     fn add(self, rhs: Self) -> Self::Output {
-        Sum::add(self, rhs)
+        Sum::sum(self, rhs)
     }
 }
 impl ops::AddAssign for Expr {
@@ -222,7 +180,7 @@ impl ops::AddAssign for Expr {
             // self = lhs + rhs
             let mut lhs: Expr = std::mem::zeroed();
             std::mem::swap(self, &mut lhs);
-            *self = Sum::add(lhs, rhs);
+            *self = Sum::sum(lhs, rhs);
         }
     }
 }
@@ -230,19 +188,19 @@ impl ops::Sub for Expr {
     type Output = Expr;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        Diff::sub(self, rhs)
+        Diff::diff(self, rhs)
     }
 }
 impl ops::SubAssign for Expr {
     fn sub_assign(&mut self, rhs: Self) {
-        *self = Diff::sub(self.clone(), rhs);
+        *self = Diff::diff(self.clone(), rhs);
     }
 }
 impl ops::Mul for Expr {
     type Output = Expr;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        Prod::mul(self, rhs)
+        Prod::prod(self, rhs)
     }
 }
 impl ops::MulAssign for Expr {
@@ -254,7 +212,7 @@ impl ops::MulAssign for Expr {
             // self = lhs * rhs
             let mut lhs = std::mem::zeroed();
             std::mem::swap(self, &mut lhs);
-            *self = Prod::mul(lhs, rhs);
+            *self = Prod::prod(lhs, rhs);
         }
     }
 }
@@ -262,14 +220,14 @@ impl ops::Neg for Expr {
     type Output = Expr;
 
     fn neg(self) -> Self::Output {
-        Rational::MINUS_ONE * self
+        Expr::MINUS_ONE * self
     }
 }
 impl ops::Div for Expr {
     type Output = Expr;
 
     fn div(self, rhs: Self) -> Self::Output {
-        Quot::div(self, rhs)
+        Quot::quot(self, rhs)
     }
 }
 impl ops::DivAssign for Expr {
@@ -280,7 +238,7 @@ impl ops::DivAssign for Expr {
             // self = lhs / rhs
             let mut lhs = std::mem::zeroed();
             std::mem::swap(self, &mut lhs);
-            *self = Quot::div(lhs, rhs);
+            *self = Quot::quot(lhs, rhs);
         }
     }
 }
@@ -297,8 +255,8 @@ impl fmt::Display for Expr {
         match self {
             E::Symbol(v) => write!(f, "{v}"),
             E::Rational(r) => write!(f, "{r}"),
-            E::Sum(a) => write!(f, "{a}"),
-            E::Prod(m) => write!(f, "{m}"),
+            E::Sum(a) => write!(f, "({a})"),
+            E::Prod(m) => write!(f, "({m})"),
             E::Pow(p) => write!(f, "{p}"),
 
             E::Undefined => write!(f, "undefined"),

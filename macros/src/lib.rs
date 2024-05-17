@@ -257,6 +257,7 @@ enum Expr {
     Float(f32),
     Symbol(String),
     Binary(OpKind, Box<Expr>, Box<Expr>),
+    Unary(OpKind, Box<Expr>),
     Infinity{sign: i8},
     Undef,
     PlaceHolder(String),
@@ -296,7 +297,7 @@ impl Expr {
             match op.kind {
                 OpKind::Sub => {
                     let operand = Self::parse_operand(s)?;
-                    Ok(Expr::Binary(OpKind::Mul, Expr::Num(-1).into(), operand.into()))
+                    Ok(Expr::Unary(OpKind::Sub, operand.into()))
                 }
                 _ => Err(syn::parse::Error::new(op.span, "expected unary operator"))
             }
@@ -336,17 +337,52 @@ impl Expr {
         Ok(expr)
     }
 
-    fn eval_op(op: OpKind, lhs: TokenStream, rhs: TokenStream) -> TokenStream {
+    fn op(op: OpKind) -> TokenStream {
         match op {
-            OpKind::Add => quote!((#lhs + #rhs)),
-            OpKind::Sub => quote!((#lhs - #rhs)),
-            OpKind::Mul => quote!((#lhs * #rhs)),
-            OpKind::Div => quote!((#lhs / #rhs)),
-            OpKind::Pow => quote!((#lhs.pow(#rhs))),
+            //OpKind::Add => quote!((#lhs + #rhs)),
+            //OpKind::Sub => quote!((#lhs - #rhs)),
+            //OpKind::Mul => quote!((#lhs * #rhs)),
+            //OpKind::Div => quote!((#lhs / #rhs)),
+            //OpKind::Pow => quote!((#lhs.pow(#rhs))),
+            OpKind::Add => quote!(::calcu_rs::prelude::Sum::sum),
+            OpKind::Sub => quote!(::calcu_rs::prelude::Diff::diff),
+            OpKind::Mul => quote!(::calcu_rs::prelude::Prod::prod),
+            OpKind::Div => quote!(::calcu_rs::prelude::Quot::quot),
+            OpKind::Pow => quote!(::calcu_rs::prelude::Pow::pow),
         }
     }
 
-    fn quote(&self) -> TokenStream {
+    fn op_raw(op: OpKind) -> TokenStream {
+        match op {
+            OpKind::Add => quote!(::calcu_rs::prelude::Sum::sum_raw),
+            OpKind::Sub => quote!(::calcu_rs::prelude::Diff::diff_raw),
+            OpKind::Mul => quote!(::calcu_rs::prelude::Prod::prod_raw),
+            OpKind::Div => quote!(::calcu_rs::prelude::Quot::quot_raw),
+            OpKind::Pow => quote!(::calcu_rs::prelude::Pow::pow_raw),
+        }
+    }
+
+    fn eval_binop(op: OpKind, lhs: TokenStream, rhs: TokenStream, keep_structure: bool) -> TokenStream {
+        let op_func = if keep_structure {
+            Self::op_raw(op)
+        } else {
+            Self::op(op)
+        };
+
+        quote!(#op_func(#lhs, #rhs))
+    }
+
+    fn eval_unaryop(op: OpKind, expr: TokenStream) -> TokenStream {
+        let op_func = match op {
+            OpKind::Add => quote!(+),
+            OpKind::Sub => quote!(-),
+            OpKind::Mul | OpKind::Div | OpKind::Pow => panic!("{:?} not allowed as unary operator", op)
+        };
+
+        quote!((#op_func #expr))
+    }
+
+    fn quote(&self, keep_structure: bool) -> TokenStream {
         match self {
             Expr::Num(v) =>
                 quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Rational::from(#v))),
@@ -354,11 +390,15 @@ impl Expr {
                 quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Float::from(#v))),
             Expr::Symbol(s) =>
                 quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Symbol::new(#s))),
-                Expr::Binary(op, l, r) => {
-                    let lhs = l.quote();
-                    let rhs = r.quote();
-                    Self::eval_op(*op, lhs, rhs)
-                }
+            Expr::Unary(op, e) => {
+                let expr = e.quote(keep_structure);
+                Self::eval_unaryop(*op, expr)
+            }
+            Expr::Binary(op, l, r) => {
+                let lhs = l.quote(keep_structure);
+                let rhs = r.quote(keep_structure);
+                Self::eval_binop(*op, lhs, rhs, keep_structure)
+            }
             Expr::Infinity { sign } => {
                 if sign.is_negative() {
                     quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Infinity::neg()))
@@ -379,7 +419,8 @@ impl Expr {
 
 impl syn::parse::Parse for Expr {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        Expr::parse_bin_expr(input, 0 + 1)
+       let e =  Expr::parse_bin_expr(input, 0 + 1);
+        e
     }
 }
 
@@ -414,7 +455,12 @@ impl syn::parse::Parse for Expr {
 
 #[proc_macro]
 pub fn calc(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    syn::parse_macro_input!(input as Expr).quote().into()
+    syn::parse_macro_input!(input as Expr).quote(false).into()
+}
+#[proc_macro]
+pub fn calc_raw(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let e = syn::parse_macro_input!(input as Expr).quote(true);
+    e.into()
 }
 
 #[derive(Debug, Clone)]
@@ -429,8 +475,8 @@ struct RewriteRule {
 impl RewriteRule {
 
     fn quote_lhs_to_rhs(name: &String, lhs: &Expr, rhs: &Expr, cond: &Option<syn::Expr>, dbg: bool) -> TokenStream {
-        let lhs = lhs.quote();
-        let rhs = rhs.quote();
+        let lhs = lhs.quote(true);
+        let rhs = rhs.quote(true);
 
         let mut debug = TokenStream::new();
         if dbg {

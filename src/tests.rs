@@ -175,8 +175,9 @@ mod test_operators {
 
     #[test_case(c!(x*x*2 + 3*x + 4/3), c!(4/3 + (x^2) * 2 + 3*x), "1")]
     fn polynom(p1: Expr, p2: Expr, n: &'static str) {
-        let p1 = p1.simplify();
-        let p2 = p2.simplify();
-        assert_eq!(p1, p2, "{}: [ {} ] != [ {} ]", n, p1, p2);
+        let p = p1.clone();
+        let q = p2.clone();
+        let p = (p - q).simplify();
+        assert_eq!(p, Expr::ZERO, "{}: [ {} ] != [ {} ]", n, p1, p2);
     }
 }

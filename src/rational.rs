@@ -13,22 +13,9 @@ pub struct Rational(pub(crate) mal::Rational);
 
 impl Rational {
 
-    pub const ZERO: Expr = Expr::Rational(Rational::zero());
-    pub const ONE: Expr = Expr::Rational(Rational::one());
-    pub const MINUS_ONE: Expr = Expr::Rational(Rational::minus_one());
-
-    #[inline(always)]
-    pub const fn zero() -> Self {
-        Self(mal::Rational::const_from_signed(0))
-    }
-    #[inline(always)]
-    pub const fn one() -> Self {
-        Self(mal::Rational::const_from_signed(1))
-    }
-    #[inline(always)]
-    pub const fn minus_one() -> Self {
-        Self(mal::Rational::const_from_signed(-1))
-    }
+    pub const ZERO: Self = Rational(mal::Rational::const_from_signed(0));
+    pub const ONE: Self = Rational(mal::Rational::const_from_signed(1));
+    pub const MINUS_ONE: Self = Rational(mal::Rational::const_from_signed(-1));
 
     #[inline(always)]
     pub fn is_zero(&self) -> bool {
@@ -38,7 +25,7 @@ impl Rational {
         }
     }
     pub fn is_one(&self) -> bool {
-        self == &Rational::one()
+        self == &Rational::ONE
     }
     #[inline(always)]
     pub fn is_pos(&self) -> bool {
@@ -81,7 +68,7 @@ impl Rational {
             let mut r = mal::Rational::from_naturals(denom, num);
             // num and denom are unsigned
             if is_neg {
-                r *= Rational::minus_one().0;
+                r *= Rational::MINUS_ONE.0;
             }
             Some(Self(r))
         }
@@ -109,7 +96,7 @@ impl Rational {
         }
 
         if rhs.is_zero() {
-            return (Rational::one(), Rational::one());
+            return (Rational::ONE, Rational::ONE);
         }
 
         // inverse if exponent is negative
@@ -124,7 +111,7 @@ impl Rational {
             let exp = rhs.0.numerator_ref();
             if let Ok(exp) = u64::try_from(exp) {
                 self.0.pow_assign(exp);
-                return (self, Rational::one())
+                return (self, Rational::ZERO)
             } else {
                 return (self, rhs);
             }
@@ -257,7 +244,7 @@ impl From<(i64, i64)> for Rational {
         let mut r = mal::Rational::from_naturals(n, d);
 
         if is_neg {
-            r *= Rational::minus_one().0;
+            r *= Rational::MINUS_ONE.0;
         }
         Self(r)
     }

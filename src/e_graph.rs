@@ -95,6 +95,7 @@ impl egg::Analysis<GraphExpr> for ExprFolding {
     fn merge(&mut self, a: &mut Self::Data, b: Self::Data) -> egg::DidMerge {
         egg::merge_option(a, b, |to, from| {
             debug_assert_eq!(to.0, from.0, "from: {} to: {}", from.1, to.1);
+            //println!("from: {}, to: {}", from.0, to.0);
             egg::DidMerge(false, false)
         })
     }
@@ -183,7 +184,12 @@ impl<F: Fn(&mut EGraph, Id, &egg::Subst) -> bool> RuleCondition for F {}
 fn check_expr_desc(var: &str, check_fn: impl Fn(Item) -> bool) -> impl RuleCondition {
     let var = var.parse().unwrap();
     move |egraph, _, subst| {
-        egraph[subst[var]].data
+        let id = subst.get(var);
+        if id.is_none() {
+            // fallthrough
+            return true;
+        }
+        egraph[*id.unwrap()].data
             .as_ref()
             .map_or_else(
                 || check_fn(Item::Symbol),
@@ -230,33 +236,33 @@ use Item as I;
 
 impl GraphExpr {
     define_rules!(scalar_rules:
-        additive identity:       ?a + 0 -> ?a,
-        commutative add:         ?a + ?b -> ?b + ?a,
-        associative add:         ?a + (?b + ?c) -> (?a + ?b) + ?c,
-        subtraction:             ?a - ?b -> ?a + (-1 * ?b),
-        subtraction cancle:      ?a - ?a -> 0       if cond!(?a not [I::Undef]),
+          additive identity:       ?a + 0 -> ?a,
+          commutative add:         ?a + ?b -> ?b + ?a,
+          associative add:         ?a + (?b + ?c) -> (?a + ?b) + ?c,
+          subtraction:             ?a - ?b -> ?a + (-1 * ?b),
+          subtraction cancle:      ?a - ?a -> 0       if cond!(?a not [I::Undef]),
 
-        multiplication identity: ?a * 1 -> ?a,
-        multiplication absorber: ?a * 0 -> 0        if cond!(?a not [I::Undef]),
-        commutative mul:         ?a * ?b -> ?b * ?a,
-        associative mul:         ?a * (?b * ?c) -> (?a * ?b) * ?c,
-        // turn all divisions into multiplications
-        division:                ?a / ?b -> ?a * ?b^(-1)     if cond!(?b not [I::Zero, I::Undef]),
-        division cancle:         ?a / ?a -> 1                if cond!(?a not [I::Zero, I::Undef]),
+          multiplication identity: ?a * 1 -> ?a,
+          multiplication absorber: ?a * 0 -> 0        if cond!(?a not [I::Undef]),
+          commutative mul:         ?a * ?b -> ?b * ?a,
+          associative mul:         ?a * (?b * ?c) -> (?a * ?b) * ?c,
+          // turn all divisions into multiplications
+          division:                ?a / ?b -> ?a * ?b^(-1)     if cond!(?b not [I::Zero, I::Undef]),
+          division cancle:         ?a / ?a -> 1                if cond!(?a not [I::Zero, I::Undef]),
 
-        multiplication distributivity 1:    ?a * (?b + ?c) <-> ?a * ?b + ?a * ?c,
-        multiplication distributivity 2:    ?n * ?a + ?a -> (?n + 1) * ?a,
-        multiplication distributivity 3:    ?a + ?a -> 2 * ?a,
+          multiplication distributivity 1:    ?a * (?b + ?c) <-> ?a * ?b + ?a * ?c,
+          multiplication distributivity 2:    ?n * ?a + ?a -> (?n + 1) * ?a,
+          multiplication distributivity 3:    ?a + ?a -> 2 * ?a,
 
-        power identity:          ?a^1 -> ?a,
-        power absorber:          ?a^0 -> 1                      if cond!(?a not [I::Zero]),
-        power multiplication 1:  ?a^?b * ?a^?c -> ?a^(?b + ?c),
-        power multiplication 2:  ?a^?b * ?a -> ?a^(?b + 1)        if cond!(?a not [I::Zero]),
-        power multiplication 3:  ?a * ?a -> ?a^2,
+          power identity:          ?a^1 -> ?a,
+          power absorber:          ?a^0 -> 1                        if cond!(?a not [I::Zero]),
+          power multiplication 1:  ?a^?b * ?a^?c -> ?a^(?b + ?c),
+          power multiplication 2:  ?a^?b * ?a -> ?a^(?b + 1)        if cond!(?a not [I::Zero]),
+          power multiplication 3:  ?a * ?a -> ?a^2,
 
-        power distributivity 1:  (?a * ?b)^?c -> ?a^?c * ?b^?c,
-        power distributivity 2:  (?a^?b)^?c -> ?a^(?b * ?c),
-        power distributivity 3:  (?a + ?b)^2 <-> ?a^2 + 2*?a*?b + ?b^2,
+          power distributivity 1:  (?a * ?b)^?c -> ?a^?c * ?b^?c,
+          power distributivity 2:  (?a^?b)^?c -> ?a^(?b * ?c),
+          power distributivity 3:  (?a + ?b)^2 <-> ?a^2 + 2*?a*?b + ?b^2,
     );
 
     #[inline]
@@ -273,6 +279,8 @@ impl GraphExpr {
             .with_time_limit(time_limit)
             .run(rules);
 
+        //runner.egraph.dot().to_png("graph.png").unwrap();
+
         let extractor = egg::Extractor::new(&runner.egraph, cost_fn);
         let (_bc, be) = extractor.find_best(runner.roots[0]);
 
@@ -281,7 +289,6 @@ impl GraphExpr {
         //let expl_graph = ExplanationGraph { explanation: expl, egraph: &runner.egraph };
         //println!("{}", expl_graph);
 
-        //runner.egraph.dot().to_dot("graph.dot").unwrap();
             //.to_dot("graph.dot").unwrap();
 
         Expr::from(be)
@@ -412,7 +419,7 @@ fn fmt_tree_term(term: &egg::TreeTerm<GraphExpr>) -> Explanation {
 fn array_ref_to_array<const N: usize, T: Copy>(arr_ref: &[T]) -> [T; N] {
     let mut arr: [T; N] = unsafe { std::mem::zeroed() };
     assert_eq!(arr_ref.len(), N);
-    arr[..].copy_from_slice(arr_ref);
+    arr.copy_from_slice(arr_ref);
     arr
 }
 
@@ -539,10 +546,10 @@ impl From<&egg::RecExpr<GraphExpr>> for Expr {
                     expr.push(E::Symbol(s.clone()));
                 }
                 GE::Undefined => expr.push(E::Undefined),
-                GE::Add([lhs, rhs]) => binop(Sum::add, lhs, rhs, &mut expr),
-                GE::Sub([lhs, rhs]) => binop(Diff::sub, lhs, rhs, &mut expr),
-                GE::Mul([lhs, rhs]) => binop(Prod::mul, lhs, rhs, &mut expr),
-                GE::Div([lhs, rhs]) => binop(Quot::div, lhs, rhs, &mut expr),
+                GE::Add([lhs, rhs]) => binop(Sum::sum, lhs, rhs, &mut expr),
+                GE::Sub([lhs, rhs]) => binop(Diff::diff, lhs, rhs, &mut expr),
+                GE::Mul([lhs, rhs]) => binop(Prod::prod, lhs, rhs, &mut expr),
+                GE::Div([lhs, rhs]) => binop(Quot::quot, lhs, rhs, &mut expr),
                 GE::Pow([lhs, rhs]) => binop(Pow::pow, lhs, rhs, &mut expr),
             }
         }

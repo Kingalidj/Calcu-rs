@@ -1,8 +1,7 @@
 use crate::expression::Expr;
-use crate::expression::{CalcursType, Construct};
+use crate::expression::CalcursType;
 use crate::pattern::Item;
 use crate::rational::Rational;
-use calcurs_macros::identity;
 use std::fmt;
 use std::fmt::Formatter;
 
@@ -16,19 +15,40 @@ pub type Diff = Sum;
 
 impl Sum {
     #[inline]
-    pub fn add(lhs: impl CalcursType, rhs: impl CalcursType) -> Expr {
+    pub fn sum(lhs: impl CalcursType, rhs: impl CalcursType) -> Expr {
         let lhs = lhs.into();
         let rhs = rhs.into();
-        Self::zero().arg(lhs).arg(rhs).into()
+        match (lhs, rhs) {
+            (Expr::Undefined, _) | (_, Expr::Undefined) => Expr::Undefined,
+            (Expr::ZERO, other) | (other, Expr::ZERO) => other,
+            (lhs, rhs) => {
+                Self::zero().arg(lhs).arg(rhs).into()
+            }
+        }
     }
 
     #[inline]
-    pub fn sub(lhs: impl CalcursType, rhs: impl CalcursType) -> Expr {
+    pub fn diff(lhs: impl CalcursType, rhs: impl CalcursType) -> Expr {
         let lhs = lhs.into();
-        let rhs = Prod::mul(rhs.into(), Rational::MINUS_ONE);
-        Self::add(lhs, rhs)
+        let rhs = Expr::MINUS_ONE * rhs.into();
+        Self::sum(lhs, rhs)
     }
 
+    #[inline]
+    pub fn sum_raw(lhs: impl CalcursType, rhs: impl CalcursType) -> Expr {
+        let mut sum = Self::zero();
+        sum.operands.push(lhs.into());
+        sum.operands.push(rhs.into());
+        sum.into()
+    }
+    #[inline]
+    pub fn diff_raw(lhs: impl CalcursType, rhs: impl CalcursType) -> Expr {
+        let lhs = lhs.into();
+        let rhs = Expr::MINUS_ONE * rhs.into();
+        Self::sum_raw(lhs, rhs)
+    }
+
+    #[inline]
     fn arg(mut self, b: Expr) -> Self {
         use Expr as E;
         match b {
@@ -51,28 +71,6 @@ impl CalcursType for Sum {
     }
 }
 
-impl Construct for Sum {
-    fn simplify(mut self) -> Expr {
-        for op in &mut self.operands {
-            let mut e = Expr::Undefined;
-            std::mem::swap(&mut e, op);
-            *op = e.simplify();
-
-            if let Expr::Undefined = op {
-                return Expr::Undefined;
-            }
-        }
-
-        if self.operands.is_empty() {
-            return Rational::ZERO;
-        } else if self.operands.len() == 1 {
-            return self.operands.pop().unwrap();
-        }
-
-        self.operands.sort();
-        self.into()
-    }
-}
 
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Prod {
@@ -81,16 +79,39 @@ pub struct Prod {
 pub type Quot = Prod;
 
 impl Prod {
-    pub fn mul(lhs: impl CalcursType, rhs: impl CalcursType) -> Expr {
+    #[inline]
+    pub fn prod(lhs: impl CalcursType, rhs: impl CalcursType) -> Expr {
         let lhs = lhs.into();
         let rhs = rhs.into();
-        Self::zero().arg(lhs).arg(rhs).into()
+
+        match (lhs, rhs) {
+            (Expr::Undefined, _) | (_, Expr::Undefined) => Expr::Undefined,
+            (Expr::ZERO, _) | (_, Expr::ZERO) => Expr::ZERO,
+            (Expr::ONE, other) | (other, Expr::ONE) => other,
+            (Expr::Rational(r1), Expr::Rational(r2)) => (r1 * r2).into(),
+            (lhs, rhs) => Self::zero().arg(lhs).arg(rhs).into()
+        }
     }
 
-    pub fn div(lhs: impl CalcursType, rhs: impl CalcursType) -> Expr {
+    #[inline]
+    pub fn quot(lhs: impl CalcursType, rhs: impl CalcursType) -> Expr {
         let lhs = lhs.into();
-        let rhs = Pow::pow(rhs.into(), Rational::MINUS_ONE);
-        Self::mul(lhs, rhs)
+        let rhs = rhs.into().pow(Expr::MINUS_ONE);
+        Self::prod(lhs, rhs)
+    }
+
+    #[inline]
+    pub fn prod_raw(lhs: impl CalcursType, rhs: impl CalcursType) -> Expr {
+        let mut prod = Self::zero();
+        prod.operands.push(lhs.into());
+        prod.operands.push(rhs.into());
+        prod.into()
+    }
+    #[inline]
+    pub fn quot_raw(lhs: impl CalcursType, rhs: impl CalcursType) -> Expr {
+        let lhs = lhs.into();
+        let rhs = rhs.into().pow(Expr::MINUS_ONE);
+        Self::prod_raw(lhs, rhs)
     }
 
     fn arg(mut self, b: Expr) -> Self {
@@ -98,7 +119,6 @@ impl Prod {
             Expr::Prod(mut mul) => self.operands.append(&mut mul.operands),
             _ => self.operands.push(b),
         }
-
         self
     }
 
@@ -115,183 +135,69 @@ impl CalcursType for Prod {
     }
 }
 
-impl Construct for Prod {
-    fn simplify(mut self) -> Expr {
-        for op in &mut self.operands {
-            let mut e = Expr::Undefined;
-            std::mem::swap(&mut e, op);
-            *op = e.simplify();
-
-            if op.desc().is(Item::Zero) {
-                return Rational::ZERO;
-            } else if let Expr::Undefined = op {
-                return Expr::Undefined;
-            }
-        }
-
-        if self.operands.is_empty() {
-            return Rational::ONE;
-        } else if self.operands.len() == 1 {
-            return self.operands.pop().unwrap();
-        }
-
-        self.operands.sort();
-        Expr::Prod(self)
-    }
-}
-
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
 #[repr(C)]
 pub struct Pow {
-    pub(crate) base: Expr,
-    pub(crate) exponent: Expr,
+    pub(crate) operands: [Expr; 2], // [base, exponent]
 }
 
 impl Pow {
     #[inline(always)]
-    pub fn new(b: impl CalcursType, e: impl CalcursType) -> Pow {
-        Self {
-            base: b.into(),
-            exponent: e.into(),
-        }
+    pub fn base(&self) -> &Expr {
+        unsafe { self.operands.get_unchecked(0) }
     }
+
+    #[inline(always)]
+    pub fn exponent(&self) -> &Expr {
+        unsafe { self.operands.get_unchecked(1) }
+    }
+
     #[inline]
     pub fn pow(b: impl CalcursType, e: impl CalcursType) -> Expr {
-        Expr::Pow(Self::new(b, e).into())
-    }
+        let base = b.into();
+        let exp = e.into();
 
-    pub fn operands(&self) -> &[Expr] {
-        let ptr = unsafe {
-            std::slice::from_raw_parts(
-                (self as *const Pow) as *const Expr,
-                std::mem::size_of::<Self>(),
-            )
-        };
+        match (base, exp) {
+            (Expr::Undefined, _) | (_,  Expr::Undefined) => Expr::Undefined,
 
-        assert_eq!(std::mem::size_of::<Self>(), 2 * std::mem::size_of::<Expr>());
-        assert_eq!(ptr[0], self.base);
-        assert_eq!(ptr[1], self.exponent);
-        ptr
-    }
+            (Expr::ZERO,  Expr::ZERO) =>  Expr::Undefined,
+            (Expr::ZERO,  Expr::Rational(exp)) if exp.is_neg() => Expr::Undefined,
+            (Expr::ZERO,  Expr::Rational(exp)) if exp.is_pos() => Expr::ZERO,
 
-    pub fn operands_mut(&mut self) -> &mut [Expr] {
-        let ptr = unsafe {
-            std::slice::from_raw_parts_mut(
-                (self as *mut Pow) as *mut Expr,
-                std::mem::size_of::<Self>(),
-            )
-        };
+            ( Expr::ONE, _) =>  Expr::ONE,
+            (b,  Expr::ONE) => b,
 
-        assert_eq!(std::mem::size_of::<Self>(), 2 * std::mem::size_of::<Expr>());
-        assert_eq!(ptr[0], self.base);
-        assert_eq!(ptr[1], self.exponent);
-        ptr
-    }
-
-    // x^n where x is an integer
-    fn simplify_int_pow(base: Expr, n: i64) -> Expr {
-        use Expr as E;
-
-        if n == 0 {
-            return Rational::ONE;
-        } else if n == 1 {
-            return base;
-        }
-
-        match base {
-            // (r^s)^n = r^(s*n)
-            E::Pow(pow) => {
-                let r = pow.base;
-                let s = pow.exponent;
-                let p = Prod::mul(s, Rational::from(n)).simplify();
-                Pow::pow(r, p).simplify()
+            ( Expr::Rational(b),  Expr::Rational(e)) => {
+                // when the exponent is non-int:
+                // we apply the exponent floor(e1 / e2), so the remaining
+                // exponent is < 1
+                // b^e => b^(e1 / e2) => b^quot * b^rem
+                let float_exp = e.is_int();
+                // pow = b^pow, rem = rem in b^rem
+                let (pow, rem) = b.clone().pow(e);
+                if rem.is_zero() {
+                    pow.into()
+                } else {
+                    let lhs = Expr::from(pow);
+                    let rhs = Pow { operands: [b.into(), rem.into()] }.into();
+                    lhs * rhs
+                }
             }
-            // v^n = (v1 * ... * vm)^n = v1^n * ... * vm^n
-            E::Prod(mut prod) => {
-                prod.operands = prod
-                    .operands
-                    .into_iter()
-                    .map(|e| Self::simplify_int_pow(e, n))
-                    .collect();
-                prod.simplify()
-            }
-            _ => E::Pow(Pow::new(base, Rational::from(n)).into()),
+            (base, exponent) =>  Expr::Pow(
+                Pow { operands: [base, exponent] }.into(),
+            ),
         }
+    }
+
+    #[inline]
+    pub fn pow_raw(base: impl CalcursType, exp: impl CalcursType) -> Expr {
+        Self { operands: [base.into(), exp.into()] }.into()
     }
 }
 
 impl CalcursType for Pow {
     fn desc(&self) -> Item {
         Item::Pow
-    }
-}
-
-impl Construct for Pow {
-    #[inline]
-    fn simplify(mut self) -> Expr {
-        use Item as I;
-        use Expr as E;
-
-        self.base = self.base.simplify();
-        self.exponent = self.exponent.simplify();
-
-        let base_desc = self.base.desc();
-        let exp_desc = self.exponent.desc();
-
-        // special cases
-        identity!((base_desc, exp_desc) {
-            // undef -> undef
-            (I::Undef, _)
-            || (_, I::Undef)
-            // 0^0 -> undef
-            || (I::Zero, I::Zero)
-            // 0^x, x < 0 -> undef
-            || (I::Zero, I::Neg) => {
-                return E::Undefined;
-            },
-            // 0^(x), x > 0 -> 1
-            (I::Zero, I::Pos) => {
-                return Rational::ONE;
-            },
-            // 1^x -> 1
-            (I::One, _) => {
-                return Rational::ONE;
-            },
-            // x^1 -> x
-            (_, I::One) => {
-                return E::Pow(self.into());
-            },
-
-            default => {}
-        });
-
-        match (self.base, self.exponent) {
-            (E::Rational(r1), E::Rational(r2)) => {
-                let r = r1.clone();
-                let (pow, rem) = r1.pow(r2);
-                Prod::mul(pow, Pow::pow(r, rem))
-            }
-            //(E::Float(f1), E::Float(f2)) => E::Float(f1.pow(f2)),
-            //(E::Float(f), E::Rational(r)) => E::Float(f.pow(r.to_float())),
-            //(E::Rational(r), E::Float(f)) => E::Float(r.to_float().pow(f)),
-            // integer power
-            (base, E::Rational(n))
-            if n.is_int() => {
-                if let Some(int_val) = n.try_into_int() {
-                    Self::simplify_int_pow(base, int_val)
-                } else {
-                    Pow { base, exponent: E::Rational(n)}.into()
-                }
-            },
-
-            (base, exp) => E::Pow(
-                Pow {
-                    base,
-                    exponent: exp,
-                }
-                .into(),
-            ),
-        }
     }
 }
 
@@ -331,7 +237,7 @@ impl fmt::Display for Prod {
 
 impl fmt::Display for Pow {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}^{}", self.base, self.exponent)
+        write!(f, "{}^({})", self.base(), self.exponent())
     }
 }
 

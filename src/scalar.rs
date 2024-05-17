@@ -41,11 +41,11 @@ impl Scalar {
                     return Some(S::Undefined)
                 }
                 if r1.is_zero() {
-                    return Some(S::Rational(Rational::zero()))
+                    return Some(S::Rational(Rational::ZERO))
                 }
                 // TODO: return even if pow not fully applied
                 let (pow, rem) = r1.pow(r2);
-                if rem.is_one() {
+                if rem.is_zero() {
                     Some(S::Rational(pow))
                 } else {
                     None
