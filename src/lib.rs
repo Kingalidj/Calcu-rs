@@ -6,6 +6,7 @@ pub mod expression;
 pub mod scalar;
 pub mod operator;
 pub mod e_graph;
+pub mod egraph;
 pub mod pattern;
 pub mod rational;
 

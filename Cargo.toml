@@ -13,6 +13,8 @@ env_logger = "0.9.3"
 ordered-float = "4.2.0"
 num = "0.4.3"
 malachite = "0.4.7"
+smallvec = "1.13.2"
+hashbrown = "0.14.5"
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"
