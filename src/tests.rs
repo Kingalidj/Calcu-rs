@@ -1,7 +1,7 @@
 #[cfg(hidden)]
 mod test_display {
-    use crate::prelude::*;
     use calcu_rs::calc;
+    use calcu_rs::prelude::*;
     use pretty_assertions::assert_eq;
     use test_case::test_case;
 
@@ -27,7 +27,7 @@ mod test_display {
     }
 }
 mod test_rational {
-    use crate::prelude::*;
+    use calcu_rs::prelude::*;
     use pretty_assertions::assert_eq;
 
     macro_rules! r {
@@ -54,8 +54,8 @@ mod test_rational {
 }
 #[cfg(hide)]
 mod test_derivative {
-    use crate::calc;
-    use crate::prelude::*;
+    use calcu_rs::calc;
+    use calcu_rs::prelude::*;
     use pretty_assertions::assert_eq;
     use test_case::test_case;
 
@@ -86,8 +86,8 @@ mod test_derivative {
     }
 }
 mod test_operators {
-    use crate::calc;
-    use crate::prelude::*;
+    use calcu_rs::calc;
+    use calcu_rs::prelude::*;
     use test_case::test_case;
 
     macro_rules! c {

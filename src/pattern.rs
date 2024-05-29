@@ -6,7 +6,7 @@ macro_rules! bit {
     };
 
     ($x:ident) => {
-        crate::pattern::Item::$x.bits()
+        calcu_rs::pattern::Item::$x.bits()
     };
 }
 

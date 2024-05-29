@@ -1,7 +1,8 @@
-use std::{cmp::Ordering, fmt, ops};
+use fmt::Display;
 use ordered_float::Float as OrdFloat;
+use std::{cmp::Ordering, fmt, ops};
 
-use crate::{
+use calcu_rs::{
     expression::{CalcursType, Expr},
     pattern::Item,
     rational::Rational,
@@ -34,14 +35,12 @@ impl Scalar {
         use Scalar as S;
         match (self, exp) {
             (S::Undefined, _) | (_, S::Undefined) => Some(S::Undefined),
-            (S::Rational(r1), S::Rational(r2))
-            => {
-                if r1.is_zero() && r2.is_zero()
-                || r1.is_zero() && r2.is_neg() {
-                    return Some(S::Undefined)
+            (S::Rational(r1), S::Rational(r2)) => {
+                if r1.is_zero() && r2.is_zero() || r1.is_zero() && r2.is_neg() {
+                    return Some(S::Undefined);
                 }
                 if r1.is_zero() {
-                    return Some(S::Rational(Rational::zero()))
+                    return Some(S::Rational(Rational::zero()));
                 }
                 // TODO: return even if pow not fully applied
                 let (pow, rem) = r1.pow(r2);
@@ -50,9 +49,8 @@ impl Scalar {
                 } else {
                     None
                 }
-            },
+            }
         }
-
     }
 }
 
@@ -110,11 +108,10 @@ impl ops::Div for Scalar {
         use Scalar as S;
         match (self, rhs) {
             (S::Undefined, _) | (_, S::Undefined) => S::Undefined,
-            (S::Rational(r1), S::Rational(r2)) =>
-                match r1 / r2 {
-                    None => S::Undefined,
-                    Some(quot) => S::Rational(quot),
-                },
+            (S::Rational(r1), S::Rational(r2)) => match r1 / r2 {
+                None => S::Undefined,
+                Some(quot) => S::Rational(quot),
+            },
         }
     }
 }
@@ -122,7 +119,7 @@ impl ops::Div for Scalar {
 //TODO: turn to rational if integer?
 pub type FloatType = ordered_float::OrderedFloat<f64>;
 #[derive(Debug, Clone, PartialOrd, Ord, Eq, PartialEq, Copy, Hash)]
-pub struct Float(pub(crate)FloatType);
+pub struct Float(pub(crate) FloatType);
 
 impl Float {
     pub fn new<F: Into<f64>>(f: F) -> Self {
@@ -146,7 +143,6 @@ impl Float {
         Float(self.0.powf(rhs.0))
     }
 }
-
 
 //impl CalcursType for Float {
 //    fn desc(&self) -> Item {
@@ -321,13 +317,13 @@ impl<F: Into<f64>> From<F> for Float {
     }
 }
 
-impl fmt::Display for Infinity {
+impl Display for Infinity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}oo", self.sign)
     }
 }
 
-impl fmt::Display for Sign {
+impl Display for Sign {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Sign as S;
         let s = match self {
@@ -338,7 +334,7 @@ impl fmt::Display for Sign {
     }
 }
 
-impl fmt::Display for Scalar {
+impl Display for Scalar {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Scalar as S;
         match self {

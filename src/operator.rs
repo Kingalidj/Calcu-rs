@@ -1,10 +1,10 @@
-use crate::expression::Expr;
-use crate::expression::{CalcursType, Construct};
-use crate::pattern::Item;
-use crate::rational::Rational;
+use calcu_rs::{
+    expression::{CalcursType, Construct, Expr},
+    pattern::Item,
+    rational::Rational,
+};
 use calcurs_macros::identity;
-use std::fmt;
-use std::fmt::Formatter;
+use std::fmt::{self, Display, Formatter};
 
 pub type OperandSet = Vec<Expr>;
 
@@ -229,8 +229,8 @@ impl CalcursType for Pow {
 impl Construct for Pow {
     #[inline]
     fn simplify(mut self) -> Expr {
-        use Item as I;
         use Expr as E;
+        use Item as I;
 
         self.base = self.base.simplify();
         self.exponent = self.exponent.simplify();
@@ -275,14 +275,17 @@ impl Construct for Pow {
             //(E::Float(f), E::Rational(r)) => E::Float(f.pow(r.to_float())),
             //(E::Rational(r), E::Float(f)) => E::Float(r.to_float().pow(f)),
             // integer power
-            (base, E::Rational(n))
-            if n.is_int() => {
+            (base, E::Rational(n)) if n.is_int() => {
                 if let Some(int_val) = n.try_into_int() {
                     Self::simplify_int_pow(base, int_val)
                 } else {
-                    Pow { base, exponent: E::Rational(n)}.into()
+                    Pow {
+                        base,
+                        exponent: E::Rational(n),
+                    }
+                    .into()
                 }
-            },
+            }
 
             (base, exp) => E::Pow(
                 Pow {
@@ -295,7 +298,7 @@ impl Construct for Pow {
     }
 }
 
-impl fmt::Display for Sum {
+impl Display for Sum {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         if self.operands.is_empty() {
             return Ok(());
@@ -312,7 +315,7 @@ impl fmt::Display for Sum {
     }
 }
 
-impl fmt::Display for Prod {
+impl Display for Prod {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         if self.operands.is_empty() {
             return Ok(());
@@ -329,7 +332,7 @@ impl fmt::Display for Prod {
     }
 }
 
-impl fmt::Display for Pow {
+impl Display for Pow {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}^{}", self.base, self.exponent)
     }

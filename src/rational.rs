@@ -1,18 +1,23 @@
-use std::cmp::Ordering;
-use std::{fmt, ops};
-use malachite as mal;
-use malachite::num::arithmetic::traits::{Abs, DivRem, PowAssign, Sign as MalSign};
-use malachite::num::conversion::traits::{IsInteger, RoundingFrom};
-use malachite::rounding_modes::RoundingMode;
-use calcu_rs::expression::{CalcursType, Expr};
-use calcu_rs::pattern::Item;
-use crate::scalar::Float;
+use calcu_rs::{
+    expression::{CalcursType, Expr},
+    pattern::Item,
+    scalar::Float,
+};
+use fmt::{Display, Formatter};
+use malachite::{
+    self as mal,
+    num::{
+        arithmetic::traits::{Abs, DivRem, PowAssign, Sign as MalSign},
+        conversion::traits::{IsInteger, RoundingFrom},
+    },
+    rounding_modes::RoundingMode,
+};
+use std::{cmp::Ordering, fmt, ops};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Rational(pub(crate) mal::Rational);
 
 impl Rational {
-
     pub const ZERO: Expr = Expr::Rational(Rational::zero());
     pub const ONE: Expr = Expr::Rational(Rational::one());
     pub const MINUS_ONE: Expr = Expr::Rational(Rational::minus_one());
@@ -124,7 +129,7 @@ impl Rational {
             let exp = rhs.0.numerator_ref();
             if let Ok(exp) = u64::try_from(exp) {
                 self.0.pow_assign(exp);
-                return (self, Rational::one())
+                return (self, Rational::one());
             } else {
                 return (self, rhs);
             }
@@ -139,7 +144,7 @@ impl Rational {
 
             if let Ok(apply_exp) = u64::try_from(&quot) {
                 self.0.pow_assign(apply_exp);
-                return (self, rem_exp)
+                return (self, rem_exp);
             }
         }
 
@@ -169,7 +174,7 @@ impl CalcursType for Rational {
         flags |= match self.0.sign() {
             Ordering::Less => Item::Neg,
             Ordering::Equal => Item::Zero,
-            Ordering::Greater => Item::Pos
+            Ordering::Greater => Item::Pos,
         };
 
         flags
@@ -263,8 +268,8 @@ impl From<(i64, i64)> for Rational {
     }
 }
 
-impl fmt::Display for Rational {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for Rational {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }

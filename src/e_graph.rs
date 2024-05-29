@@ -1,16 +1,14 @@
-use crate::{
+use calcu_rs::{
     define_rules,
+    expression::PTR,
     expression::{Expr, Symbol},
+    operator::{Diff, Quot},
+    pattern::Item,
     prelude::{Pow, Prod, Rational, Sum},
+    scalar::Scalar,
 };
-
-use crate::scalar::Scalar;
-use crate::pattern::Item;
-use std::fmt;
-use std::fmt::Formatter;
-use std::str::FromStr;
-use calcu_rs::expression::PTR;
-use crate::operator::{Diff, Quot};
+use fmt::Display;
+use std::{fmt, fmt::Formatter, str::FromStr};
 
 pub trait GraphFromExpr: Sized + egg::Language {
     fn from_expr(expr: &Expr, children: &[Id]) -> Result<Self, &'static str>;
@@ -83,11 +81,11 @@ impl egg::Analysis<GraphExpr> for ExprFolding {
             GE::Pow([a, b]) => {
                 let lhs = x(a)?;
                 let rhs = x(b)?;
-                let op_str =  format!("{}^{}", lhs, rhs);
+                let op_str = format!("{}^{}", lhs, rhs);
                 let res = lhs.pow(rhs)?;
                 let expl = format!("{} -> {}", op_str, res);
                 Some((res, expl))
-            },
+            }
             GE::Symbol(_) => return None,
         }
     }
@@ -107,7 +105,6 @@ impl egg::Analysis<GraphExpr> for ExprFolding {
                 (s.clone(), merge_expl)
             }
         };
-
 
         let ge = match res {
             Scalar::Rational(r) => GraphExpr::Rational(r),
@@ -129,18 +126,15 @@ impl egg::CostFunction<GraphExpr> for GraphExprCostFn {
     type Cost = usize;
 
     fn cost<C>(&mut self, enode: &GraphExpr, mut costs: C) -> Self::Cost
-        where C: FnMut(egg::Id) -> Self::Cost
+    where
+        C: FnMut(egg::Id) -> Self::Cost,
     {
         use GraphExpr as GE;
         let op_cost = match enode {
-            GE::Rational(_)
-            | GE::Symbol(_)
-            | GE::Undefined => 1,
-            | GE::Pow(_) => 2,
-            GE::Mul(_)
-            | GE::Div(_) => 4,
-            GE::Add(_)
-            | GE::Sub(_) => 8,
+            GE::Rational(_) | GE::Symbol(_) | GE::Undefined => 1,
+            GE::Pow(_) => 2,
+            GE::Mul(_) | GE::Div(_) => 4,
+            GE::Add(_) | GE::Sub(_) => 8,
         };
         egg::Language::fold(enode, op_cost, |sum, i| sum + costs(i))
     }
@@ -183,12 +177,10 @@ impl<F: Fn(&mut EGraph, Id, &egg::Subst) -> bool> RuleCondition for F {}
 fn check_expr_desc(var: &str, check_fn: impl Fn(Item) -> bool) -> impl RuleCondition {
     let var = var.parse().unwrap();
     move |egraph, _, subst| {
-        egraph[subst[var]].data
+        egraph[subst[var]]
+            .data
             .as_ref()
-            .map_or_else(
-                || check_fn(Item::Symbol),
-                |s| check_fn(s.0.desc())
-            )
+            .map_or_else(|| check_fn(Item::Symbol), |s| check_fn(s.0.desc()))
     }
 }
 
@@ -216,14 +208,12 @@ fn expr_is_not<const N: usize>(var: &str, itms: [Item; N]) -> impl RuleCondition
 }
 
 macro_rules! cond {
-    (? $a: ident is $i:expr) => {
-        {
-            expr_is(concat!("?",stringify!(a)), $i)
-        }
-    };
+    (? $a: ident is $i:expr) => {{
+        expr_is(concat!("?", stringify!(a)), $i)
+    }};
     (? $a: ident not $i:expr) => {
-        expr_is_not(concat!("?",stringify!(a)), $i)
-    }
+        expr_is_not(concat!("?", stringify!(a)), $i)
+    };
 }
 
 use Item as I;
@@ -282,11 +272,9 @@ impl GraphExpr {
         //println!("{}", expl_graph);
 
         //runner.egraph.dot().to_dot("graph.dot").unwrap();
-            //.to_dot("graph.dot").unwrap();
+        //.to_dot("graph.dot").unwrap();
 
         Expr::from(be)
-
-
     }
 }
 
@@ -310,7 +298,7 @@ impl Explanation {
         match &self.typ {
             ExplType::Term(e) => writeln!(f, "term: {}", e),
             ExplType::Fold(s) => writeln!(f, "fold: {}: {}", s, expr),
-            ExplType::BinOpRule {name, lhs, rhs } => {
+            ExplType::BinOpRule { name, lhs, rhs } => {
                 writeln!(f, "{}: {}", name, expr)?;
                 write!(f, "lhs: ")?;
                 lhs.fmt_self(f, egraph)?;
@@ -340,12 +328,11 @@ struct ExplanationGraph<'a> {
     explanation: Explanation,
 }
 
-impl fmt::Display for ExplanationGraph<'_> {
+impl Display for ExplanationGraph<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self.explanation.fmt_self(f, &self.egraph)
     }
 }
-
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 struct Explanation {
@@ -367,14 +354,8 @@ fn fmt_tree_term(term: &egg::TreeTerm<GraphExpr>) -> Explanation {
     use GraphExpr as GE;
     let node = term.node.clone();
     let typ = match node {
-        GE::Rational(_)
-        | GE::Symbol(_)
-        | GE::Undefined => ExplType::Term(node.clone()),
-        GE::Add(_)
-        | GE::Sub(_)
-        | GE::Mul(_)
-        | GE::Div(_)
-        | GE::Pow(_) => {
+        GE::Rational(_) | GE::Symbol(_) | GE::Undefined => ExplType::Term(node.clone()),
+        GE::Add(_) | GE::Sub(_) | GE::Mul(_) | GE::Div(_) | GE::Pow(_) => {
             assert_eq!(term.child_proofs.len(), 2);
             let lhs = fmt_expl_tree(term.child_proofs.get(0).unwrap());
             let rhs = fmt_expl_tree(term.child_proofs.get(1).unwrap());
@@ -505,7 +486,7 @@ impl egg::Language for GraphExpr {
         use GraphExpr as E;
         match self {
             E::Rational(_) | E::Symbol(_) | E::Undefined => &[],
-            E::Add(ids) | E::Mul(ids) | E::Pow(ids) | E::Sub(ids) | E::Div(ids)=> ids,
+            E::Add(ids) | E::Mul(ids) | E::Pow(ids) | E::Sub(ids) | E::Div(ids) => ids,
         }
     }
 
@@ -513,7 +494,7 @@ impl egg::Language for GraphExpr {
         use GraphExpr as E;
         match self {
             E::Rational(_) | E::Symbol(_) | E::Undefined => &mut [],
-            E::Add(ids) | E::Mul(ids) | E::Pow(ids) | E::Sub(ids) | E::Div(ids)=> ids,
+            E::Add(ids) | E::Mul(ids) | E::Pow(ids) | E::Sub(ids) | E::Div(ids) => ids,
         }
     }
 }
@@ -526,7 +507,10 @@ impl From<&egg::RecExpr<GraphExpr>> for Expr {
         let mut expr = Vec::with_capacity(e.as_ref().len());
 
         for (i, n) in e.as_ref().iter().enumerate() {
-            let binop = |op: fn(lhs: Expr, rhs: Expr) -> Expr, lhs: &Id, rhs: &Id, exprs: &mut Vec<Expr>| {
+            let binop = |op: fn(lhs: Expr, rhs: Expr) -> Expr,
+                         lhs: &Id,
+                         rhs: &Id,
+                         exprs: &mut Vec<Expr>| {
                 let lhs = exprs.get(usize::from(*lhs)).unwrap().clone();
                 let rhs = exprs.get(usize::from(*rhs)).unwrap().clone();
                 exprs.insert(i, op(lhs, rhs));
@@ -557,12 +541,12 @@ impl From<egg::RecExpr<GraphExpr>> for Expr {
     }
 }
 
-impl fmt::Display for GraphExpr {
+impl Display for GraphExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use GraphExpr as E;
         match self {
-            E::Symbol(data) => fmt::Display::fmt(data, f),
-            E::Rational(data) => fmt::Display::fmt(data, f),
+            E::Symbol(data) => Display::fmt(data, f),
+            E::Rational(data) => Display::fmt(data, f),
             E::Add(..) => f.write_str("+"),
             E::Sub(..) => f.write_str("-"),
             E::Mul(..) => f.write_str("*"),

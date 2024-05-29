@@ -1,13 +1,9 @@
-use hashbrown::{HashMap, HashSet};
-use std::result;
-use indexmap::IndexMap;
-use calcu_rs::egraph::{EClass, EGraph, ENodeOrVar, Expr};
-use crate::egraph::{Id, PatternAst, Symbol};
+use calcu_rs::egraph::*;
+use std::{fmt::Debug, result};
 
 type Result = result::Result<(), ()>;
 
-type Var = Symbol;
-
+/// explanation: [Efficient E-matching for SMT Solvers] (https://leodemoura.github.io/files/ematching.pdf)
 #[derive(Default)]
 struct Machine {
     reg: Vec<Id>,
@@ -24,28 +20,6 @@ pub struct Program {
     subst: Subst,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct Subst {
-    vec: smallvec::SmallVec<[(Var, Id);3]>
-}
-
-impl Subst {
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            vec: smallvec::SmallVec::with_capacity(capacity)
-        }
-    }
-    pub fn insert(&mut self, var: Var, id: Id) -> Option<Id> {
-        for pair in &mut self.vec {
-            if pair.0 == var {
-                return Some(std::mem::replace(&mut pair.1, id));
-            }
-        }
-        self.vec.push((var, id));
-        None
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Instruction {
     Bind { node: Expr, i: Reg, out: Reg },
@@ -60,27 +34,32 @@ enum ENodeOrReg {
     Reg(Reg),
 }
 
+/// applies a function to all matching nodes (according to [Expr::matches]) in the [EClass]
 #[inline(always)]
 fn for_each_matching_node(
     eclass: &EClass,
     node: &Expr,
     mut f: impl FnMut(&Expr) -> Result,
-) -> Result
-{
+) -> Result {
     if eclass.nodes.len() < 50 {
+        // if < 50 just apply f to all matching nodes
         eclass
             .nodes
             .iter()
             .filter(|n| node.matches(n))
             .try_for_each(f)
     } else {
-        debug_assert!(node.all(|id| id == Id::from(0)));
+        // use binary search
+        debug_assert!(node.check_all(|id| id == Id::from(0)));
+        // check if nodes are sorted
         debug_assert!(eclass.nodes.windows(2).all(|w| w[0] < w[1]));
+
+        // returns index of the found node or the index where node could be inserted
         let mut start = eclass.nodes.binary_search(node).unwrap_or_else(|i| i);
-        //let discrim = node.discriminant();
-        let discrim = std::mem::discriminant(node);
+        let discrim = node.discriminant();
+        // find "starting point" if we have multiple equal nodes
         while start > 0 {
-            if std::mem::discriminant(&eclass.nodes[start - 1]) == discrim {
+            if eclass.nodes[start - 1].discriminant() == discrim {
                 start -= 1;
             } else {
                 break;
@@ -88,8 +67,10 @@ fn for_each_matching_node(
         }
         let mut matching = eclass.nodes[start..]
             .iter()
-            .take_while(|&n| std::mem::discriminant(n) == discrim)
+            .take_while(|&n| n.discriminant() == discrim)
+            // find all nodes with equal discriminant
             .filter(|n| node.matches(n));
+
         debug_assert_eq!(
             matching.clone().count(),
             eclass.nodes.iter().filter(|n| node.matches(n)).count(),
@@ -109,7 +90,6 @@ fn for_each_matching_node(
 }
 
 impl Machine {
-    #[inline(always)]
     fn reg(&self, reg: Reg) -> Id {
         self.reg[reg.0 as usize]
     }
@@ -120,19 +100,27 @@ impl Machine {
         instructions: &[Instruction],
         subst: &Subst,
         yield_fn: &mut impl FnMut(&Self, &Subst) -> Result,
-    ) -> Result
-    {
+    ) -> Result {
         let mut instructions = instructions.iter();
+        // todo: for_each?
         while let Some(instruction) = instructions.next() {
             match instruction {
+                // for each matching node in eclass at register i:
+                //      only keep the first out.0 entries in register
+                //      add all operand ids of the matching node to register
+                //      recurse with the remaining instructions
                 Instruction::Bind { i, out, node } => {
                     let remaining_instructions = instructions.as_slice();
-                    return for_each_matching_node(&egraph[self.reg(*i)], node, |matched| {
+                    let eclass = &egraph[self.reg(*i)];
+                    return for_each_matching_node(eclass, node, |matched| {
                         self.reg.truncate(out.0 as usize);
-                        matched.for_each(|id| self.reg.push(id));
+                        matched.for_each_oprnd(|id| self.reg.push(id));
                         self.run(egraph, remaining_instructions, subst, yield_fn)
                     });
                 }
+
+                // only keep max out.0 entries in register
+                // iter over classes, push their id and recurse with the remaining instructions
                 Instruction::Scan { out } => {
                     let remaining_instructions = instructions.as_slice();
                     for class in egraph.classes() {
@@ -142,29 +130,38 @@ impl Machine {
                     }
                     return Ok(());
                 }
+
                 Instruction::Compare { i, j } => {
-                    if egraph.find(self.reg(*i)) != egraph.find(self.reg(*j)) {
+                    if egraph.eclass_id(self.reg(*i)) != egraph.eclass_id(self.reg(*j)) {
                         return Ok(());
                     }
                 }
+
+                // for each term in terms: find eclass_id of term and push into self.lookup
+                // if not in egraph, return Ok(())
+                // get eclass_id of val at register i, if not equal
+                // to last looked up id return Ok(())
                 Instruction::Lookup { term, i } => {
                     self.lookup.clear();
                     for node in term {
                         match node {
                             ENodeOrReg::ENode(node) => {
-                                let look = |i| self.lookup[usize::from(i)];
-                                match egraph.lookup(node.clone().map_operands(look)) {
+                                //let look = |i| self.lookup[usize::from(i)];
+                                //match egraph.lookup(node.clone().map_operands(look)) {
+                                let n =
+                                    node.clone().map_operands(|id| self.lookup[usize::from(id)]);
+                                match egraph.lookup(n) {
                                     Some(id) => self.lookup.push(id),
                                     None => return Ok(()),
                                 }
                             }
                             ENodeOrReg::Reg(r) => {
-                                self.lookup.push(egraph.find(self.reg(*r)));
+                                self.lookup.push(egraph.eclass_id(self.reg(*r)));
                             }
                         }
                     }
 
-                    let id = egraph.find(self.reg(*i));
+                    let id = egraph.eclass_id(self.reg(*i));
                     if self.lookup.last().copied() != Some(id) {
                         return Ok(());
                     }
@@ -177,9 +174,11 @@ impl Machine {
 }
 
 struct Compiler {
+    // map variable to register
     v2r: IndexMap<Var, Reg>,
     free_vars: Vec<HashSet<Var>>,
     subtree_size: Vec<usize>,
+    // map id and register to expr with that id
     todo_nodes: HashMap<(Id, Reg), Expr>,
     instructions: Vec<Instruction>,
     next_reg: Reg,
@@ -197,6 +196,9 @@ impl Compiler {
         }
     }
 
+    // if id is a Var and there is a register mapped to it, compare them
+    // if id is a Var and there is no register mapped to it, create one to reg
+    // if id is an ENode insert into todo_nodes id and reg
     fn add_todo(&mut self, pattern: &PatternAst, id: Id, reg: Reg) {
         match &pattern[id] {
             ENodeOrVar::Var(v) => {
@@ -212,18 +214,20 @@ impl Compiler {
         }
     }
 
+    // collect all free variables into self.free
     fn load_pattern(&mut self, pattern: &PatternAst) {
-        let len = pattern.nodes.len();
+        let len = pattern.as_ref().len();
         self.free_vars = Vec::with_capacity(len);
         self.subtree_size = Vec::with_capacity(len);
 
-        for node in &pattern.nodes {
+        for node in pattern.as_ref() {
             let mut free = HashSet::default();
             let mut size = 0;
             match node {
                 ENodeOrVar::ENode(n) => {
                     size = 1;
                     for &child in n.operands() {
+                        // add free vars of the children
                         free.extend(&self.free_vars[usize::from(child)]);
                         size += self.subtree_size[usize::from(child)];
                     }
@@ -237,6 +241,7 @@ impl Compiler {
         }
     }
 
+    // returns the next node in todo_nodes according to some rules
     fn next(&mut self) -> Option<((Id, Reg), Expr)> {
         // we take the max todo according to this key
         // - prefer grounded
@@ -244,12 +249,14 @@ impl Compiler {
         // - prefer smaller term
         let key = |(id, _): &&(Id, Reg)| {
             let i = usize::from(*id);
+            // get all free variables at i
             let n_bound = self.free_vars[i]
                 .iter()
                 .filter(|v| self.v2r.contains_key(*v))
                 .count();
             let n_free = self.free_vars[i].len() - n_bound;
             let size = self.subtree_size[i] as isize;
+            // get node from todo_nodes with maximum:
             (n_free == 0, n_free, -size)
         };
 
@@ -262,6 +269,7 @@ impl Compiler {
 
     /// check to see if this e-node corresponds to a term that is grounded by
     /// the variables bound at this point
+    // check if enode with id has only variables with a mapping to a register
     fn is_ground_now(&self, id: Id) -> bool {
         self.free_vars[usize::from(id)]
             .iter()
@@ -270,7 +278,7 @@ impl Compiler {
 
     fn compile(&mut self, patternbinder: Option<Var>, pattern: &PatternAst) {
         self.load_pattern(pattern);
-        let last_i = pattern.nodes.len() - 1;
+        let last_i = pattern.as_ref().len() - 1;
 
         let mut next_out = self.next_reg;
 
@@ -307,7 +315,7 @@ impl Compiler {
                 self.instructions.push(Instruction::Lookup {
                     i: reg,
                     term: extracted
-                        .nodes
+                        .as_ref()
                         .iter()
                         .map(|n| match n {
                             ENodeOrVar::ENode(n) => ENodeOrReg::ENode(n.clone()),
@@ -352,7 +360,7 @@ impl Program {
         let mut compiler = Compiler::new();
         compiler.compile(None, pattern);
         let program = compiler.extract();
-        //log::debug!("Compiled {:?} to {:?}", pattern.as_ref(), program);
+        log::debug!("Compiled {:?} to {:?}", pattern.as_ref(), program);
         program
     }
 
@@ -364,13 +372,7 @@ impl Program {
         compiler.extract()
     }
 
-    pub fn run_with_limit(
-        &self,
-        egraph: &EGraph,
-        eclass: Id,
-        mut limit: usize,
-    ) -> Vec<Subst>
-    {
+    pub fn run_with_limit(&self, egraph: &EGraph, eclass: Id, mut limit: usize) -> Vec<Subst> {
         assert!(egraph.clean, "Tried to search a dirty e-graph!");
 
         if limit == 0 {
@@ -413,7 +415,7 @@ impl Program {
             )
             .unwrap_or_default();
 
-        //log::trace!("Ran program, found {:?}", matches);
+        log::trace!("Ran program, found {:?}", matches);
         matches
     }
 }

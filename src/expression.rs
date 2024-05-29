@@ -1,14 +1,18 @@
-use crate::rational::Rational;
-
+use fmt::{Debug, Display, Formatter};
 use std::{fmt, ops};
-use std::time::Duration;
 
-//use crate::scalar::{Float, Infinity};
-use crate::{e_graph, operator::{Diff, Pow, Prod, Quot, Sum}, pattern::Item};
-use crate::e_graph::GraphExpr;
+//use calcu_rs::scalar::{Float, Infinity};
+use calcu_rs::{
+    e_graph,
+    e_graph::GraphExpr,
+    operator::{Diff, Pow, Prod, Quot, Sum},
+    pattern::Item,
+    rational::Rational,
+    util::*,
+};
 
 /// implemented by every symbolic math type
-pub trait CalcursType: Clone + fmt::Debug + Into<Expr> {
+pub trait CalcursType: Clone + Debug + Into<Expr> {
     fn desc(&self) -> Item;
 }
 
@@ -92,10 +96,7 @@ impl Expr {
     pub fn operands(&self) -> Vec<&Expr> {
         use Expr as E;
         match self {
-            E::Rational(_)
-            | E::Symbol(_)
-            | E::Undefined
-            | E::PlaceHolder(_) => vec![],
+            E::Rational(_) | E::Symbol(_) | E::Undefined | E::PlaceHolder(_) => vec![],
             E::Sum(sum) => sum.operands.iter().collect(),
             E::Prod(prod) => prod.operands.iter().collect(),
             E::Pow(pow) => vec![&pow.base, &pow.exponent],
@@ -105,10 +106,7 @@ impl Expr {
     pub fn operands_mut(&mut self) -> &mut [Expr] {
         use Expr as E;
         match self {
-            E::Rational(_)
-            | E::Symbol(_)
-            | E::Undefined
-            | E::PlaceHolder(_) => &mut [],
+            E::Rational(_) | E::Symbol(_) | E::Undefined | E::PlaceHolder(_) => &mut [],
             E::Sum(sum) => sum.operands.as_mut_slice(),
             E::Prod(prod) => prod.operands.as_mut_slice(),
             E::Pow(pow) => pow.operands_mut(),
@@ -162,7 +160,6 @@ impl Construct for Expr {
         );
 
         self = simplified;
-
 
         match self {
             E::Symbol(_) | E::Rational(_) | E::Undefined => self,
@@ -291,8 +288,8 @@ impl<T: Into<String>> From<T> for Symbol {
     }
 }
 
-impl fmt::Display for Expr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for Expr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         use Expr as E;
         match self {
             E::Symbol(v) => write!(f, "{v}"),
@@ -307,18 +304,18 @@ impl fmt::Display for Expr {
     }
 }
 
-impl fmt::Display for Symbol {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for Symbol {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name)
     }
 }
-impl fmt::Debug for Symbol {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Debug for Symbol {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name)
     }
 }
-impl fmt::Debug for Expr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Debug for Expr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         use Expr as E;
         match self {
             E::Symbol(v) => write!(f, "{:?}", v),
