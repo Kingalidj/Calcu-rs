@@ -1,6 +1,5 @@
 use std::{
-    fmt,
-    fmt::{Debug, Display, Formatter},
+    fmt::{self, Debug, Display, Formatter},
     iter::FromIterator,
 };
 
@@ -8,7 +7,7 @@ use std::{
 ///
 /// The internal symbol cache leaks the strings, which should be
 /// fine if you only put in things like variable names and identifiers.
-pub use symbol_table::GlobalSymbol as Symbol;
+pub use symbol_table::GlobalSymbol as GlobSymbol;
 
 pub(crate) use hashmap::*;
 pub(crate) type BuildHasher = fxhash::FxBuildHasher;
@@ -138,14 +137,14 @@ where
 mod tests {
     use calcu_rs::egraph::*;
 
-    fn ids(us: impl IntoIterator<Item = usize>) -> Vec<Id> {
-        us.into_iter().map(|u| u.into()).collect()
+    fn ids(us: impl IntoIterator<Item = usize>) -> Vec<ID> {
+        us.into_iter().map(|u| ID::new(u)).collect()
     }
 
     #[test]
     fn union_find() {
         let n = 10;
-        let id = Id::from;
+        let id = ID::new;
 
         let mut uf = EClassUnion::default();
         for _ in 0..n {

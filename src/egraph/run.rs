@@ -1,11 +1,12 @@
 use std::{
     cmp::Ordering,
-    fmt::{Debug, Display, Formatter},
+    fmt::{self, Debug, Display, Formatter},
 };
 
 use log::*;
 
-use calcu_rs::egraph::*;
+use crate::egraph::*;
+use language::ExprAnalysis;
 
 /** Faciliates running rewrites over an [`EGraph`].
 
@@ -82,7 +83,7 @@ pub struct Runner<IterData = ()> {
     pub iterations: Vec<Iteration<IterData>>,
     /// The roots of expressions added by the
     /// [`with_expr`](Runner::with_expr()) method, in insertion order.
-    pub roots: Vec<Id>,
+    pub roots: Vec<ID>,
     /// Why the `Runner` stopped. This will be `None` if it hasn't
     /// stopped yet.
     pub stop_reason: Option<StopReason>,
@@ -210,7 +211,7 @@ pub struct Iteration<IterData> {
     pub egraph_classes: usize,
     /// A map from rule name to number of times it was _newly_ applied
     /// in this iteration.
-    pub applied: IndexMap<Symbol, usize>,
+    pub applied: IndexMap<GlobSymbol, usize>,
     /// Seconds spent running hooks.
     pub hook_time: f64,
     /// Seconds spent searching in this iteration.
@@ -296,7 +297,7 @@ where
     /// The eclass id of this addition will be recorded in the
     /// [`roots`](Runner::roots) field, ordered by
     /// insertion order.
-    pub fn with_expr(mut self, expr: &RecExpr<Expr>) -> Self {
+    pub fn with_expr(mut self, expr: &RecExpr<Node>) -> Self {
         let id = self.egraph.add_expr(expr);
         self.roots.push(id);
         self
@@ -366,14 +367,14 @@ where
     /// Calls [`EGraph::explain_equivalence`](EGraph::explain_equivalence()).
     pub fn explain_equivalence(
         &mut self,
-        left: &RecExpr<Expr>,
-        right: &RecExpr<Expr>,
+        left: &RecExpr<Node>,
+        right: &RecExpr<Node>,
     ) -> Explanation {
         self.egraph.explain_equivalence(left, right)
     }
 
     /// Calls [`EGraph::explain_existance`](EGraph::explain_existance()).
-    pub fn explain_existance(&mut self, expr: &RecExpr<Expr>) -> Explanation {
+    pub fn explain_existance(&mut self, expr: &RecExpr<Node>) -> Explanation {
         self.egraph.explain_existance(expr)
     }
 
@@ -389,7 +390,7 @@ where
     /// Get an explanation for why an expression matches a pattern.
     pub fn explain_matches(
         &mut self,
-        left: &RecExpr<Expr>,
+        left: &RecExpr<Node>,
         right: &PatternAst,
         subst: &Subst,
     ) -> Explanation {
@@ -647,7 +648,7 @@ impl RewriteScheduler for SimpleScheduler {}
 pub struct BackoffScheduler {
     default_match_limit: usize,
     default_ban_length: usize,
-    stats: IndexMap<Symbol, RuleStats>,
+    stats: IndexMap<GlobSymbol, RuleStats>,
 }
 
 #[derive(Debug)]
@@ -674,7 +675,7 @@ impl BackoffScheduler {
         self
     }
 
-    fn rule_stats(&mut self, name: Symbol) -> &mut RuleStats {
+    fn rule_stats(&mut self, name: GlobSymbol) -> &mut RuleStats {
         if self.stats.contains_key(&name) {
             &mut self.stats[&name]
         } else {
@@ -689,19 +690,19 @@ impl BackoffScheduler {
     }
 
     /// Never ban a particular rule.
-    pub fn do_not_ban(mut self, name: impl Into<Symbol>) -> Self {
+    pub fn do_not_ban(mut self, name: impl Into<GlobSymbol>) -> Self {
         self.rule_stats(name.into()).match_limit = usize::MAX;
         self
     }
 
     /// Set the initial match limit for a rule.
-    pub fn rule_match_limit(mut self, name: impl Into<Symbol>, limit: usize) -> Self {
+    pub fn rule_match_limit(mut self, name: impl Into<GlobSymbol>, limit: usize) -> Self {
         self.rule_stats(name.into()).match_limit = limit;
         self
     }
 
     /// Set the initial ban length for a rule.
-    pub fn rule_ban_length(mut self, name: impl Into<Symbol>, length: usize) -> Self {
+    pub fn rule_ban_length(mut self, name: impl Into<GlobSymbol>, length: usize) -> Self {
         self.rule_stats(name.into()).ban_length = length;
         self
     }
@@ -827,7 +828,7 @@ impl IterationData for () {
 #[derive(Debug)]
 pub struct Extractor<'a, CF: CostFunction> {
     cost_function: CF,
-    costs: HashMap<Id, (CF::Cost, Expr)>,
+    costs: HashMap<ID, (CF::Cost, Node)>,
     egraph: &'a EGraph,
 }
 
@@ -854,23 +855,23 @@ pub trait CostFunction {
     /// For this to work properly, your cost function should be
     /// _monotonic_, i.e. `cost` should return a `Cost` greater than
     /// any of the child costs of the given enode.
-    fn cost<C>(&mut self, enode: &Expr, costs: C) -> Self::Cost
+    fn cost<C>(&mut self, enode: &Node, costs: C) -> Self::Cost
     where
-        C: FnMut(Id) -> Self::Cost;
+        C: FnMut(ID) -> Self::Cost;
 
     /// Calculates the total cost of a [`RecExpr`].
     ///
     /// As provided, this just recursively calls `cost` all the way
     /// down the [`RecExpr`].
     ///
-    fn cost_rec(&mut self, expr: &RecExpr<Expr>) -> Self::Cost {
+    fn cost_rec(&mut self, expr: &RecExpr<Node>) -> Self::Cost {
         let nodes = expr.as_ref();
-        let mut costs = hashmap_with_capacity::<Id, Self::Cost>(nodes.len());
+        let mut costs = hashmap_with_capacity::<ID, Self::Cost>(nodes.len());
         for (i, node) in nodes.iter().enumerate() {
             let cost = self.cost(node, |i| costs[&i].clone());
-            costs.insert(Id::from(i), cost);
+            costs.insert(ID::new(i), cost);
         }
-        let last_id = Id::from(expr.as_ref().len() - 1);
+        let last_id = ID::new(expr.as_ref().len() - 1);
         costs[&last_id].clone()
     }
 }
@@ -880,9 +881,9 @@ pub trait CostFunction {
 pub struct AstSize;
 impl CostFunction for AstSize {
     type Cost = usize;
-    fn cost<C>(&mut self, enode: &Expr, mut costs: C) -> Self::Cost
+    fn cost<C>(&mut self, enode: &Node, mut costs: C) -> Self::Cost
     where
-        C: FnMut(Id) -> Self::Cost,
+        C: FnMut(ID) -> Self::Cost,
     {
         enode.fold(1, |sum, id| sum.saturating_add(costs(id)))
     }
@@ -893,9 +894,9 @@ impl CostFunction for AstSize {
 pub struct AstDepth;
 impl CostFunction for AstDepth {
     type Cost = usize;
-    fn cost<C>(&mut self, enode: &Expr, mut costs: C) -> Self::Cost
+    fn cost<C>(&mut self, enode: &Node, mut costs: C) -> Self::Cost
     where
-        C: FnMut(Id) -> Self::Cost,
+        C: FnMut(ID) -> Self::Cost,
     {
         1 + enode.fold(0, |max, id| max.max(costs(id)))
     }
@@ -935,24 +936,24 @@ where
 
     /// Find the cheapest (lowest cost) represented `RecExpr` in the
     /// given eclass.
-    pub fn find_best(&self, eclass: Id) -> (CF::Cost, RecExpr<Expr>) {
+    pub fn find_best(&self, eclass: ID) -> (CF::Cost, RecExpr<Node>) {
         let (cost, root) = self.costs[&self.egraph.eclass_id(eclass)].clone();
         let expr = root.build_recexpr(|id| self.find_best_node(id).clone());
         (cost, expr)
     }
 
     /// Find the cheapest e-node in the given e-class.
-    pub fn find_best_node(&self, eclass: Id) -> &Expr {
+    pub fn find_best_node(&self, eclass: ID) -> &Node {
         &self.costs[&self.egraph.eclass_id(eclass)].1
     }
 
     /// Find the cost of the term that would be extracted from this e-class.
-    pub fn find_best_cost(&self, eclass: Id) -> CF::Cost {
+    pub fn find_best_cost(&self, eclass: ID) -> CF::Cost {
         let (cost, _) = &self.costs[&self.egraph.eclass_id(eclass)];
         cost.clone()
     }
 
-    fn node_total_cost(&mut self, node: &Expr) -> Option<CF::Cost> {
+    fn node_total_cost(&mut self, node: &Node) -> Option<CF::Cost> {
         let eg = &self.egraph;
         let has_cost = |id| self.costs.contains_key(&eg.eclass_id(id));
         if node.check_all(has_cost) {
@@ -996,7 +997,7 @@ where
         }
     }
 
-    fn make_pass(&mut self, eclass: &EClass) -> Option<(CF::Cost, Expr)> {
+    fn make_pass(&mut self, eclass: &EClass) -> Option<(CF::Cost, Node)> {
         let (cost, node) = eclass
             .iter()
             .map(|n| (self.node_total_cost(n), n))

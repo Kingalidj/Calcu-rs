@@ -1,332 +1,175 @@
-use fmt::{Debug, Display, Formatter};
-use std::{fmt, ops};
+use crate::*;
+use std::fmt::{self, Debug, Display, Formatter};
 
-//use calcu_rs::scalar::{Float, Infinity};
-use calcu_rs::{
-    e_graph,
-    e_graph::GraphExpr,
-    operator::{Diff, Pow, Prod, Quot, Sum},
-    pattern::Item,
-    rational::Rational,
-    util::*,
-};
+#[derive(Clone, Copy, Ord, PartialOrd, Eq, PartialEq, Hash)]
+pub struct ID(pub(crate) u32);
 
-/// implemented by every symbolic math type
-pub trait CalcursType: Clone + Debug + Into<Expr> {
-    fn desc(&self) -> Item;
+impl ID {
+    #[inline(always)]
+    pub(crate) fn indx(self) -> usize {
+        self.0 as usize
+    }
+
+    /// because rust has no private implementations of public types
+    #[inline(always)]
+    pub(crate) fn new(val: usize) -> Self {
+        ID(val as u32)
+    }
 }
 
-/// contains one or multiple expressions of type [Expr]
-pub trait Construct: CalcursType {
-    //This operator returns false when [other] is identical
-    // to some complete subexpression of [self] and otherwise returns true
-    //fn free_of(&self, other: &Expr) -> bool;
-    //fn contains(&self, other: &Expr) -> bool {
-    //    !self.free_of(other)
-    //}
-
-    // Checks if expression is a general polynomial expression (GPE) in [vars]
-    // note that: \
-    // every sub-expresion must also be a GPE in [vars] \
-    // 0.is_polynomial(...) -> true \
-    // (y^2 + y).is_polynomial(x) -> true
-    //fn is_polynomial_in(&self, vars: &[Expr]) -> bool {
-    //    for v in self.operands() {
-    //        if !(v.is_polynomial_in(vars)) {
-    //            return false;
-    //        }
-    //    }
-    //    true
-    //}
-
-    // returns all generalized variables in the expression (e.g x, but also sin(x))
-    // normally you should call [variables]
-    //fn all_variables(&self) -> Vec<Expr>;
-
-    // returns all unique generalized variables in the expression (e.g x, but also sin(x))
-    //fn variables(&self) -> Vec<Expr> {
-    //    let vars = self.variables();
-    //    let unique_vars: HashSet<Expr> = vars.into_iter().collect();
-    //    unique_vars.into_iter().collect()
-    //}
-
-    fn simplify(self) -> Expr;
-}
-
-pub type PTR<T> = Box<T>;
-
-#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Expr {
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum Node {
     Rational(Rational),
-    Symbol(Symbol),
+    // todo: symboltable
+    Symbol(String),
 
-    Sum(Sum),
-    Prod(Prod),
-    Pow(PTR<Pow>),
-
-    /// only used if the result is provenly undefined, e.g 0 / 0
-    ///
-    /// not the same as [f64::NAN]
-    Undefined,
-
-    PlaceHolder(&'static str),
+    Add([ID; 2]),
+    Mul([ID; 2]),
+    Pow([ID; 2]),
 }
 
-macro_rules! impl_from_for_expr {
-    ($typ:ident) => {
-        impl From<$typ> for Expr {
-            #[inline(always)]
-            fn from(value: $typ) -> Expr {
-                Expr::$typ(value.into())
-            }
+impl Node {
+    pub const ZERO: Self = Node::Rational(Rational::ZERO);
+    pub const ONE: Self = Node::Rational(Rational::ONE);
+    pub const MINUS_ONE: Self = Node::Rational(Rational::MINUS_ONE);
+
+    pub(crate) fn matches(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Node::Rational(r1), Node::Rational(r2)) => r1 == r2,
+            (Node::Symbol(s1), Node::Symbol(s2)) => s1 == s2,
+            _ => false,
         }
-    };
-}
-
-impl_from_for_expr!(Rational);
-impl_from_for_expr!(Sum);
-impl_from_for_expr!(Prod);
-impl_from_for_expr!(Pow);
-
-impl Expr {
-    pub fn pow(self, other: impl CalcursType) -> Expr {
-        Pow::pow(self, other)
     }
 
-    pub fn operands(&self) -> Vec<&Expr> {
-        use Expr as E;
+    pub(crate) const fn oprnd_ids(&self) -> &[ID] {
         match self {
-            E::Rational(_) | E::Symbol(_) | E::Undefined | E::PlaceHolder(_) => vec![],
-            E::Sum(sum) => sum.operands.iter().collect(),
-            E::Prod(prod) => prod.operands.iter().collect(),
-            E::Pow(pow) => vec![&pow.base, &pow.exponent],
+            Node::Rational(_) | Node::Symbol(_) => &[],
+            Node::Add(ids) | Node::Mul(ids) | Node::Pow(ids) => ids,
         }
     }
-
-    pub fn operands_mut(&mut self) -> &mut [Expr] {
-        use Expr as E;
+    pub(crate) fn oprnd_ids_mut(&mut self) -> &mut [ID] {
         match self {
-            E::Rational(_) | E::Symbol(_) | E::Undefined | E::PlaceHolder(_) => &mut [],
-            E::Sum(sum) => sum.operands.as_mut_slice(),
-            E::Prod(prod) => prod.operands.as_mut_slice(),
-            E::Pow(pow) => pow.operands_mut(),
+            Node::Rational(_) | Node::Symbol(_) => &mut [],
+            Node::Add(ids) | Node::Mul(ids) | Node::Pow(ids) => ids,
         }
     }
-}
 
-// basic checks, e.g if Float, then not int
-#[inline]
-fn debug_desc_check(i: Item) {
-    use Item as I;
-    if i.is(I::Zero) {
-        debug_assert!(i.is_not(I::Pos));
-        debug_assert!(i.is_not(I::Neg));
-    } else if i.is(I::Scalar) {
-        debug_assert!(i.is(I::Pos) ^ i.is(I::Neg));
-    }
-
-    if i.is(I::Float) {
-        debug_assert!(i.is_not(I::Integer))
+    pub const fn is_atom(&self) -> bool {
+        self.oprnd_ids().is_empty()
     }
 }
 
-impl CalcursType for Expr {
-    fn desc(&self) -> Item {
-        use Expr as E;
-        let d = match self {
-            E::Symbol(s) => s.desc(),
-            E::Rational(r) => r.desc(),
-            E::Sum(a) => a.desc(),
-            E::Prod(m) => m.desc(),
-            E::Pow(p) => p.desc(),
-            E::Undefined => Item::Undef,
-            E::PlaceHolder(_) => panic!(),
-        };
-        debug_desc_check(d);
-        d
-    }
+#[derive(Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExprGraph {
+    pub(crate) nodes: Vec<Node>,
 }
 
-impl Construct for Expr {
-    #[inline]
-    fn simplify(mut self) -> Expr {
-        use Expr as E;
+impl ExprGraph {
+    pub fn compact(mut self) -> Self {
+        let mut ids = hashmap_with_capacity::<ID, ID>(self.nodes.len());
+        let mut set = IndexSet::default();
+        for (i, mut node) in self.nodes.drain(..).enumerate() {
+            node.oprnd_ids_mut().iter_mut().for_each(|id| *id = ids[id]);
+            let new_id = set.insert_full(node).0;
+            ids.insert(ID::new(i), ID::new(new_id));
+        }
+        self.nodes.extend(set);
+        self
+    }
 
-        let simplified = GraphExpr::analyse(
-            &self,
-            Duration::from_millis(100),
-            &GraphExpr::scalar_rules(),
-            e_graph::GraphExprCostFn,
+    pub fn add_raw(&mut self, node: Node) -> ID {
+        debug_assert!(
+            node.oprnd_ids().iter().all(|id| id.indx() < self.nodes.len()),
+            "node {:?} has children not in this expr: {:?}",
+            node,
+            self
         );
+        self.nodes.push(node.clone());
+        ID::new(self.nodes.len() - 1)
+    }
 
-        self = simplified;
+    pub fn add(&mut self, node: Node) -> Expression {
+        let id = self.add_raw(node.clone());
+        Expression { node, id }
+    }
+}
 
+impl std::ops::Index<ID> for ExprGraph {
+    type Output = Node;
+
+    fn index(&self, index: ID) -> &Self::Output {
+        self.nodes.get(index.indx()).unwrap()
+    }
+}
+impl std::ops::IndexMut<ID> for ExprGraph {
+    fn index_mut(&mut self, index: ID) -> &mut Self::Output {
+        self.nodes.get_mut(index.indx()).unwrap()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Expression {
+    pub node: Node, 
+    pub id: ID,
+}
+
+impl Debug for ID {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+impl std::fmt::Display for ID {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl Display for Node {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            E::Symbol(_) | E::Rational(_) | E::Undefined => self,
-
-            E::Sum(sum) => sum.simplify(),
-            E::Prod(prod) => prod.simplify(),
-            E::Pow(pow) => pow.simplify(),
-            E::PlaceHolder(_) => panic!(),
+            Node::Rational(n) => write!(f, "{n}"),
+            Node::Symbol(s) => write!(f, "{s}"),
+            Node::Add(_) => write!(f, "+"),
+            Node::Mul(_) => write!(f, "*"),
+            Node::Pow(_) => write!(f, "^"),
         }
     }
 }
 
-#[derive(Clone, PartialEq, PartialOrd, Ord, Eq, Hash)]
-pub struct Symbol {
-    pub name: String,
-}
-impl Symbol {
-    pub fn new<I: Into<String>>(name: I) -> Self {
-        Self { name: name.into() }
-    }
-}
+fn dbg_fmt_graph(graph: &ExprGraph, n: &Node, f: &mut Formatter<'_>) -> fmt::Result {
+    match n {
+        Node::Rational(r) => write!(f, "{}", r),
+        Node::Symbol(s) => write!(f, "{}", s),
+        Node::Add(_) => write!(f, "Add"),
+        Node::Mul(_) => write!(f, "Mul"),
+        Node::Pow(_) => write!(f, "Pow"),
+    }?;
 
-impl CalcursType for Symbol {
-    fn desc(&self) -> Item {
-        Item::Symbol
-    }
-}
-impl From<Symbol> for Expr {
-    #[inline(always)]
-    fn from(value: Symbol) -> Expr {
-        Expr::Symbol(value)
-    }
-}
-impl CalcursType for &Symbol {
-    fn desc(&self) -> Item {
-        Item::Symbol
-    }
-}
-impl From<&Symbol> for Expr {
-    #[inline(always)]
-    fn from(_value: &Symbol) -> Expr {
-        panic!("only used for derivative")
-    }
-}
-
-impl ops::Add for Expr {
-    type Output = Expr;
-    fn add(self, rhs: Self) -> Self::Output {
-        Sum::add(self, rhs)
-    }
-}
-impl ops::AddAssign for Expr {
-    fn add_assign(&mut self, rhs: Self) {
-        unsafe {
-            // lhs = { 0 }
-            // lhs = self
-            // self = lhs + rhs
-            let mut lhs: Expr = std::mem::zeroed();
-            std::mem::swap(self, &mut lhs);
-            *self = Sum::add(lhs, rhs);
+    if !n.is_atom() {
+        write!(f, "[")?;
+        let ids = n.oprnd_ids();
+        for i in 0..ids.len()-1 {
+            let id = ids[i];
+            dbg_fmt_graph(graph, &graph[id], f)?;
+            write!(f, ", ")?;
         }
+        let last_id = ids[ids.len() - 1];
+        dbg_fmt_graph(graph, &graph[last_id], f)?;
+        write!(f, "]")?;
     }
-}
-impl ops::Sub for Expr {
-    type Output = Expr;
 
-    fn sub(self, rhs: Self) -> Self::Output {
-        Diff::sub(self, rhs)
-    }
-}
-impl ops::SubAssign for Expr {
-    fn sub_assign(&mut self, rhs: Self) {
-        *self = Diff::sub(self.clone(), rhs);
-    }
-}
-impl ops::Mul for Expr {
-    type Output = Expr;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        Prod::mul(self, rhs)
-    }
-}
-impl ops::MulAssign for Expr {
-    fn mul_assign(&mut self, rhs: Self) {
-        // self *= rhs => self = self * rhs
-        unsafe {
-            // lhs = { 0 }
-            // lhs = self
-            // self = lhs * rhs
-            let mut lhs = std::mem::zeroed();
-            std::mem::swap(self, &mut lhs);
-            *self = Prod::mul(lhs, rhs);
-        }
-    }
-}
-impl ops::Neg for Expr {
-    type Output = Expr;
-
-    fn neg(self) -> Self::Output {
-        Rational::MINUS_ONE * self
-    }
-}
-impl ops::Div for Expr {
-    type Output = Expr;
-
-    fn div(self, rhs: Self) -> Self::Output {
-        Quot::div(self, rhs)
-    }
-}
-impl ops::DivAssign for Expr {
-    fn div_assign(&mut self, rhs: Self) {
-        unsafe {
-            // lhs = { 0 }
-            // lhs = self
-            // self = lhs / rhs
-            let mut lhs = std::mem::zeroed();
-            std::mem::swap(self, &mut lhs);
-            *self = Quot::div(lhs, rhs);
-        }
-    }
+    Ok(())
 }
 
-impl<T: Into<String>> From<T> for Symbol {
-    fn from(value: T) -> Self {
-        Symbol { name: value.into() }
-    }
-}
-
-impl Display for Expr {
+impl Debug for ExprGraph {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        use Expr as E;
-        match self {
-            E::Symbol(v) => write!(f, "{v}"),
-            E::Rational(r) => write!(f, "{r}"),
-            E::Sum(a) => write!(f, "({a})"),
-            E::Prod(m) => write!(f, "({m})"),
-            E::Pow(p) => write!(f, "{p}"),
-
-            E::Undefined => write!(f, "undefined"),
-            E::PlaceHolder(ph) => write!(f, "{ph}"),
+        if self.nodes.is_empty() {
+            return write!(f, "[]")
+        };
+        let last = self.nodes.last().unwrap();
+        if self.nodes.len() == 1 {
+            return write!(f, "{:?}", last)
         }
-    }
-}
-
-impl Display for Symbol {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.name)
-    }
-}
-impl Debug for Symbol {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.name)
-    }
-}
-impl Debug for Expr {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        use Expr as E;
-        match self {
-            E::Symbol(v) => write!(f, "{:?}", v),
-            E::Rational(r) => write!(f, "{:?}", r),
-
-            E::Sum(a) => write!(f, "{:?}", a),
-            E::Prod(m) => write!(f, "{:?}", m),
-            E::Pow(p) => write!(f, "{:?}", p),
-
-            E::Undefined => write!(f, "undefined"),
-            E::PlaceHolder(ph) => write!(f, "{:?}", ph),
-        }
+        dbg_fmt_graph(self, last, f)
     }
 }

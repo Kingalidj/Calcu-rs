@@ -78,7 +78,7 @@ impl Pattern {
 #[derive(Debug, Hash, PartialEq, Eq, Clone, PartialOrd, Ord)]
 pub enum ENodeOrVar {
     /// An enode from the underlying [`Language`]
-    ENode(Expr),
+    ENode(Node),
     /// A pattern variable
     Var(Var),
 }
@@ -86,7 +86,7 @@ pub enum ENodeOrVar {
 /// The discriminant for the language of [`Pattern`]s.
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub enum ENodeOrVarDiscriminant {
-    ENode(<Expr as Construct>::Discriminant),
+    ENode(<Node as Construct>::Discriminant),
     Var(Var),
 }
 
@@ -105,14 +105,14 @@ impl Construct for ENodeOrVar {
         panic!("Should never call this")
     }
 
-    fn operands(&self) -> &[Id] {
+    fn operands(&self) -> &[ID] {
         match self {
-            ENodeOrVar::ENode(n) => n.operands(),
+            ENodeOrVar::ENode(n) => n.oprnd_ids(),
             ENodeOrVar::Var(_) => &[],
         }
     }
 
-    fn operands_mut(&mut self) -> &mut [Id] {
+    fn operands_mut(&mut self) -> &mut [ID] {
         match self {
             ENodeOrVar::ENode(n) => n.operands_mut(),
             ENodeOrVar::Var(_) => &mut [],
@@ -129,16 +129,16 @@ impl Display for ENodeOrVar {
     }
 }
 
-impl<'a> From<&'a [Expr]> for Pattern {
-    fn from(expr: &'a [Expr]) -> Self {
+impl<'a> From<&'a [Node]> for Pattern {
+    fn from(expr: &'a [Node]) -> Self {
         let nodes: Vec<_> = expr.iter().cloned().map(ENodeOrVar::ENode).collect();
         let ast = RecExpr::from(nodes);
         Self::new(ast)
     }
 }
 
-impl From<&RecExpr<Expr>> for Pattern {
-    fn from(expr: &RecExpr<Expr>) -> Self {
+impl From<&RecExpr<Node>> for Pattern {
+    fn from(expr: &RecExpr<Node>) -> Self {
         Self::from(expr.as_ref())
     }
 }
@@ -149,7 +149,7 @@ impl From<PatternAst> for Pattern {
     }
 }
 
-impl TryFrom<Pattern> for RecExpr<Expr> {
+impl TryFrom<Pattern> for RecExpr<Node> {
     type Error = Var;
     fn try_from(pat: Pattern) -> Result<Self, Self::Error> {
         let nodes = pat.ast.as_ref().iter().cloned();
@@ -179,7 +179,7 @@ impl Display for Pattern {
 #[derive(Debug)]
 pub struct SearchMatches<'a> {
     /// The eclass id that these matches were found in.
-    pub eclass: Id,
+    pub eclass: ID,
     /// The substitutions for each match.
     pub substs: Vec<Subst>,
     /// Optionally, an ast for the matches used in proof production.
@@ -190,7 +190,7 @@ impl Searcher for Pattern {
     fn search_eclass_with_limit(
         &self,
         egraph: &EGraph,
-        eclass: Id,
+        eclass: ID,
         limit: usize,
     ) -> Option<SearchMatches> {
         let substs = self.program.run_with_limit(egraph, eclass, limit);
@@ -243,11 +243,11 @@ impl Applier for Pattern {
         &self,
         egraph: &mut EGraph,
         matches: &[SearchMatches],
-        rule_name: Symbol,
-    ) -> Vec<Id> {
+        rule_name: GlobSymbol,
+    ) -> Vec<ID> {
         let mut added = vec![];
         let ast = self.ast.as_ref();
-        let mut id_buf = vec![0.into(); ast.len()];
+        let mut id_buf = vec![ID::new(0); ast.len()];
         for mat in matches {
             let sast = mat.ast.as_ref().map(|cow| cow.as_ref());
             for subst in &mat.substs {
@@ -278,13 +278,13 @@ impl Applier for Pattern {
     fn apply_one(
         &self,
         egraph: &mut EGraph,
-        eclass: Id,
+        eclass: ID,
         subst: &Subst,
         searcher_ast: Option<&PatternAst>,
-        rule_name: Symbol,
-    ) -> Vec<Id> {
+        rule_name: GlobSymbol,
+    ) -> Vec<ID> {
         let ast = self.ast.as_ref();
-        let mut id_buf = vec![0.into(); ast.len()];
+        let mut id_buf = vec![ID::new(0); ast.len()];
         let id = apply_pat(&mut id_buf, ast, egraph, subst);
 
         if let Some(ast) = searcher_ast {
@@ -308,11 +308,11 @@ impl Applier for Pattern {
 }
 
 pub(crate) fn apply_pat(
-    ids: &mut [Id],
+    ids: &mut [ID],
     pat: &[ENodeOrVar],
     egraph: &mut EGraph,
     subst: &Subst,
-) -> Id {
+) -> ID {
     debug_assert_eq!(pat.len(), ids.len());
     trace!("apply_rec {:2?} {:?}", pat, subst);
 
@@ -320,7 +320,7 @@ pub(crate) fn apply_pat(
         let id = match pat_node {
             ENodeOrVar::Var(w) => subst[*w],
             ENodeOrVar::ENode(e) => {
-                let n = e.clone().map_operands(|child| ids[usize::from(child)]);
+                let n = e.clone().map_operands(|child| ids[child.indx()]);
                 trace!("adding: {:?}", n);
                 egraph.add(n)
             }

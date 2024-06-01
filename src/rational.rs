@@ -1,63 +1,35 @@
-use calcu_rs::{
-    expression::{CalcursType, Expr},
-    pattern::Item,
-    scalar::Float,
-};
-use fmt::{Display, Formatter};
 use malachite::{
     self as mal,
     num::{
         arithmetic::traits::{Abs, DivRem, PowAssign, Sign as MalSign},
-        conversion::traits::{IsInteger, RoundingFrom},
+        conversion::traits::IsInteger,
     },
-    rounding_modes::RoundingMode,
 };
-use std::{cmp::Ordering, fmt, ops};
+use std::cmp::Ordering;
+use std::{fmt, ops};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Rational(pub(crate) mal::Rational);
 
 impl Rational {
-    pub const ZERO: Expr = Expr::Rational(Rational::zero());
-    pub const ONE: Expr = Expr::Rational(Rational::one());
-    pub const MINUS_ONE: Expr = Expr::Rational(Rational::minus_one());
-
-    #[inline(always)]
-    pub const fn zero() -> Self {
-        Self(mal::Rational::const_from_signed(0))
-    }
-    #[inline(always)]
-    pub const fn one() -> Self {
-        Self(mal::Rational::const_from_signed(1))
-    }
-    #[inline(always)]
-    pub const fn minus_one() -> Self {
-        Self(mal::Rational::const_from_signed(-1))
-    }
+    pub const ZERO: Self = Rational(mal::Rational::const_from_signed(0));
+    pub const ONE: Self = Rational(mal::Rational::const_from_signed(1));
+    pub const MINUS_ONE: Self = Rational(mal::Rational::const_from_signed(-1));
 
     #[inline(always)]
     pub fn is_zero(&self) -> bool {
-        match self.0.sign() {
-            Ordering::Equal => true,
-            _ => false,
-        }
+        matches!(self.0.sign(), Ordering::Equal)
     }
     pub fn is_one(&self) -> bool {
-        self == &Rational::one()
+        self == &Rational::ONE
     }
     #[inline(always)]
     pub fn is_pos(&self) -> bool {
-        match self.0.sign() {
-            Ordering::Greater => true,
-            _ => false,
-        }
+        matches!(self.0.sign(), Ordering::Greater)
     }
     #[inline(always)]
     pub fn is_neg(&self) -> bool {
-        match self.0.sign() {
-            Ordering::Less => true,
-            _ => false,
-        }
+        matches!(self.0.sign(), Ordering::Less)
     }
 
     #[inline(always)]
@@ -86,7 +58,7 @@ impl Rational {
             let mut r = mal::Rational::from_naturals(denom, num);
             // num and denom are unsigned
             if is_neg {
-                r *= Rational::minus_one().0;
+                r *= Rational::MINUS_ONE.0;
             }
             Some(Self(r))
         }
@@ -94,12 +66,6 @@ impl Rational {
 
     pub fn abs(self) -> Self {
         Self(self.0.abs())
-    }
-
-    pub fn to_float(&self) -> Float {
-        let (num, _) = f64::rounding_from(self.0.numerator_ref(), RoundingMode::Down);
-        let (denom, _) = f64::rounding_from(self.0.denominator_ref(), RoundingMode::Down);
-        Float::new(num / denom)
     }
 
     /// will calculate [self] to the power of an integer number.
@@ -114,7 +80,7 @@ impl Rational {
         }
 
         if rhs.is_zero() {
-            return (Rational::one(), Rational::one());
+            return (Rational::ONE, Rational::ONE);
         }
 
         // inverse if exponent is negative
@@ -129,7 +95,7 @@ impl Rational {
             let exp = rhs.0.numerator_ref();
             if let Ok(exp) = u64::try_from(exp) {
                 self.0.pow_assign(exp);
-                return (self, Rational::one());
+                return (self, Rational::ZERO);
             } else {
                 return (self, rhs);
             }
@@ -155,31 +121,6 @@ impl Rational {
 
 const NAT_ZERO: mal::Natural = mal::Natural::const_from(0);
 const NAT_ONE: mal::Natural = mal::Natural::const_from(1);
-
-impl CalcursType for Rational {
-    #[inline(always)]
-    fn desc(&self) -> Item {
-        let mut flags = Item::Rational;
-
-        if self.is_int() {
-            flags |= Item::Integer;
-
-            let num = self.0.numerator_ref();
-
-            if num == &NAT_ONE {
-                flags |= Item::UOne;
-            }
-        }
-
-        flags |= match self.0.sign() {
-            Ordering::Less => Item::Neg,
-            Ordering::Equal => Item::Zero,
-            Ordering::Greater => Item::Pos,
-        };
-
-        flags
-    }
-}
 
 impl ops::Add for Rational {
     type Output = Self;
@@ -262,14 +203,14 @@ impl From<(i64, i64)> for Rational {
         let mut r = mal::Rational::from_naturals(n, d);
 
         if is_neg {
-            r *= Rational::minus_one().0;
+            r *= Rational::MINUS_ONE.0;
         }
         Self(r)
     }
 }
 
-impl Display for Rational {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+impl fmt::Display for Rational {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }

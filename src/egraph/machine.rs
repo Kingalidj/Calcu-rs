@@ -1,4 +1,4 @@
-use calcu_rs::egraph::*;
+use calcu_rs::{egraph::*, *, util::*};
 use std::{fmt::Debug, result};
 
 type Result = result::Result<(), ()>;
@@ -6,9 +6,9 @@ type Result = result::Result<(), ()>;
 /// explanation: [Efficient E-matching for SMT Solvers] (https://leodemoura.github.io/files/ematching.pdf)
 #[derive(Default)]
 struct Machine {
-    reg: Vec<Id>,
+    reg: Vec<ID>,
     // a buffer to re-use for lookups
-    lookup: Vec<Id>,
+    lookup: Vec<ID>,
 }
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -22,7 +22,7 @@ pub struct Program {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Instruction {
-    Bind { node: Expr, i: Reg, out: Reg },
+    Bind { node: Node, i: Reg, out: Reg },
     Compare { i: Reg, j: Reg },
     Lookup { term: Vec<ENodeOrReg>, i: Reg },
     Scan { out: Reg },
@@ -30,16 +30,16 @@ enum Instruction {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ENodeOrReg {
-    ENode(Expr),
+    ENode(Node),
     Reg(Reg),
 }
 
-/// applies a function to all matching nodes (according to [Expr::matches]) in the [EClass]
+/// applies a function to all matching nodes (according to [ExprNode::matches]) in the [EClass]
 #[inline(always)]
 fn for_each_matching_node(
     eclass: &EClass,
-    node: &Expr,
-    mut f: impl FnMut(&Expr) -> Result,
+    node: &Node,
+    mut f: impl FnMut(&Node) -> Result,
 ) -> Result {
     if eclass.nodes.len() < 50 {
         // if < 50 just apply f to all matching nodes
@@ -50,7 +50,7 @@ fn for_each_matching_node(
             .try_for_each(f)
     } else {
         // use binary search
-        debug_assert!(node.check_all(|id| id == Id::from(0)));
+        debug_assert!(node.check_all(|id| id == ID::new(0)));
         // check if nodes are sorted
         debug_assert!(eclass.nodes.windows(2).all(|w| w[0] < w[1]));
 
@@ -90,7 +90,7 @@ fn for_each_matching_node(
 }
 
 impl Machine {
-    fn reg(&self, reg: Reg) -> Id {
+    fn reg(&self, reg: Reg) -> ID {
         self.reg[reg.0 as usize]
     }
 
@@ -149,7 +149,7 @@ impl Machine {
                                 //let look = |i| self.lookup[usize::from(i)];
                                 //match egraph.lookup(node.clone().map_operands(look)) {
                                 let n =
-                                    node.clone().map_operands(|id| self.lookup[usize::from(id)]);
+                                    node.clone().map_operands(|id| self.lookup[id.indx()]);
                                 match egraph.lookup(n) {
                                     Some(id) => self.lookup.push(id),
                                     None => return Ok(()),
@@ -179,7 +179,7 @@ struct Compiler {
     free_vars: Vec<HashSet<Var>>,
     subtree_size: Vec<usize>,
     // map id and register to expr with that id
-    todo_nodes: HashMap<(Id, Reg), Expr>,
+    todo_nodes: HashMap<(ID, Reg), Node>,
     instructions: Vec<Instruction>,
     next_reg: Reg,
 }
@@ -199,7 +199,7 @@ impl Compiler {
     // if id is a Var and there is a register mapped to it, compare them
     // if id is a Var and there is no register mapped to it, create one to reg
     // if id is an ENode insert into todo_nodes id and reg
-    fn add_todo(&mut self, pattern: &PatternAst, id: Id, reg: Reg) {
+    fn add_todo(&mut self, pattern: &PatternAst, id: ID, reg: Reg) {
         match &pattern[id] {
             ENodeOrVar::Var(v) => {
                 if let Some(&j) = self.v2r.get(v) {
@@ -226,10 +226,10 @@ impl Compiler {
             match node {
                 ENodeOrVar::ENode(n) => {
                     size = 1;
-                    for &child in n.operands() {
+                    for &child in n.oprnd_ids() {
                         // add free vars of the children
-                        free.extend(&self.free_vars[usize::from(child)]);
-                        size += self.subtree_size[usize::from(child)];
+                        free.extend(&self.free_vars[child.indx()]);
+                        size += self.subtree_size[child.indx()];
                     }
                 }
                 ENodeOrVar::Var(v) => {
@@ -242,13 +242,13 @@ impl Compiler {
     }
 
     // returns the next node in todo_nodes according to some rules
-    fn next(&mut self) -> Option<((Id, Reg), Expr)> {
+    fn next(&mut self) -> Option<((ID, Reg), Node)> {
         // we take the max todo according to this key
         // - prefer grounded
         // - prefer more free variables
         // - prefer smaller term
-        let key = |(id, _): &&(Id, Reg)| {
-            let i = usize::from(*id);
+        let key = |(id, _): &&(ID, Reg)| {
+            let i = id.indx();
             // get all free variables at i
             let n_bound = self.free_vars[i]
                 .iter()
@@ -270,8 +270,8 @@ impl Compiler {
     /// check to see if this e-node corresponds to a term that is grounded by
     /// the variables bound at this point
     // check if enode with id has only variables with a mapping to a register
-    fn is_ground_now(&self, id: Id) -> bool {
-        self.free_vars[usize::from(id)]
+    fn is_ground_now(&self, id: ID) -> bool {
+        self.free_vars[id.indx()]
             .iter()
             .all(|v| self.v2r.contains_key(v))
     }
@@ -290,13 +290,13 @@ impl Compiler {
                 comp.instructions
                     .push(Instruction::Scan { out: comp.next_reg });
             }
-            comp.add_todo(pattern, Id::from(last_i), comp.next_reg);
+            comp.add_todo(pattern, ID::new(last_i), comp.next_reg);
         };
 
         if let Some(v) = patternbinder {
             if let Some(&i) = self.v2r.get(&v) {
                 // patternbinder already bound
-                self.add_todo(pattern, Id::from(last_i), i);
+                self.add_todo(pattern, ID::new(last_i), i);
             } else {
                 // patternbinder is new variable
                 next_out.0 += 1;
@@ -328,14 +328,14 @@ impl Compiler {
                 next_out.0 += node.len() as u32;
 
                 // zero out the children so Bind can use it to sort
-                let op = node.clone().map_operands(|_| Id::from(0));
+                let op = node.clone().map_operands(|_| ID::new(0));
                 self.instructions.push(Instruction::Bind {
                     i: reg,
                     node: op,
                     out,
                 });
 
-                for (i, &child) in node.operands().iter().enumerate() {
+                for (i, &child) in node.oprnd_ids().iter().enumerate() {
                     self.add_todo(pattern, child, Reg(out.0 + i as u32));
                 }
             }
@@ -346,7 +346,7 @@ impl Compiler {
     fn extract(self) -> Program {
         let mut subst = Subst::default();
         for (v, r) in self.v2r {
-            subst.insert(v, Id::from(r.0 as usize));
+            subst.insert(v, ID::new(r.0 as usize));
         }
         Program {
             instructions: self.instructions,
@@ -372,7 +372,7 @@ impl Program {
         compiler.extract()
     }
 
-    pub fn run_with_limit(&self, egraph: &EGraph, eclass: Id, mut limit: usize) -> Vec<Subst> {
+    pub fn run_with_limit(&self, egraph: &EGraph, eclass: ID, mut limit: usize) -> Vec<Subst> {
         assert!(egraph.clean, "Tried to search a dirty e-graph!");
 
         if limit == 0 {
@@ -402,7 +402,7 @@ impl Program {
                         .vec
                         .iter()
                         // HACK we are reusing Ids here, this is bad
-                        .map(|(v, reg_id)| (*v, machine.reg(Reg(usize::from(*reg_id) as u32))))
+                        .map(|(v, reg_id)| (*v, machine.reg(Reg(reg_id.indx() as u32))))
                         .collect();
                     matches.push(Subst { vec: subst_vec });
                     limit -= 1;

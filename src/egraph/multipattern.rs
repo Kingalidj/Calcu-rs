@@ -36,7 +36,7 @@ impl Searcher for MultiPattern {
     fn search_eclass_with_limit(
         &self,
         egraph: &EGraph,
-        eclass: Id,
+        eclass: ID,
         limit: usize,
     ) -> Option<SearchMatches> {
         let substs = self.program.run_with_limit(egraph, eclass, limit);
@@ -71,11 +71,11 @@ impl Applier for MultiPattern {
     fn apply_one(
         &self,
         _egraph: &mut EGraph,
-        _eclass: Id,
+        _eclass: ID,
         _subst: &Subst,
         _searcher_ast: Option<&PatternAst>,
-        _rule_name: Symbol,
-    ) -> Vec<Id> {
+        _rule_name: GlobSymbol,
+    ) -> Vec<ID> {
         panic!("Multipatterns do not support apply_one")
     }
 
@@ -83,8 +83,8 @@ impl Applier for MultiPattern {
         &self,
         egraph: &mut EGraph,
         matches: &[SearchMatches],
-        _rule_name: Symbol,
-    ) -> Vec<Id> {
+        _rule_name: GlobSymbol,
+    ) -> Vec<ID> {
         // TODO explanations?
         // the ids returned are kinda garbage
         let mut added = vec![];
@@ -93,7 +93,7 @@ impl Applier for MultiPattern {
                 let mut subst = subst.clone();
                 let mut id_buf = vec![];
                 for (i, (v, p)) in self.asts.iter().enumerate() {
-                    id_buf.resize(p.as_ref().len(), 0.into());
+                    id_buf.resize(p.as_ref().len(), ID::new(0));
                     let id1 = pattern::apply_pat(&mut id_buf, p.as_ref(), egraph, &subst);
                     if let Some(id2) = subst.insert(*v, id1) {
                         egraph.union(id1, id2);

@@ -1,9 +1,4 @@
-use calcu_rs::{
-    egraph::{
-        Analysis, Construct, EClass, EClassUnion, ENodeOrVar, Expr, Id, PatternAst, Rewrite, Var,
-    },
-    util::{HashMap, HashSet, Symbol},
-};
+use crate::egraph::*;
 
 use std::{
     cmp::Ordering,
@@ -26,15 +21,15 @@ const GREEDY_NUM_ITERS: usize = 2;
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Justification {
     /// Justification by a rule with this name.
-    Rule(Symbol),
+    Rule(GlobSymbol),
     /// Justification by congruence.
     Congruence,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 struct Connection {
-    next: Id,
-    current: Id,
+    next: ID,
+    current: ID,
     justification: Justification,
     is_rewrite_forward: bool,
 }
@@ -49,13 +44,13 @@ struct ExplainNode {
     // 2) a rewrite instantiated it (points to adjacent enode)
     // 3) it was inserted directly (points to itself)
     // if 1 is true but it's also adjacent (2) then either works and it picks 2
-    existance_node: Id,
+    existance_node: ID,
 }
 
 #[derive(Debug, Clone)]
 pub struct Explain {
     explainfind: Vec<ExplainNode>,
-    pub uncanon_memo: HashMap<Expr, Id>,
+    pub uncanon_memo: HashMap<Node, ID>,
     /// By default, egg uses a greedy algorithm to find shorter explanations when they are extracted.
     pub optimize_explanation_lengths: bool,
     // For a given pair of enodes in the same eclass,
@@ -64,19 +59,19 @@ pub struct Explain {
     // the explanation.
     // Invariant: The distance is always <= the unoptimized distance
     // That is, less than or equal to the result of `distance_between`
-    shortest_explanation_memo: HashMap<(Id, Id), (ProofCost, Id)>,
+    shortest_explanation_memo: HashMap<(ID, ID), (ProofCost, ID)>,
 }
 
 pub(crate) struct ExplainNodes<'a> {
     explain: &'a mut Explain,
-    nodes: &'a [Expr],
+    nodes: &'a [Node],
 }
 
 #[derive(Default)]
 struct DistanceMemo {
-    parent_distance: Vec<(Id, ProofCost)>,
-    common_ancestor: HashMap<(Id, Id), Id>,
-    tree_depth: HashMap<Id, ProofCost>,
+    parent_distance: Vec<(ID, ProofCost)>,
+    common_ancestor: HashMap<(ID, ID), ID>,
+    tree_depth: HashMap<ID, ProofCost>,
 }
 
 /// Explanation trees are the compact representation showing
@@ -101,11 +96,11 @@ pub type FlatExplanation = Vec<FlatTerm>;
 
 /// A vector of equalities based on enode ids. Each entry represents
 /// two enode ids that are equal and why.
-pub type UnionEqualities = Vec<(Id, Id, Symbol)>;
+pub type UnionEqualities = Vec<(ID, ID, GlobSymbol)>;
 
 // given two adjacent nodes and the direction of the proof
-type ExplainCache = HashMap<(Id, Id), Rc<TreeTerm>>;
-type NodeExplanationCache = HashMap<Id, Rc<TreeTerm>>;
+type ExplainCache = HashMap<(ID, ID), Rc<TreeTerm>>;
+type NodeExplanationCache = HashMap<ID, Rc<TreeTerm>>;
 
 /** A data structure representing an explanation that two terms are equivalent.
 
@@ -198,7 +193,7 @@ impl Explanation {
     fn tree_size(
         &self,
         seen: &mut HashSet<*const TreeTerm>,
-        seen_adjacent: &mut HashSet<(Id, Id)>,
+        seen_adjacent: &mut HashSet<(ID, ID)>,
         current: &Rc<TreeTerm>,
     ) -> ProofCost {
         if !seen.insert(&**current as *const TreeTerm) {
@@ -339,7 +334,7 @@ impl Explanation {
         &self,
         current: &FlatTerm,
         next: &FlatTerm,
-        table: &HashMap<Symbol, &Rewrite>,
+        table: &HashMap<GlobSymbol, &Rewrite>,
         is_forward: bool,
     ) -> bool {
         if is_forward && next.forward_rule.is_some() {
@@ -398,28 +393,28 @@ impl Explanation {
 #[derive(Debug, Clone)]
 pub struct TreeTerm {
     /// A node representing this TreeTerm's operator. The children of the node should be ignored.
-    pub node: Expr,
+    pub node: Node,
     /// A rule rewriting this TreeTerm's initial term back to the last TreeTerm's final term.
-    pub backward_rule: Option<Symbol>,
+    pub backward_rule: Option<GlobSymbol>,
     /// A rule rewriting the last TreeTerm's final term to this TreeTerm's initial term.
-    pub forward_rule: Option<Symbol>,
+    pub forward_rule: Option<GlobSymbol>,
     /// A list of child proofs, each transforming the initial term to the final term for that child.
     pub child_proofs: Vec<TreeExplanation>,
 
-    last: Id,
-    current: Id,
+    last: ID,
+    current: ID,
 }
 
 impl TreeTerm {
     /// Construct a new TreeTerm given its node and child_proofs.
-    pub fn new(node: Expr, child_proofs: Vec<TreeExplanation>) -> TreeTerm {
+    pub fn new(node: Node, child_proofs: Vec<TreeExplanation>) -> TreeTerm {
         TreeTerm {
             node,
             backward_rule: None,
             forward_rule: None,
             child_proofs,
-            current: Id::from(0),
-            last: Id::from(0),
+            current: ID::new(0),
+            last: ID::new(0),
         }
     }
 
@@ -529,11 +524,11 @@ impl TreeTerm {
 pub struct FlatTerm {
     /// The node representing this FlatTerm's operator.
     /// The children of the node should be ignored.
-    pub node: Expr,
+    pub node: Node,
     /// A rule rewriting this FlatTerm back to the last FlatTerm.
-    pub backward_rule: Option<Symbol>,
+    pub backward_rule: Option<GlobSymbol>,
     /// A rule rewriting the last FlatTerm to this FlatTerm.
-    pub forward_rule: Option<Symbol>,
+    pub forward_rule: Option<GlobSymbol>,
     /// The children of this FlatTerm.
     pub children: FlatExplanation,
 }
@@ -703,7 +698,7 @@ impl TreeTerm {
 
 impl FlatTerm {
     /// Construct a new FlatTerm given a node and its children.
-    pub fn new(node: Expr, children: FlatExplanation) -> FlatTerm {
+    pub fn new(node: Node, children: FlatExplanation) -> FlatTerm {
         FlatTerm {
             node,
             backward_rule: None,
@@ -751,7 +746,7 @@ impl FlatTerm {
                 let children = node.fold(vec![], |mut acc, child| {
                     acc.push(FlatTerm::from_pattern(
                         pattern,
-                        usize::from(child),
+                        child.indx(),
                         bindings,
                     ));
                     acc
@@ -784,7 +779,7 @@ impl FlatTerm {
                 assert!(node.matches(&self.node));
                 let mut counter = 0;
                 node.for_each_oprnd(|child| {
-                    self.children[counter].make_bindings(pattern, usize::from(child), bindings);
+                    self.children[counter].make_bindings(pattern, child.indx(), bindings);
                     counter += 1;
                 });
             }
@@ -821,8 +816,8 @@ impl<I: Eq + PartialEq> PartialOrd for HeapState<I> {
 }
 
 impl Explain {
-    fn make_rule_table<'a>(rules: &[&'a Rewrite]) -> HashMap<Symbol, &'a Rewrite> {
-        let mut table: HashMap<Symbol, &'a Rewrite> = Default::default();
+    fn make_rule_table<'a>(rules: &[&'a Rewrite]) -> HashMap<GlobSymbol, &'a Rewrite> {
+        let mut table: HashMap<GlobSymbol, &'a Rewrite> = Default::default();
         for r in rules {
             table.insert(r.name, r);
         }
@@ -837,12 +832,12 @@ impl Explain {
         }
     }
 
-    pub(crate) fn set_existance_reason(&mut self, node: Id, existance_node: Id) {
-        self.explainfind[usize::from(node)].existance_node = existance_node;
+    pub(crate) fn set_existance_reason(&mut self, node: ID, existance_node: ID) {
+        self.explainfind[node.indx()].existance_node = existance_node;
     }
 
-    pub(crate) fn add(&mut self, node: Expr, set: Id, existance_node: Id) -> Id {
-        assert_eq!(self.explainfind.len(), usize::from(set));
+    pub(crate) fn add(&mut self, node: Node, set: ID, existance_node: ID) -> ID {
+        assert_eq!(self.explainfind.len(), set.indx());
         self.uncanon_memo.insert(node, set);
         self.explainfind.push(ExplainNode {
             neighbors: vec![],
@@ -858,22 +853,22 @@ impl Explain {
     }
 
     // reverse edges recursively to make this node the leader
-    fn make_leader(&mut self, node: Id) {
-        let next = self.explainfind[usize::from(node)].parent_connection.next;
+    fn make_leader(&mut self, node: ID) {
+        let next = self.explainfind[node.indx()].parent_connection.next;
         if next != node {
             self.make_leader(next);
-            let node_connection = &self.explainfind[usize::from(node)].parent_connection;
+            let node_connection = &self.explainfind[node.indx()].parent_connection;
             let pconnection = Connection {
                 justification: node_connection.justification.clone(),
                 is_rewrite_forward: !node_connection.is_rewrite_forward,
                 next: node,
                 current: next,
             };
-            self.explainfind[usize::from(next)].parent_connection = pconnection;
+            self.explainfind[next.indx()].parent_connection = pconnection;
         }
     }
 
-    pub(crate) fn alternate_rewrite(&mut self, node1: Id, node2: Id, justification: Justification) {
+    pub(crate) fn alternate_rewrite(&mut self, node1: ID, node2: ID, justification: Justification) {
         if node1 == node2 {
             return;
         }
@@ -897,10 +892,10 @@ impl Explain {
             current: node2,
         };
 
-        self.explainfind[usize::from(node1)]
+        self.explainfind[node1.indx()]
             .neighbors
             .push(lconnection);
-        self.explainfind[usize::from(node2)]
+        self.explainfind[node2.indx()]
             .neighbors
             .push(rconnection);
         self.shortest_explanation_memo
@@ -911,8 +906,8 @@ impl Explain {
 
     pub(crate) fn union(
         &mut self,
-        node1: Id,
-        node2: Id,
+        node1: ID,
+        node2: ID,
         justification: Justification,
         new_rhs: bool,
     ) {
@@ -924,7 +919,7 @@ impl Explain {
         }
 
         self.make_leader(node1);
-        self.explainfind[usize::from(node1)].parent_connection.next = node2;
+        self.explainfind[node1.indx()].parent_connection.next = node2;
 
         if let Justification::Rule(_) = justification {
             self.shortest_explanation_memo
@@ -945,13 +940,13 @@ impl Explain {
             next: node1,
             current: node2,
         };
-        self.explainfind[usize::from(node1)]
+        self.explainfind[node1.indx()]
             .neighbors
             .push(pconnection.clone());
-        self.explainfind[usize::from(node2)]
+        self.explainfind[node2.indx()]
             .neighbors
             .push(other_pconnection);
-        self.explainfind[usize::from(node1)].parent_connection = pconnection;
+        self.explainfind[node1.indx()].parent_connection = pconnection;
     }
     pub(crate) fn get_union_equalities(&self) -> UnionEqualities {
         let mut equalities = vec![];
@@ -967,7 +962,7 @@ impl Explain {
         equalities
     }
 
-    pub(crate) fn with_nodes<'a>(&'a mut self, nodes: &'a [Expr]) -> ExplainNodes<'a> {
+    pub(crate) fn with_nodes<'a>(&'a mut self, nodes: &'a [Node]) -> ExplainNodes<'a> {
         ExplainNodes {
             explain: self,
             nodes,
@@ -990,10 +985,10 @@ impl<'a> DerefMut for ExplainNodes<'a> {
 }
 
 impl<'x> ExplainNodes<'x> {
-    pub(crate) fn node(&self, node_id: Id) -> &Expr {
-        &self.nodes[usize::from(node_id)]
+    pub(crate) fn node(&self, node_id: ID) -> &Node {
+        &self.nodes[node_id.indx()]
     }
-    fn node_to_explanation(&self, node_id: Id, cache: &mut NodeExplanationCache) -> Rc<TreeTerm> {
+    fn node_to_explanation(&self, node_id: ID, cache: &mut NodeExplanationCache) -> Rc<TreeTerm> {
         if let Some(existing) = cache.get(&node_id) {
             existing.clone()
         } else {
@@ -1008,7 +1003,7 @@ impl<'x> ExplainNodes<'x> {
         }
     }
 
-    fn node_to_flat_explanation(&self, node_id: Id) -> FlatTerm {
+    fn node_to_flat_explanation(&self, node_id: ID) -> FlatTerm {
         let node = self.node(node_id).clone();
         let children = node.fold(vec![], |mut sofar, child| {
             sofar.push(self.node_to_flat_explanation(child));
@@ -1027,7 +1022,7 @@ impl<'x> ExplainNodes<'x> {
             let mut seen_existance: HashSet<usize> = Default::default();
             loop {
                 seen_existance.insert(existance);
-                let next = usize::from(self.explainfind[existance].existance_node);
+                let next = self.explainfind[existance].existance_node.indx();
                 if existance == next {
                     break;
                 }
@@ -1037,8 +1032,8 @@ impl<'x> ExplainNodes<'x> {
                 }
             }
 
-            if explain_node.parent_connection.next != Id::from(i) {
-                let mut current_explanation = self.node_to_flat_explanation(Id::from(i));
+            if explain_node.parent_connection.next != ID::new(i) {
+                let mut current_explanation = self.node_to_flat_explanation(ID::new(i));
                 let mut next_explanation =
                     self.node_to_flat_explanation(explain_node.parent_connection.next);
                 if let Justification::Rule(rule_name) =
@@ -1064,10 +1059,10 @@ impl<'x> ExplainNodes<'x> {
 
     pub(crate) fn explain_equivalence(
         &mut self,
-        left: Id,
-        right: Id,
+        left: ID,
+        right: ID,
         unionfind: &mut EClassUnion,
-        classes: &HashMap<Id, EClass>,
+        classes: &HashMap<ID, EClass>,
     ) -> Explanation {
         if self.optimize_explanation_lengths {
             self.calculate_shortest_explanations(left, right, classes, unionfind);
@@ -1078,7 +1073,7 @@ impl<'x> ExplainNodes<'x> {
         Explanation::new(self.explain_enodes(left, right, &mut cache, &mut enode_cache, false))
     }
 
-    pub(crate) fn explain_existance(&mut self, left: Id) -> Explanation {
+    pub(crate) fn explain_existance(&mut self, left: ID) -> Explanation {
         let mut cache = Default::default();
         let mut enode_cache = Default::default();
         Explanation::new(self.explain_enode_existance(
@@ -1089,9 +1084,9 @@ impl<'x> ExplainNodes<'x> {
         ))
     }
 
-    fn common_ancestor(&self, mut left: Id, mut right: Id) -> Id {
-        let mut seen_left: HashSet<Id> = Default::default();
-        let mut seen_right: HashSet<Id> = Default::default();
+    fn common_ancestor(&self, mut left: ID, mut right: ID) -> ID {
+        let mut seen_left: HashSet<ID> = Default::default();
+        let mut seen_right: HashSet<ID> = Default::default();
         loop {
             seen_left.insert(left);
             if seen_right.contains(&left) {
@@ -1103,24 +1098,24 @@ impl<'x> ExplainNodes<'x> {
                 return right;
             }
 
-            let next_left = self.explainfind[usize::from(left)].parent_connection.next;
-            let next_right = self.explainfind[usize::from(right)].parent_connection.next;
+            let next_left = self.explainfind[left.indx()].parent_connection.next;
+            let next_right = self.explainfind[right.indx()].parent_connection.next;
             assert!(next_left != left || next_right != right);
             left = next_left;
             right = next_right;
         }
     }
 
-    fn get_connections(&self, mut node: Id, ancestor: Id) -> Vec<Connection> {
+    fn get_connections(&self, mut node: ID, ancestor: ID) -> Vec<Connection> {
         if node == ancestor {
             return vec![];
         }
 
         let mut nodes = vec![];
         loop {
-            let next = self.explainfind[usize::from(node)].parent_connection.next;
+            let next = self.explainfind[node.indx()].parent_connection.next;
             nodes.push(
-                self.explainfind[usize::from(node)]
+                self.explainfind[node.indx()]
                     .parent_connection
                     .clone(),
             );
@@ -1132,15 +1127,15 @@ impl<'x> ExplainNodes<'x> {
         }
     }
 
-    fn get_path_unoptimized(&self, left: Id, right: Id) -> (Vec<Connection>, Vec<Connection>) {
+    fn get_path_unoptimized(&self, left: ID, right: ID) -> (Vec<Connection>, Vec<Connection>) {
         let ancestor = self.common_ancestor(left, right);
         let left_connections = self.get_connections(left, ancestor);
         let right_connections = self.get_connections(right, ancestor);
         (left_connections, right_connections)
     }
 
-    fn get_neighbor(&self, current: Id, next: Id) -> Connection {
-        for neighbor in &self.explainfind[usize::from(current)].neighbors {
+    fn get_neighbor(&self, current: ID, next: ID) -> Connection {
+        for neighbor in &self.explainfind[current.indx()].neighbors {
             if neighbor.next == next {
                 if let Justification::Rule(_) = neighbor.justification {
                     return neighbor.clone();
@@ -1155,7 +1150,7 @@ impl<'x> ExplainNodes<'x> {
         }
     }
 
-    fn get_path(&self, mut left: Id, right: Id) -> (Vec<Connection>, Vec<Connection>) {
+    fn get_path(&self, mut left: ID, right: ID) -> (Vec<Connection>, Vec<Connection>) {
         let mut left_connections = vec![];
         loop {
             if left == right {
@@ -1176,14 +1171,14 @@ impl<'x> ExplainNodes<'x> {
 
     fn explain_enode_existance(
         &self,
-        node: Id,
+        node: ID,
         rest_of_proof: Rc<TreeTerm>,
         cache: &mut ExplainCache,
         enode_cache: &mut NodeExplanationCache,
     ) -> TreeExplanation {
-        let graphnode = &self.explainfind[usize::from(node)];
+        let graphnode = &self.explainfind[node.indx()];
         let existance = graphnode.existance_node;
-        let existance_node = &self.explainfind[usize::from(existance)];
+        let existance_node = &self.explainfind[existance.indx()];
         // case 1)
         if existance == node {
             return vec![self.node_to_explanation(node, enode_cache), rest_of_proof];
@@ -1229,8 +1224,8 @@ impl<'x> ExplainNodes<'x> {
 
     fn explain_enodes(
         &self,
-        left: Id,
-        right: Id,
+        left: ID,
+        right: ID,
         cache: &mut ExplainCache,
         node_explanation_cache: &mut NodeExplanationCache,
         use_unoptimized: bool,
@@ -1299,9 +1294,9 @@ impl<'x> ExplainNodes<'x> {
                 let mut subproofs = vec![];
 
                 for (left_child, right_child) in current_node
-                    .operands()
+                    .oprnd_ids()
                     .iter()
-                    .zip(next_node.operands().iter())
+                    .zip(next_node.oprnd_ids().iter())
                 {
                     subproofs.push(self.explain_enodes(
                         *left_child,
@@ -1320,14 +1315,14 @@ impl<'x> ExplainNodes<'x> {
         term
     }
 
-    fn find_all_enodes(&self, eclass: Id) -> HashSet<Id> {
+    fn find_all_enodes(&self, eclass: ID) -> HashSet<ID> {
         let mut enodes = HashSet::default();
         let mut todo = vec![eclass];
 
         while !todo.is_empty() {
             let current = todo.pop().unwrap();
             if enodes.insert(current) {
-                for neighbor in &self.explainfind[usize::from(current)].neighbors {
+                for neighbor in &self.explainfind[current.indx()].neighbors {
                     todo.push(neighbor.next);
                 }
             }
@@ -1335,7 +1330,7 @@ impl<'x> ExplainNodes<'x> {
         enodes
     }
 
-    fn add_tree_depths(&self, node: Id, depths: &mut HashMap<Id, ProofCost>) -> ProofCost {
+    fn add_tree_depths(&self, node: ID, depths: &mut HashMap<ID, ProofCost>) -> ProofCost {
         if depths.get(&node).is_none() {
             let parent = self.parent(node);
             let depth = if parent == node {
@@ -1350,22 +1345,22 @@ impl<'x> ExplainNodes<'x> {
         depths.get(&node).unwrap().clone()
     }
 
-    fn calculate_tree_depths(&self) -> HashMap<Id, ProofCost> {
+    fn calculate_tree_depths(&self) -> HashMap<ID, ProofCost> {
         let mut depths = HashMap::default();
         for i in 0..self.explainfind.len() {
-            self.add_tree_depths(Id::from(i), &mut depths);
+            self.add_tree_depths(ID::new(i), &mut depths);
         }
         depths
     }
 
-    fn replace_distance(&mut self, current: Id, next: Id, right: Id, distance: ProofCost) {
+    fn replace_distance(&mut self, current: ID, next: ID, right: ID, distance: ProofCost) {
         self.shortest_explanation_memo
             .insert((current, right), (distance, next));
     }
 
     fn populate_path_length(
         &mut self,
-        right: Id,
+        right: ID,
         left_connections: &[Connection],
         distance_memo: &mut DistanceMemo,
     ) {
@@ -1387,8 +1382,8 @@ impl<'x> ExplainNodes<'x> {
 
     fn distance_between(
         &mut self,
-        left: Id,
-        right: Id,
+        left: ID,
+        right: ID,
         distance_memo: &mut DistanceMemo,
     ) -> ProofCost {
         if left == right {
@@ -1405,17 +1400,17 @@ impl<'x> ExplainNodes<'x> {
         self.calculate_parent_distance(right, ancestor, distance_memo);
 
         // now all three share an ancestor
-        let a = self.calculate_parent_distance(ancestor, Id::from(usize::MAX), distance_memo);
-        let b = self.calculate_parent_distance(left, Id::from(usize::MAX), distance_memo);
-        let c = self.calculate_parent_distance(right, Id::from(usize::MAX), distance_memo);
+        let a = self.calculate_parent_distance(ancestor, ID::new(usize::MAX), distance_memo);
+        let b = self.calculate_parent_distance(left, ID::new(usize::MAX), distance_memo);
+        let c = self.calculate_parent_distance(right, ID::new(usize::MAX), distance_memo);
 
         assert!(
-            distance_memo.parent_distance[usize::from(ancestor)].0
-                == distance_memo.parent_distance[usize::from(left)].0
+            distance_memo.parent_distance[ancestor.indx()].0
+                == distance_memo.parent_distance[left.indx()].0
         );
         assert!(
-            distance_memo.parent_distance[usize::from(ancestor)].0
-                == distance_memo.parent_distance[usize::from(right)].0
+            distance_memo.parent_distance[ancestor.indx()].0
+                == distance_memo.parent_distance[right.indx()].0
         );
 
         // calculate distance to find upper bound
@@ -1426,17 +1421,17 @@ impl<'x> ExplainNodes<'x> {
 
     fn congruence_distance(
         &mut self,
-        current: Id,
-        next: Id,
+        current: ID,
+        next: ID,
         distance_memo: &mut DistanceMemo,
     ) -> ProofCost {
         let current_node = self.node(current).clone();
         let next_node = self.node(next).clone();
         let mut cost: ProofCost = BigUint::zero();
         for (left_child, right_child) in current_node
-            .operands()
+            .oprnd_ids()
             .iter()
-            .zip(next_node.operands().iter())
+            .zip(next_node.oprnd_ids().iter())
         {
             cost += self.distance_between(*left_child, *right_child, distance_memo);
         }
@@ -1458,23 +1453,23 @@ impl<'x> ExplainNodes<'x> {
 
     fn calculate_parent_distance(
         &mut self,
-        enode: Id,
-        ancestor: Id,
+        enode: ID,
+        ancestor: ID,
         distance_memo: &mut DistanceMemo,
     ) -> ProofCost {
         loop {
-            let parent = distance_memo.parent_distance[usize::from(enode)].0;
-            let dist = distance_memo.parent_distance[usize::from(enode)].1.clone();
+            let parent = distance_memo.parent_distance[enode.indx()].0;
+            let dist = distance_memo.parent_distance[enode.indx()].1.clone();
             if self.parent(parent) == parent {
                 break;
             }
 
-            let parent_parent = distance_memo.parent_distance[usize::from(parent)].0;
+            let parent_parent = distance_memo.parent_distance[parent.indx()].0;
             if parent_parent != parent {
-                let new_dist = dist + distance_memo.parent_distance[usize::from(parent)].1.clone();
-                distance_memo.parent_distance[usize::from(enode)] = (parent_parent, new_dist);
+                let new_dist = dist + distance_memo.parent_distance[parent.indx()].1.clone();
+                distance_memo.parent_distance[enode.indx()] = (parent_parent, new_dist);
             } else {
-                if ancestor == Id::from(usize::MAX) {
+                if ancestor == ID::new(usize::MAX) {
                     break;
                 }
                 if distance_memo.tree_depth.get(&parent).unwrap()
@@ -1484,7 +1479,7 @@ impl<'x> ExplainNodes<'x> {
                 }
 
                 // find the length of one parent connection
-                let connection = &self.explainfind[usize::from(parent)].parent_connection;
+                let connection = &self.explainfind[parent.indx()].parent_connection;
                 let current = connection.current;
                 let next = connection.next;
                 let cost = match connection.justification {
@@ -1493,20 +1488,20 @@ impl<'x> ExplainNodes<'x> {
                     }
                     Justification::Rule(_) => BigUint::one(),
                 };
-                distance_memo.parent_distance[usize::from(parent)] = (self.parent(parent), cost);
+                distance_memo.parent_distance[parent.indx()] = (self.parent(parent), cost);
             }
         }
 
         //assert_eq!(distance_memo.parent_distance[usize::from(enode)].1+1,
         //Explanation::new(self.explain_enodes(enode, distance_memo.parent_distance[usize::from(enode)].0, &mut Default::default())).make_flat_explanation().len());
 
-        distance_memo.parent_distance[usize::from(enode)].1.clone()
+        distance_memo.parent_distance[enode.indx()].1.clone()
     }
 
     fn find_congruence_neighbors(
         &self,
-        classes: &HashMap<Id, EClass>,
-        congruence_neighbors: &mut [Vec<Id>],
+        classes: &HashMap<ID, EClass>,
+        congruence_neighbors: &mut [Vec<ID>],
         unionfind: &EClassUnion,
     ) {
         let mut counter = 0;
@@ -1515,8 +1510,8 @@ impl<'x> ExplainNodes<'x> {
             if let Justification::Congruence = node.parent_connection.justification {
                 let current = node.parent_connection.current;
                 let next = node.parent_connection.next;
-                congruence_neighbors[usize::from(current)].push(next);
-                congruence_neighbors[usize::from(next)].push(current);
+                congruence_neighbors[current.indx()].push(next);
+                congruence_neighbors[next.indx()].push(current);
                 counter += 1;
             }
         }
@@ -1524,7 +1519,7 @@ impl<'x> ExplainNodes<'x> {
         'outer: for eclass in classes.keys() {
             let enodes = self.find_all_enodes(*eclass);
             // find all congruence nodes
-            let mut cannon_enodes: HashMap<Expr, Vec<Id>> = Default::default();
+            let mut cannon_enodes: HashMap<Node, Vec<ID>> = Default::default();
             for enode in &enodes {
                 let cannon = self
                     .node(*enode)
@@ -1532,8 +1527,8 @@ impl<'x> ExplainNodes<'x> {
                     .map_operands(|child| unionfind.root(child));
                 if let Some(others) = cannon_enodes.get_mut(&cannon) {
                     for other in others.iter() {
-                        congruence_neighbors[usize::from(*enode)].push(*other);
-                        congruence_neighbors[usize::from(*other)].push(*enode);
+                        congruence_neighbors[enode.indx()].push(*other);
+                        congruence_neighbors[other.indx()].push(*enode);
                     }
                     counter += 1;
                     others.push(*enode);
@@ -1549,7 +1544,7 @@ impl<'x> ExplainNodes<'x> {
         }
     }
 
-    pub fn get_num_congr(&self, classes: &HashMap<Id, EClass>, unionfind: &EClassUnion) -> usize {
+    pub fn get_num_congr(&self, classes: &HashMap<ID, EClass>, unionfind: &EClassUnion) -> usize {
         let mut congruence_neighbors = vec![vec![]; self.explainfind.len()];
         self.find_congruence_neighbors(classes, &mut congruence_neighbors, unionfind);
         let mut count = 0;
@@ -1566,9 +1561,9 @@ impl<'x> ExplainNodes<'x> {
 
     fn shortest_path_modulo_congruence(
         &mut self,
-        start: Id,
-        end: Id,
-        congruence_neighbors: &[Vec<Id>],
+        start: ID,
+        end: ID,
+        congruence_neighbors: &[Vec<ID>],
         distance_memo: &mut DistanceMemo,
     ) -> Option<(Vec<Connection>, Vec<Connection>)> {
         let mut todo = BinaryHeap::new();
@@ -1605,7 +1600,7 @@ impl<'x> ExplainNodes<'x> {
                 break;
             }
 
-            for neighbor in &self.explainfind[usize::from(current)].neighbors {
+            for neighbor in &self.explainfind[current.indx()].neighbors {
                 if let Justification::Rule(_) = neighbor.justification {
                     let neighbor_cost = cost_so_far.clone() + 1_u32;
                     todo.push(HeapState {
@@ -1615,7 +1610,7 @@ impl<'x> ExplainNodes<'x> {
                 }
             }
 
-            for other in congruence_neighbors[usize::from(current)].iter() {
+            for other in congruence_neighbors[current.indx()].iter() {
                 let next = other;
                 let distance = self.congruence_distance(current, *next, distance_memo);
                 let next_cost = cost_so_far.clone() + distance;
@@ -1672,9 +1667,9 @@ impl<'x> ExplainNodes<'x> {
 
     fn greedy_short_explanations(
         &mut self,
-        start: Id,
-        end: Id,
-        congruence_neighbors: &[Vec<Id>],
+        start: ID,
+        end: ID,
+        congruence_neighbors: &[Vec<ID>],
         distance_memo: &mut DistanceMemo,
         mut fuel: usize,
     ) {
@@ -1709,9 +1704,9 @@ impl<'x> ExplainNodes<'x> {
                     let current_node = self.node(current).clone();
                     let next_node = self.node(next).clone();
                     for (left_child, right_child) in current_node
-                        .operands()
+                        .oprnd_ids()
                         .iter()
-                        .zip(next_node.operands().iter())
+                        .zip(next_node.oprnd_ids().iter())
                     {
                         todo_congruence.push_back((*left_child, *right_child));
                     }
@@ -1723,15 +1718,15 @@ impl<'x> ExplainNodes<'x> {
     #[allow(clippy::too_many_arguments)]
     fn tarjan_ocla(
         &self,
-        enode: Id,
-        children: &HashMap<Id, Vec<Id>>,
-        common_ancestor_queries: &HashMap<Id, Vec<Id>>,
-        black_set: &mut HashSet<Id>,
+        enode: ID,
+        children: &HashMap<ID, Vec<ID>>,
+        common_ancestor_queries: &HashMap<ID, Vec<ID>>,
+        black_set: &mut HashSet<ID>,
         unionfind: &mut EClassUnion,
-        ancestor: &mut Vec<Id>,
-        common_ancestor: &mut HashMap<(Id, Id), Id>,
+        ancestor: &mut Vec<ID>,
+        common_ancestor: &mut HashMap<(ID, ID), ID>,
     ) {
-        ancestor[usize::from(enode)] = enode;
+        ancestor[enode.indx()] = enode;
         for child in children[&enode].iter() {
             self.tarjan_ocla(
                 *child,
@@ -1743,14 +1738,14 @@ impl<'x> ExplainNodes<'x> {
                 common_ancestor,
             );
             unionfind.union(enode, *child);
-            ancestor[usize::from(unionfind.root(enode))] = enode;
+            ancestor[unionfind.root(enode).indx()] = enode;
         }
 
         if common_ancestor_queries.get(&enode).is_some() {
             black_set.insert(enode);
             for other in common_ancestor_queries.get(&enode).unwrap() {
                 if black_set.contains(other) {
-                    let ancestor = ancestor[usize::from(unionfind.root(*other))];
+                    let ancestor = ancestor[unionfind.root(*other).indx()];
                     common_ancestor.insert((enode, *other), ancestor);
                     common_ancestor.insert((*other, enode), ancestor);
                 }
@@ -1758,24 +1753,24 @@ impl<'x> ExplainNodes<'x> {
         }
     }
 
-    fn parent(&self, enode: Id) -> Id {
-        self.explainfind[usize::from(enode)].parent_connection.next
+    fn parent(&self, enode: ID) -> ID {
+        self.explainfind[enode.indx()].parent_connection.next
     }
 
     fn calculate_common_ancestor(
         &self,
-        classes: &HashMap<Id, EClass>,
-        congruence_neighbors: &[Vec<Id>],
-    ) -> HashMap<(Id, Id), Id> {
+        classes: &HashMap<ID, EClass>,
+        congruence_neighbors: &[Vec<ID>],
+    ) -> HashMap<(ID, ID), ID> {
         let mut common_ancestor_queries = HashMap::default();
         for (s_int, others) in congruence_neighbors.iter().enumerate() {
-            let start = &Id::from(s_int);
+            let start = &ID::new(s_int);
             for other in others {
                 for (left, right) in self
                     .node(*start)
-                    .operands()
+                    .oprnd_ids()
                     .iter()
-                    .zip(self.node(*other).operands().iter())
+                    .zip(self.node(*other).oprnd_ids().iter())
                 {
                     if left != right {
                         if common_ancestor_queries.get(start).is_none() {
@@ -1796,11 +1791,11 @@ impl<'x> ExplainNodes<'x> {
         let mut ancestor = vec![];
         for i in 0..self.explainfind.len() {
             unionfind.init_class();
-            ancestor.push(Id::from(i));
+            ancestor.push(ID::new(i));
         }
         for (eclass, _) in classes.iter() {
             let enodes = self.find_all_enodes(*eclass);
-            let mut children: HashMap<Id, Vec<Id>> = HashMap::default();
+            let mut children: HashMap<ID, Vec<ID>> = HashMap::default();
             for enode in &enodes {
                 children.insert(*enode, vec![]);
             }
@@ -1832,16 +1827,16 @@ impl<'x> ExplainNodes<'x> {
 
     fn calculate_shortest_explanations(
         &mut self,
-        start: Id,
-        end: Id,
-        classes: &HashMap<Id, EClass>,
+        start: ID,
+        end: ID,
+        classes: &HashMap<ID, EClass>,
         unionfind: &EClassUnion,
     ) {
         let mut congruence_neighbors = vec![vec![]; self.explainfind.len()];
         self.find_congruence_neighbors(classes, &mut congruence_neighbors, unionfind);
-        let mut parent_distance = vec![(Id::from(0), BigUint::zero()); self.explainfind.len()];
+        let mut parent_distance = vec![(ID::new(0), BigUint::zero()); self.explainfind.len()];
         for (i, entry) in parent_distance.iter_mut().enumerate() {
-            entry.0 = Id::from(i);
+            entry.0 = ID::new(i);
         }
 
         let mut distance_memo = DistanceMemo {

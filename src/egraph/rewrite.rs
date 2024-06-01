@@ -1,4 +1,4 @@
-use calcu_rs::egraph::*;
+use crate::{egraph::*, *};
 
 use pattern::apply_pat;
 use std::fmt::{self, Debug, Display, Formatter};
@@ -17,7 +17,7 @@ use std::sync::Arc;
 #[non_exhaustive]
 pub struct Rewrite {
     /// The name of the rewrite.
-    pub name: Symbol,
+    pub name: GlobSymbol,
     /// The searcher (left-hand side) of the rewrite.
     pub searcher: Arc<dyn Searcher + Sync + Send>,
     /// The applier (right-hand side) of the rewrite.
@@ -51,7 +51,7 @@ impl Rewrite {
     /// [`rewrite!`] macro instead.
     ///
     pub fn new(
-        name: impl Into<Symbol>,
+        name: impl Into<GlobSymbol>,
         searcher: impl Searcher + Send + Sync + 'static,
         applier: impl Applier + Send + Sync + 'static,
     ) -> Result<Self, String> {
@@ -90,14 +90,14 @@ impl Rewrite {
     /// Call [`apply_matches`] on the [`Applier`].
     ///
     /// [`apply_matches`]: Applier::apply_matches()
-    pub fn apply(&self, egraph: &mut EGraph, matches: &[SearchMatches<'_>]) -> Vec<Id> {
+    pub fn apply(&self, egraph: &mut EGraph, matches: &[SearchMatches<'_>]) -> Vec<ID> {
         self.applier.apply_matches(egraph, matches, self.name)
     }
 
     /// This `run` is for testing use only. You should use things
     /// from the `egg::run` module
     #[cfg(test)]
-    pub(crate) fn run(&self, egraph: &mut EGraph) -> Vec<Id> {
+    pub(crate) fn run(&self, egraph: &mut EGraph) -> Vec<ID> {
         let start = Instant::now();
 
         let matches = self.search(egraph);
@@ -127,7 +127,7 @@ pub(crate) fn search_eclasses_with_limit<'a, I, S>(
 ) -> Vec<SearchMatches<'a>>
 where
     S: Searcher + ?Sized,
-    I: IntoIterator<Item = Id>,
+    I: IntoIterator<Item = ID>,
 {
     let mut ms = vec![];
     for eclass in eclasses {
@@ -156,7 +156,7 @@ where
 pub trait Searcher {
     /// Search one eclass, returning None if no matches can be found.
     /// This should not return a SearchMatches with no substs.
-    fn search_eclass(&self, egraph: &EGraph, eclass: Id) -> Option<SearchMatches<'_>> {
+    fn search_eclass(&self, egraph: &EGraph, eclass: ID) -> Option<SearchMatches<'_>> {
         self.search_eclass_with_limit(egraph, eclass, usize::MAX)
     }
 
@@ -170,7 +170,7 @@ pub trait Searcher {
     fn search_eclass_with_limit(
         &self,
         egraph: &EGraph,
-        eclass: Id,
+        eclass: ID,
         limit: usize,
     ) -> Option<SearchMatches>;
 
@@ -228,8 +228,8 @@ pub trait Applier {
         &self,
         egraph: &mut EGraph,
         matches: &[SearchMatches],
-        rule_name: Symbol,
-    ) -> Vec<Id> {
+        rule_name: GlobSymbol,
+    ) -> Vec<ID> {
         let mut added = vec![];
         for mat in matches {
             let ast = if egraph.are_explanations_enabled() {
@@ -265,11 +265,11 @@ pub trait Applier {
     fn apply_one(
         &self,
         egraph: &mut EGraph,
-        eclass: Id,
+        eclass: ID,
         subst: &Subst,
         searcher_ast: Option<&PatternAst>,
-        rule_name: Symbol,
-    ) -> Vec<Id>;
+        rule_name: GlobSymbol,
+    ) -> Vec<ID>;
 
     /// Returns a list of variables that this Applier assumes are bound.
     ///
@@ -317,11 +317,11 @@ where
     fn apply_one(
         &self,
         egraph: &mut EGraph,
-        eclass: Id,
+        eclass: ID,
         subst: &Subst,
         searcher_ast: Option<&PatternAst>,
-        rule_name: Symbol,
-    ) -> Vec<Id> {
+        rule_name: GlobSymbol,
+    ) -> Vec<ID> {
         if self.condition.check(egraph, eclass, subst) {
             self.applier
                 .apply_one(egraph, eclass, subst, searcher_ast, rule_name)
@@ -352,7 +352,7 @@ pub trait Condition {
     /// `eclass` is the eclass [`Id`] where the match (`subst`) occured.
     /// If this is true, then the [`ConditionalApplier`] will fire.
     ///
-    fn check(&self, egraph: &mut EGraph, eclass: Id, subst: &Subst) -> bool;
+    fn check(&self, egraph: &mut EGraph, eclass: ID, subst: &Subst) -> bool;
 
     /// Returns a list of variables that this Condition assumes are bound.
     ///
@@ -367,9 +367,9 @@ pub trait Condition {
 
 impl<F> Condition for F
 where
-    F: Fn(&mut EGraph, Id, &Subst) -> bool,
+    F: Fn(&mut EGraph, ID, &Subst) -> bool,
 {
-    fn check(&self, egraph: &mut EGraph, eclass: Id, subst: &Subst) -> bool {
+    fn check(&self, egraph: &mut EGraph, eclass: ID, subst: &Subst) -> bool {
         self(egraph, eclass, subst)
     }
 }
@@ -393,9 +393,9 @@ impl ConditionEqual {
 }
 
 impl Condition for ConditionEqual {
-    fn check(&self, egraph: &mut EGraph, _eclass: Id, subst: &Subst) -> bool {
-        let mut id_buf_1 = vec![0.into(); self.p1.ast.as_ref().len()];
-        let mut id_buf_2 = vec![0.into(); self.p2.ast.as_ref().len()];
+    fn check(&self, egraph: &mut EGraph, _eclass: ID, subst: &Subst) -> bool {
+        let mut id_buf_1 = vec![ID::new(0); self.p1.ast.as_ref().len()];
+        let mut id_buf_2 = vec![ID::new(0); self.p2.ast.as_ref().len()];
         let a1 = apply_pat(&mut id_buf_1, self.p1.ast.as_ref(), egraph, subst);
         let a2 = apply_pat(&mut id_buf_2, self.p2.ast.as_ref(), egraph, subst);
         a1 == a2
@@ -409,7 +409,7 @@ impl Condition for ConditionEqual {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Var(Symbol);
+pub struct Var(GlobSymbol);
 
 impl Display for Var {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -421,7 +421,7 @@ impl Display for Var {
 ///
 #[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Subst {
-    pub(crate) vec: smallvec::SmallVec<[(Var, Id); 3]>,
+    pub(crate) vec: smallvec::SmallVec<[(Var, ID); 3]>,
 }
 
 impl Subst {
@@ -433,7 +433,7 @@ impl Subst {
     }
 
     /// Insert something, returning the old `Id` if present.
-    pub fn insert(&mut self, var: Var, id: Id) -> Option<Id> {
+    pub fn insert(&mut self, var: Var, id: ID) -> Option<ID> {
         for pair in &mut self.vec {
             if pair.0 == var {
                 return Some(std::mem::replace(&mut pair.1, id));
@@ -445,7 +445,7 @@ impl Subst {
 
     /// Retrieve a `Var`, returning `None` if not present.
     #[inline(never)]
-    pub fn get(&self, var: Var) -> Option<&Id> {
+    pub fn get(&self, var: Var) -> Option<&ID> {
         self.vec
             .iter()
             .find_map(|(v, id)| if *v == var { Some(id) } else { None })
@@ -453,7 +453,7 @@ impl Subst {
 }
 
 impl std::ops::Index<Var> for Subst {
-    type Output = Id;
+    type Output = ID;
 
     fn index(&self, var: Var) -> &Self::Output {
         match self.get(var) {
