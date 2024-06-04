@@ -4,6 +4,7 @@ use std::collections::VecDeque;
 use std::fmt::{self, Debug, Display, Formatter};
 
 #[derive(Clone, Copy, Ord, PartialOrd, Eq, PartialEq, Hash)]
+#[repr(transparent)]
 pub struct ID(pub(crate) NonMaxU32);
 
 impl ID {
