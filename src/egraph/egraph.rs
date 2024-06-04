@@ -310,7 +310,7 @@ impl EGraph {
 
     /// Like [`id_to_expr`](EGraph::id_to_expr) but only goes one layer deep
     pub fn id_to_node(&self, id: ID) -> &Node {
-        &self.nodes[id.indx()]
+        &self.nodes[id.val()]
     }
 
     /// Like [`id_to_expr`](EGraph::id_to_expr), but creates a pattern instead of a term.
@@ -549,7 +549,7 @@ impl EGraph {
         let mut new_ids = Vec::with_capacity(nodes.len());
         let mut new_node_q = Vec::with_capacity(nodes.len());
         for node in nodes {
-            let new_node = node.clone().map_operands(|i| new_ids[i.indx()]);
+            let new_node = node.clone().map_operands(|i| new_ids[i.val()]);
             let size_before = self.unionfind.size();
             let next_id = self.add_uncanonical(new_node);
             if self.unionfind.size() > size_before {
@@ -560,8 +560,8 @@ impl EGraph {
             if let Some(explain) = &mut self.explain {
                 node.for_each_oprnd(|child| {
                     // Set the existance reason for new nodes to their parent node.
-                    if new_node_q[child.indx()] {
-                        explain.set_existance_reason(new_ids[child.indx()], next_id);
+                    if new_node_q[child.val()] {
+                        explain.set_existance_reason(new_ids[child.val()], next_id);
                     }
                 });
             }
@@ -595,7 +595,7 @@ impl EGraph {
                     new_node_q.push(false);
                 }
                 ENodeOrVar::ENode(node) => {
-                    let new_node = node.clone().map_operands(|i| new_ids[i.indx()]);
+                    let new_node = node.clone().map_operands(|i| new_ids[i.val()]);
                     let size_before = self.unionfind.size();
                     let next_id = self.add_uncanonical(new_node);
                     if self.unionfind.size() > size_before {
@@ -606,8 +606,8 @@ impl EGraph {
 
                     if let Some(explain) = &mut self.explain {
                         node.for_each_oprnd(|child| {
-                            if new_node_q[child.indx()] {
-                                explain.set_existance_reason(new_ids[child.indx()], next_id);
+                            if new_node_q[child.val()] {
+                                explain.set_existance_reason(new_ids[child.val()], next_id);
                             }
                         });
                     }
@@ -658,7 +658,7 @@ impl EGraph {
         let nodes = expr.as_ref();
         let mut new_ids = Vec::with_capacity(nodes.len());
         for node in nodes {
-            let node = node.clone().map_operands(|i| new_ids[i.indx()]);
+            let node = node.clone().map_operands(|i| new_ids[i.val()]);
             let id = self.lookup(node)?;
             new_ids.push(id)
         }
@@ -1035,7 +1035,7 @@ impl EGraph {
 
         while !self.pending.is_empty() || !self.analysis_pending.is_empty() {
             while let Some(class) = self.pending.pop() {
-                let mut node = self.nodes[class.indx()].clone();
+                let mut node = self.nodes[class.val()].clone();
                 node.update_operands(|id| self.eclass_id_mut(id));
                 if let Some(memo_class) = self.memo.insert(node, class) {
                     let did_something = self.perform_union(
@@ -1049,7 +1049,7 @@ impl EGraph {
             }
 
             while let Some(class_id) = self.analysis_pending.pop() {
-                let node = self.nodes[class_id.indx()].clone();
+                let node = self.nodes[class_id.val()].clone();
                 let class_id = self.eclass_id_mut(class_id);
                 let node_data = ExprAnalysis::make(self, &node);
                 let class = self.classes.get_mut(&class_id).unwrap();
@@ -1200,11 +1200,11 @@ impl EClassUnion {
     }
 
     fn parent(&self, query: ID) -> ID {
-        self.parents[query.indx()]
+        self.parents[query.val()]
     }
 
     fn parent_mut(&mut self, query: ID) -> &mut ID {
-        &mut self.parents[query.indx()]
+        &mut self.parents[query.val()]
     }
 
     /// all equivalent EClasses have equal roots

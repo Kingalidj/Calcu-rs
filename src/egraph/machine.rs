@@ -1,4 +1,4 @@
-use calcu_rs::{egraph::*, *, util::*};
+use calcu_rs::{egraph::*, util::*, *};
 use std::{fmt::Debug, result};
 
 type Result = result::Result<(), ()>;
@@ -148,8 +148,7 @@ impl Machine {
                             ENodeOrReg::ENode(node) => {
                                 //let look = |i| self.lookup[usize::from(i)];
                                 //match egraph.lookup(node.clone().map_operands(look)) {
-                                let n =
-                                    node.clone().map_operands(|id| self.lookup[id.indx()]);
+                                let n = node.clone().map_operands(|id| self.lookup[id.val()]);
                                 match egraph.lookup(n) {
                                     Some(id) => self.lookup.push(id),
                                     None => return Ok(()),
@@ -228,8 +227,8 @@ impl Compiler {
                     size = 1;
                     for &child in n.oprnd_ids() {
                         // add free vars of the children
-                        free.extend(&self.free_vars[child.indx()]);
-                        size += self.subtree_size[child.indx()];
+                        free.extend(&self.free_vars[child.val()]);
+                        size += self.subtree_size[child.val()];
                     }
                 }
                 ENodeOrVar::Var(v) => {
@@ -248,7 +247,7 @@ impl Compiler {
         // - prefer more free variables
         // - prefer smaller term
         let key = |(id, _): &&(ID, Reg)| {
-            let i = id.indx();
+            let i = id.val();
             // get all free variables at i
             let n_bound = self.free_vars[i]
                 .iter()
@@ -271,7 +270,7 @@ impl Compiler {
     /// the variables bound at this point
     // check if enode with id has only variables with a mapping to a register
     fn is_ground_now(&self, id: ID) -> bool {
-        self.free_vars[id.indx()]
+        self.free_vars[id.val()]
             .iter()
             .all(|v| self.v2r.contains_key(v))
     }
@@ -402,7 +401,7 @@ impl Program {
                         .vec
                         .iter()
                         // HACK we are reusing Ids here, this is bad
-                        .map(|(v, reg_id)| (*v, machine.reg(Reg(reg_id.indx() as u32))))
+                        .map(|(v, reg_id)| (*v, machine.reg(Reg(reg_id.val() as u32))))
                         .collect();
                     matches.push(Subst { vec: subst_vec });
                     limit -= 1;

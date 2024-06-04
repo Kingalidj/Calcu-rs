@@ -144,7 +144,7 @@ pub trait Construct: Debug + Clone + Eq + Ord + Hash {
         fn build<L: Construct>(to: &mut RecExpr<L>, from: &[L]) -> ID {
             let last = from.last().unwrap().clone();
             let new_node = last.map_operands(|id| {
-                let i = id.indx() + 1;
+                let i = id.val() + 1;
                 build(to, &from[0..i])
             });
             to.add(new_node)
@@ -227,8 +227,8 @@ pub struct RecExpr<L> {
     nodes: Vec<L>,
 }
 
-impl From<ExprGraph> for RecExpr<Node> {
-    fn from(value: ExprGraph) -> Self {
+impl From<ExprTree> for RecExpr<Node> {
+    fn from(value: ExprTree) -> Self {
         Self { nodes: value.nodes }
     }
 }
@@ -262,7 +262,7 @@ impl<L: Construct> RecExpr<L> {
     /// The enode's children `Id`s must refer to elements already in this list.
     pub(crate) fn add(&mut self, node: L) -> ID {
         debug_assert!(
-            node.check_all(|id| id.indx() < self.nodes.len()),
+            node.check_all(|id| id.val() < self.nodes.len()),
             "node {:?} has children not in this expr: {:?}",
             node,
             self
@@ -291,7 +291,7 @@ impl<L: Construct> RecExpr<L> {
     pub fn is_dag(&self) -> bool {
         for (i, n) in self.nodes.iter().enumerate() {
             for &child in n.operands() {
-                if child.indx() >= i {
+                if child.val() >= i {
                     return false;
                 }
             }
@@ -303,13 +303,13 @@ impl<L: Construct> RecExpr<L> {
 impl<L: Construct> Index<ID> for RecExpr<L> {
     type Output = L;
     fn index(&self, id: ID) -> &L {
-        &self.nodes[id.indx()]
+        &self.nodes[id.val()]
     }
 }
 
 impl<L: Construct> IndexMut<ID> for RecExpr<L> {
     fn index_mut(&mut self, id: ID) -> &mut L {
-        &mut self.nodes[id.indx()]
+        &mut self.nodes[id.val()]
     }
 }
 
@@ -341,7 +341,7 @@ impl<L: Construct + Display> RecExpr<L> {
             op
         } else {
             let mut vec = vec![op];
-            for child in node.operands().iter().map(|i| i.indx()) {
+            for child in node.operands().iter().map(|i| i.val()) {
                 vec.push(if let Some(s) = f(child) {
                     return SExpr::String(s);
                 } else if child < i {

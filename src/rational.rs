@@ -1,3 +1,4 @@
+use fmt::{Debug, Display};
 use malachite::{
     self as mal,
     num::{
@@ -6,15 +7,17 @@ use malachite::{
     },
 };
 use std::cmp::Ordering;
+use std::fmt::Formatter;
 use std::{fmt, ops};
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Rational(pub(crate) mal::Rational);
 
 impl Rational {
+    pub const MINUS_ONE: Self = Rational(mal::Rational::const_from_signed(-1));
     pub const ZERO: Self = Rational(mal::Rational::const_from_signed(0));
     pub const ONE: Self = Rational(mal::Rational::const_from_signed(1));
-    pub const MINUS_ONE: Self = Rational(mal::Rational::const_from_signed(-1));
+    pub const TWO: Self = Rational(mal::Rational::const_from_signed(2));
 
     #[inline(always)]
     pub fn is_zero(&self) -> bool {
@@ -70,8 +73,12 @@ impl Rational {
 
     /// will calculate [self] to the power of an integer number.
     ///
-    /// if the exponent is (a/b) e.g non-int: we calculate the power to the int quotient of a/b
+    /// if the exponent is (a/b) non-int: we calculate the power to the int quotient of a/b
     /// and return the remainder: (self^quot, rem).
+    ///
+    /// n^(a/b) = n^(quot + rest) = n^(quot) * n^(rest)
+    ///
+    /// quot: Int, rest: Fraction, n^(quot): Rational
     ///
     /// returns the input if calculation was not possible
     pub fn pow(mut self, mut rhs: Self) -> (Self, Self) {
@@ -80,7 +87,7 @@ impl Rational {
         }
 
         if rhs.is_zero() {
-            return (Rational::ONE, Rational::ONE);
+            return (Rational::ONE, Rational::ZERO);
         }
 
         // inverse if exponent is negative
@@ -127,7 +134,16 @@ impl ops::Add for Rational {
 
     #[inline(always)]
     fn add(mut self, rhs: Self) -> Self::Output {
-        self.0 = self.0 + rhs.0;
+        self.0 += rhs.0;
+        self
+    }
+}
+impl ops::Add<&Rational> for Rational {
+    type Output = Self;
+
+    #[inline(always)]
+    fn add(mut self, rhs: &Self) -> Self::Output {
+        self.0 += &rhs.0;
         self
     }
 }
@@ -136,12 +152,26 @@ impl ops::AddAssign for Rational {
         self.0 += rhs.0;
     }
 }
+impl ops::AddAssign<&Rational> for Rational {
+    fn add_assign(&mut self, rhs: &Self) {
+        self.0 += &rhs.0;
+    }
+}
 impl ops::Sub for Rational {
     type Output = Self;
 
     #[inline(always)]
     fn sub(mut self, rhs: Self) -> Self::Output {
-        self.0 = self.0 - rhs.0;
+        self.0 -= rhs.0;
+        self
+    }
+}
+impl ops::Sub<&Rational> for Rational {
+    type Output = Self;
+
+    #[inline(always)]
+    fn sub(mut self, rhs: &Self) -> Self::Output {
+        self.0 -= &rhs.0;
         self
     }
 }
@@ -150,18 +180,37 @@ impl ops::SubAssign for Rational {
         self.0 -= rhs.0;
     }
 }
+impl ops::SubAssign<&Rational> for Rational {
+    fn sub_assign(&mut self, rhs: &Self) {
+        self.0 -= &rhs.0;
+    }
+}
 impl ops::Mul for Rational {
     type Output = Self;
 
     #[inline(always)]
     fn mul(mut self, rhs: Self) -> Self::Output {
-        self.0 = self.0 * rhs.0;
+        self.0 *= rhs.0;
+        self
+    }
+}
+impl ops::Mul<&Rational> for Rational {
+    type Output = Self;
+
+    #[inline(always)]
+    fn mul(mut self, rhs: &Self) -> Self::Output {
+        self.0 *= &rhs.0;
         self
     }
 }
 impl ops::MulAssign for Rational {
     fn mul_assign(&mut self, rhs: Self) {
         self.0 *= rhs.0;
+    }
+}
+impl ops::MulAssign<&Rational> for Rational {
+    fn mul_assign(&mut self, rhs: &Self) {
+        self.0 *= &rhs.0;
     }
 }
 impl ops::Div for Rational {
@@ -173,6 +222,19 @@ impl ops::Div for Rational {
             None
         } else {
             self.0 = self.0 / rhs.0;
+            Some(self)
+        }
+    }
+}
+impl ops::Div<&Rational> for Rational {
+    type Output = Option<Self>;
+
+    #[inline(always)]
+    fn div(mut self, rhs: &Self) -> Self::Output {
+        if rhs.is_zero() {
+            None
+        } else {
+            self.0 = self.0 / &rhs.0;
             Some(self)
         }
     }
@@ -209,8 +271,13 @@ impl From<(i64, i64)> for Rational {
     }
 }
 
-impl fmt::Display for Rational {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for Rational {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+impl Debug for Rational {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }

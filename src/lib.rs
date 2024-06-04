@@ -1,18 +1,18 @@
 extern crate self as calcu_rs;
 
+#[allow(dead_code)]
 mod egraph;
+
 mod expression;
 mod rational;
 mod util;
 pub use calcurs_macros::{calc, define_rules, expr};
 
 #[allow(unused_imports)]
-pub(crate) use crate::{
-    util::*,
-};
+pub(crate) use crate::util::*;
 
 pub use crate::{
-    expression::{ExprGraph, Node, ID},
+    expression::{ExprTree, Node, ID},
     rational::Rational,
 };
 

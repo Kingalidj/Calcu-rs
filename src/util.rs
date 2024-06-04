@@ -1,3 +1,5 @@
+use log::warn;
+use std::collections::VecDeque;
 use std::{
     fmt::{self, Debug, Display, Formatter},
     iter::FromIterator,
@@ -11,6 +13,7 @@ pub use symbol_table::GlobalSymbol as GlobSymbol;
 
 pub(crate) use hashmap::*;
 pub(crate) type BuildHasher = fxhash::FxBuildHasher;
+pub(crate) use paste::paste;
 
 #[cfg(feature = "deterministic")]
 mod hashmap {
@@ -24,7 +27,7 @@ mod hashmap {
     pub(crate) type HashSet<K> = std::collections::HashSet<K, BuildHasher>;
 }
 
-pub(crate) fn hashmap_with_capacity<K, V>(cap: usize) -> hashmap::HashMap<K, V> {
+pub(crate) fn hashmap_with_capacity<K, V>(cap: usize) -> HashMap<K, V> {
     HashMap::with_capacity_and_hasher(cap, <_>::default())
 }
 
@@ -59,8 +62,8 @@ pub(crate) struct UniqueQueue<T>
 where
     T: Eq + std::hash::Hash + Clone,
 {
-    set: std::collections::HashSet<T>,
-    queue: std::collections::VecDeque<T>,
+    set: HashSet<T>,
+    queue: VecDeque<T>,
 }
 
 impl<T> Default for UniqueQueue<T>
@@ -69,8 +72,8 @@ where
 {
     fn default() -> Self {
         UniqueQueue {
-            set: std::collections::HashSet::default(),
-            queue: std::collections::VecDeque::new(),
+            set: HashSet::default(),
+            queue: VecDeque::new(),
         }
     }
 }
@@ -113,7 +116,7 @@ where
 {
     type Item = T;
 
-    type IntoIter = <std::collections::VecDeque<T> as IntoIterator>::IntoIter;
+    type IntoIter = <VecDeque<T> as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
         self.queue.into_iter()
@@ -133,9 +136,112 @@ where
     }
 }
 
+macro_rules! non_max {
+    ($non_max_ty: ident, $non_zero_ty: ty, $ty: ty) => {
+        #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+        #[repr(transparent)]
+        pub struct $non_max_ty($non_zero_ty);
+
+        impl $non_max_ty {
+            pub const ZERO: $non_max_ty = Self::new(0);
+            pub const ONE: $non_max_ty = Self::new(1);
+            pub const TWO: $non_max_ty = Self::new(2);
+            pub const MAX: $non_max_ty = Self::new(<$ty>::MAX - 1);
+
+            #[inline(always)]
+            pub const fn new(val: $ty) -> Self {
+                let non_zero = val ^ <$ty>::MAX;
+                assert!(non_zero != 0, "NonZero is Zero");
+                Self(unsafe { <$non_zero_ty>::new_unchecked(non_zero) })
+            }
+
+            #[inline(always)]
+            pub const fn try_new(val: $ty) -> Option<Self> {
+                match <$non_zero_ty>::new(val ^ <$ty>::MAX) {
+                    None => None,
+                    Some(val) => Some(Self(val)),
+                }
+            }
+
+            #[inline(always)]
+            pub const fn get(&self) -> $ty {
+                self.0.get() ^ <$ty>::MAX
+            }
+        }
+
+        impl Default for $non_max_ty {
+            #[inline(always)]
+            fn default() -> Self {
+                Self::new(0)
+            }
+        }
+
+        impl std::fmt::Display for $non_max_ty {
+            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                write!(f, "{}", self.get())
+            }
+        }
+
+        impl std::fmt::Debug for $non_max_ty {
+            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                write!(f, "{}", self.get())
+            }
+        }
+
+        impl From<$non_max_ty> for $ty {
+            #[inline(always)]
+            fn from(value: $non_max_ty) -> Self {
+                value.get()
+            }
+        }
+    };
+
+    ($ty: ty) => {
+        paste! {
+            non_max!{  [<NonMax $ty:camel>], std::num::[<NonZero $ty:camel>], $ty }
+        }
+    };
+}
+
+non_max!(u8);
+non_max!(u16);
+non_max!(u32);
+non_max!(u64);
+non_max!(u128);
+non_max!(usize);
+
 #[cfg(test)]
 mod tests {
     use calcu_rs::egraph::*;
+
+    macro_rules! non_max_test {
+        ($ty:ty) => {
+            paste! {
+                #[test]
+                fn [< non_max_ $ty:snake _test >]() {
+                    use [< NonMax $ty:camel >] as NonMax;
+                    assert_eq!(NonMax::ZERO.get(), 0);
+                    assert_eq!(NonMax::ONE.get(), 1);
+                    assert_eq!(NonMax::MAX.get(), <$ty>::MAX - 1);
+                    assert_eq!(NonMax::new(42).get(), 42);
+                }
+
+                #[test]
+                #[should_panic]
+                fn [< non_max_ $ty:snake _panic >]() {
+                    use [< NonMax $ty:camel >] as NonMax;
+                    NonMax::new(<$ty>::MAX);
+                }
+            }
+        };
+    }
+
+    non_max_test!(u8);
+    non_max_test!(u16);
+    non_max_test!(u32);
+    non_max_test!(u64);
+    non_max_test!(u128);
+    non_max_test!(usize);
 
     fn ids(us: impl IntoIterator<Item = usize>) -> Vec<ID> {
         us.into_iter().map(|u| ID::new(u)).collect()

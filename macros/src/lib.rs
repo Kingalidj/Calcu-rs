@@ -68,8 +68,8 @@ impl Parse for Op {
 
 #[derive(Debug, PartialEq, Clone, PartialOrd)]
 enum Expr {
-    Num(i32),
-    Float(f32),
+    Num(i64),
+    Float(f64),
     Symbol(String),
     Binary(OpKind, Box<Expr>, Box<Expr>),
     Infinity{sign: i8},
@@ -90,11 +90,11 @@ impl Expr {
             }
 
         } else if let Ok(i) = syn::LitInt::parse(s) {
-            let val: i32 = i.base10_parse().unwrap();
+            let val: i64 = i.base10_parse().unwrap();
             Ok(Expr::Num(val))
 
         } else if let Ok(f) = syn::LitFloat::parse(s) {
-            let val: f32 = f.base10_parse().unwrap();
+            let val: f64 = f.base10_parse().unwrap();
             Ok(Expr::Float(val))
 
         } else if s.peek(syn::token::Paren) {
@@ -405,40 +405,51 @@ impl Parse for RuleSet {
 
 fn op_to_node(op: OpKind) -> TokenStream {
     match op {
-        OpKind::Add => quote!(Node::Add),
-        OpKind::Sub => todo!(),
-        OpKind::Mul => quote!(Node::Mul),
-        OpKind::Div => todo!(),
-        OpKind::Pow => quote!(Node::Pow),
+        OpKind::Add => quote!(Node::Add([lhs, rhs])),
+        OpKind::Mul => quote!(Node::Mul([lhs, rhs])),
+        OpKind::Pow => quote!(Node::Pow([lhs, rhs])),
+
+        OpKind::Sub => quote! {{
+            let add = expr.add_node(Node::Add([lhs, rhs]));
+            let minus_one = expr.add_node(Node::Rational(Rational::from(-1)));
+            Node::Mul([minus_one, add])
+        }},
+        OpKind::Div => quote! {{
+            let mul = expr.add_node(Node::Mul([lhs, rhs]));
+            let minus_one = expr.add_node(Node::Rational(Rational::from(-1)));
+            Node::Pow([mul, minus_one])
+        }},
     }
 }
 
 fn to_node_rec(e: Expr) -> TokenStream {
     //let var = syn::Ident::new(node_name, Span::call_site());
     match e {
-        Expr::Num(n) => quote!(graph.add_raw(Node::Rational(Rational::from(#n)))),
-        Expr::Symbol(s) => quote!(graph.add_raw(Node::Symbol(#s.into()))),
-            Expr::Binary(op, lhs, rhs) => {
-                let lhs = to_node_rec(*lhs);
-                let rhs = to_node_rec(*rhs);
-                let op = op_to_node(op);
-                quote!({
+        Expr::Num(n) => quote!(expr.add_node(Node::Rational(Rational::from(#n)))),
+        Expr::Symbol(s) => quote!(expr.add_node(Node::Symbol(#s.into()))),
+        Expr::Binary(op, lhs, rhs) => {
+            let lhs = to_node_rec(*lhs);
+            let rhs = to_node_rec(*rhs);
+            let op = op_to_node(op);
+            quote!({
                     let lhs = #lhs;
                     let rhs = #rhs;
-                    graph.add_raw(#op([lhs, rhs]))
+                    let op = #op;
+                    expr.add_node(op)
                 })
-            },
-            Expr::PlaceHolder(_) => todo!(),
-            _ => todo!()
+        },
+        Expr::PlaceHolder(_) => todo!(),
+        _ => todo!()
     }
 }
 
 fn to_node(e: Expr) -> TokenStream {
     let n = to_node_rec(e);
     quote!({
-        let mut graph = ExprGraph::default();
-        let _ = #n;
-        graph.compact()
+        let mut expr = ExprTree::default();
+        let root_id = #n;
+        expr.set_root(root_id);
+        expr
     })
 }
 

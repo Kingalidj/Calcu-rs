@@ -3,14 +3,31 @@ extern crate calcu_rs;
 use calcu_rs::*;
 
 fn main() {
-    std::env::set_var("RUST_LOG", "egg=warn");
+    std::env::set_var("RUST_LOG", "=warn");
     env_logger::init();
 
-    println!("Hello World!");
-    
+    let mut expr = expr!(x + x);
+    println!("{:?}", expr);
+    expr.simplify();
+    println!("{:?}", expr);
+    //println!("{:?}", expr);
+    expr.cleanup();
+    println!("{:?}", expr);
+    //println!("{:?}", expr);
 
-    let graph = expr!(x + 2 * (3 + 4) * 5);
-    println!("{:?}", graph);
+    //let mut lhs = ExprTree::default();
+    //let exp = lhs.push(Node::Rational(Rational::from((321u64, 43u64))));
+    //let base = lhs.push(Node::Rational(Rational::from(41)));
+    //lhs.push(Node::Pow([base, exp]));
+    //println!("{}", lhs);
+    //lhs.simplify();
+    //println!("{}", lhs);
+    //lhs.cleanup();
+    //println!("{}", lhs);
+
+    //let exp = Rational::from((321u64, 43u64));
+    //let base = Rational::from(41);
+    //println!("{:?}", base.pow(exp));
 
     //let expr = calc!(x ^ 2 + 2 * x * y + y ^ 2);
     //let best = GraphExpr::analyse(

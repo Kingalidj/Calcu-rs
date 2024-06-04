@@ -320,7 +320,7 @@ pub(crate) fn apply_pat(
         let id = match pat_node {
             ENodeOrVar::Var(w) => subst[*w],
             ENodeOrVar::ENode(e) => {
-                let n = e.clone().map_operands(|child| ids[child.indx()]);
+                let n = e.clone().map_operands(|child| ids[child.val()]);
                 trace!("adding: {:?}", n);
                 egraph.add(n)
             }

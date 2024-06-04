@@ -7,11 +7,7 @@ mod pattern;
 mod rewrite;
 mod run;
 
-pub(crate) use {
-    crate::*,
-    egraph::EClassUnion,
-    explain::Explain
-};
+pub(crate) use {crate::*, egraph::EClassUnion, explain::Explain};
 
 pub use {
     calcu_rs::util::*,
