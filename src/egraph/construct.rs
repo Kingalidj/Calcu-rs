@@ -170,7 +170,7 @@ pub trait Construct: Debug + Clone + Eq + Ord + Hash {
             .unwrap()
     }
 
-    /// Same as [`Language::build_recexpr`], but fallible.
+    /// Same as [`Construct::build_recexpr`], but fallible.
     fn try_build_recexpr<F, Err>(&self, mut get_node: F) -> Result<RecExpr<Self>, Err>
     where
         F: FnMut(ID) -> Result<Self, Err>,
@@ -212,8 +212,6 @@ pub trait Construct: Debug + Clone + Eq + Ord + Hash {
     }
 }
 
-/// A recursive expression from a user-defined [`Language`].
-///
 /// This conceptually represents a recursive expression, but it's actually just
 /// a list of enodes.
 ///
@@ -224,7 +222,7 @@ pub trait Construct: Debug + Clone + Eq + Ord + Hash {
 ///
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RecExpr<L> {
-    nodes: Vec<L>,
+    pub(crate) nodes: Vec<L>,
 }
 
 impl From<ExprTree> for RecExpr<Node> {

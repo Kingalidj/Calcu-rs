@@ -151,6 +151,11 @@ impl ExprTree {
             .for_each(|n| n.oprnd_ids_mut().iter_mut().for_each(|id| *id = map_id(*id)));
 
         self.root = Some(map_id(root_id));
+
+        // ensure the operands appear before the operator
+        self.nodes.iter().enumerate().for_each(|(id, n)| {
+            n.oprnd_ids().iter().for_each(|op_id| debug_assert!(op_id.val() < id))
+        })
     }
 
     fn cmp_nodes(l_expr: &ExprTree, r_expr: &ExprTree, l: ID, r: ID) -> bool {
@@ -375,12 +380,13 @@ impl Display for ExprTree {
 #[cfg(test)]
 mod expressions {
     use super::*;
+    use egraph::*;
 
     macro_rules! eq {
         ($lhs:expr, $rhs:expr) => {{
             let lhs = $lhs;
             let rhs = $rhs;
-            assert_eq!(lhs, rhs, "{:?} != {:?}", lhs, rhs);
+            assert_eq!(lhs, rhs, "{} != {}", lhs, rhs);
         }};
     }
 
@@ -388,7 +394,7 @@ mod expressions {
         ($lhs:expr, $rhs:expr) => {{
             let lhs = $lhs;
             let rhs = $rhs;
-            assert_ne!(lhs, rhs, "{:?} == {:?}", lhs, rhs);
+            assert_ne!(lhs, rhs, "{} == {}", lhs, rhs);
         }};
     }
 
@@ -417,6 +423,8 @@ mod expressions {
         eq!(expr!(0 + x), add_expr);
         eq!(expr!(0 * x), mul_expr);
         ne!(expr!(x * 1), expr!(x + 1));
+        //eq!(expr!(a - b), expr!(a + (-1 * b)))
+
     }
 
     macro_rules! check_simplify {
@@ -478,5 +486,51 @@ mod expressions {
         rhs.make_root(Node::Mul([pow_res, rhs_pow]));
 
         check_simplify!(lhs, rhs);
+    }
+
+    macro_rules! cmp_pat_expr {
+        ($pat: expr, $expr: expr) => {{
+            let pat = $pat;
+            let expr = $expr;
+            let expr_pat = PatternAst::from(RecExpr::from(expr.clone()));
+            assert_eq!(pat, expr_pat, "expr({:?}) != pat({:?})", expr, pat);
+        }};
+    }
+    fn test_pat_macro() {
+        pat!(?x + ?a + 2 * ?c);
+        cmp_pat_expr!(pat!(x + x), expr!(x + x));
+        cmp_pat_expr!(pat!(-1 * x), expr!(-1 * x));
+    }
+
+    define_rules!(test_rules:
+        r0: ?a + ?b -> ?b + ?a,
+        r1: a + b -> c,
+        r2: ?x + 0 -> ?x,
+        r3: 1 + 2 -> 3,
+    );
+
+    fn find_best(mut expr: ExprTree) -> ExprTree {
+        expr.cleanup();
+        let rec = RecExpr::from(expr);
+        let rules = test_rules();
+        let runner = Runner::default()
+            .with_expr(&rec)
+            .run(&test_rules());
+        let extractor = Extractor::new(&runner.egraph, AstSize);
+        let (_, be) = extractor.find_best(runner.roots[0]);
+
+        let root = ID::new(be.nodes.len() - 1);
+        ExprTree { root: Some(root), nodes: be.nodes }
+    }
+
+    fn test_defined_rules() {
+        eq!(find_best(expr!(a + b)), expr!(c));
+        eq!(find_best(expr!(b + a)), expr!(c));
+        eq!(find_best(expr!(x + 0)), expr!(x));
+        eq!(find_best(expr!(0 + x)), expr!(x));
+        eq!(find_best(expr!(42 + 0)), expr!(42));
+        eq!(find_best(expr!(0 + 42)), expr!(42));
+        eq!(find_best(expr!(1 + 2)), expr!(3));
+        eq!(find_best(expr!(2 + 1)), expr!(3));
     }
 }

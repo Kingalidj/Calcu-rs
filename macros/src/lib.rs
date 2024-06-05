@@ -1,6 +1,6 @@
 use proc_macro2::{TokenStream, Span};
 use quote::{quote, ToTokens};
-use syn::{parse::{discouraged::Speculative, Parse, ParseStream}, punctuated as punc, Token};
+use syn::{parse::{discouraged::Speculative, Parse, ParseStream}, parse, punctuated as punc, Token};
 use std::fmt::Write;
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, PartialOrd, Ord)]
@@ -60,7 +60,7 @@ impl Parse for Op {
             } else if let Ok(op) = input.parse::<Token![^]>() {
                 (OpKind::Pow, op.span)
             } else {
-                return Err(syn::parse::Error::new(input.span(), "expected operator { +, -, *, / }"));
+                return Err(parse::Error::new(input.span(), "expected operator { +, -, *, / }"));
             };
         Ok(Self {kind, span})
     }
@@ -102,7 +102,7 @@ impl Expr {
             syn::parenthesized!(content in s);
             Expr::parse(&content)
         } else {
-            Err(syn::parse::Error::new(s.span(), "bad expression"))
+            Err(parse::Error::new(s.span(), "bad expression"))
         }
     }
 
@@ -113,7 +113,7 @@ impl Expr {
                     let operand = Self::parse_operand(s)?;
                     Ok(Expr::Binary(OpKind::Mul, Expr::Num(-1).into(), operand.into()))
                 }
-                _ => Err(syn::parse::Error::new(op.span, "expected unary operator"))
+                _ => Err(parse::Error::new(op.span, "expected unary operator"))
             }
         }  else if let Ok(_) = s.parse::<Token![?]>() {
             let mut id = "?".to_string();
@@ -192,7 +192,7 @@ impl Expr {
 
 }
 
-impl syn::parse::Parse for Expr {
+impl parse::Parse for Expr {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         Expr::parse_bin_expr(input, 0 + 1)
     }
@@ -244,8 +244,8 @@ struct RewriteRule {
 impl RewriteRule {
 
     fn quote_lhs_to_rhs(name: &String, lhs: &Expr, rhs: &Expr, cond: &Option<syn::Expr>, dbg: bool) -> TokenStream {
-        let lhs = lhs.quote();
-        let rhs = rhs.quote();
+        let lhs = to_node(lhs, true).unwrap();
+        let rhs = to_node(rhs, true).unwrap();
 
         let mut debug = TokenStream::new();
         if dbg {
@@ -268,7 +268,7 @@ impl RewriteRule {
 
         if let Some(cond) = cond {
             cond_applier = quote!(
-                let __applier = ::egg::ConditionalApplier {
+                let __applier = egraph::ConditionalApplier {
                     condition: #cond,
                     applier: __applier,
                 };
@@ -276,11 +276,11 @@ impl RewriteRule {
         }
 
         quote!({
-            let __searcher = ::egg::Pattern::from(&#lhs);
-            let __applier  = ::egg::Pattern::from(&#rhs);
+            let __searcher = egraph::Pattern::new(#lhs);
+            let __applier  = egraph::Pattern::new(#rhs);
             #debug
             #cond_applier
-            ::egg::Rewrite::new(#name.to_string(), __searcher, __applier).unwrap()
+            egraph::Rewrite::new(#name.to_string(), __searcher, __applier).unwrap()
         })
     }
 
@@ -327,7 +327,7 @@ impl Parse for RewriteRule {
                 let _ = input.parse::<Token![->]>()?;    
                 true
             } else {
-                return Err(syn::parse::Error::new(input.span(), "expected -> or <->"));
+                return Err(parse::Error::new(input.span(), "expected -> or <->"));
             };
 
         let rhs = Expr::parse(input)?;
@@ -354,9 +354,9 @@ impl RuleSet {
     fn quote(&self) -> TokenStream {
         let gen_name = &self.gen_name;
 
-        let mut n: usize = 0;
+        let mut n_rules: usize = 0;
         for r in &self.rules {
-            n += 
+            n_rules +=
                 if r.bidir {
                     2
                 } else {
@@ -377,7 +377,7 @@ impl RuleSet {
         }
 
         quote!(
-            pub fn #gen_name() -> [::egg::Rewrite<Self, <Self as GraphExpression>::Analyser>; #n] {
+            pub fn #gen_name() -> [egraph::Rewrite; #n_rules] {
                 #debug
                 [ #rules ]
             }
@@ -403,62 +403,110 @@ impl Parse for RuleSet {
     }
 }
 
-fn op_to_node(op: OpKind) -> TokenStream {
+fn op_to_node(op: OpKind, as_pattern: bool) -> TokenStream {
+    let expr_or_pat = if as_pattern {
+        quote!(pat)
+    } else {
+        quote!(expr)
+    };
     match op {
         OpKind::Add => quote!(Node::Add([lhs, rhs])),
         OpKind::Mul => quote!(Node::Mul([lhs, rhs])),
         OpKind::Pow => quote!(Node::Pow([lhs, rhs])),
 
         OpKind::Sub => quote! {{
-            let add = expr.add_node(Node::Add([lhs, rhs]));
-            let minus_one = expr.add_node(Node::Rational(Rational::from(-1)));
+            let add = #expr_or_pat.add_node(Node::Add([lhs, rhs]));
+            let minus_one = #expr_or_pat.add_node(Node::Rational(Rational::from(-1)));
             Node::Mul([minus_one, add])
         }},
         OpKind::Div => quote! {{
             let mul = expr.add_node(Node::Mul([lhs, rhs]));
-            let minus_one = expr.add_node(Node::Rational(Rational::from(-1)));
+            let minus_one = #expr_or_pat.add_node(Node::Rational(Rational::from(-1)));
             Node::Pow([mul, minus_one])
         }},
     }
 }
 
-fn to_node_rec(e: Expr) -> TokenStream {
+fn to_node_rec(e: &Expr, as_pattern: bool) -> parse::Result<TokenStream> {
     //let var = syn::Ident::new(node_name, Span::call_site());
+    let node =
     match e {
-        Expr::Num(n) => quote!(expr.add_node(Node::Rational(Rational::from(#n)))),
-        Expr::Symbol(s) => quote!(expr.add_node(Node::Symbol(#s.into()))),
+        Expr::Num(n) => quote!(Node::Rational(Rational::from(#n))),
+        Expr::Symbol(s) => quote!(Node::Symbol(#s.into())),
         Expr::Binary(op, lhs, rhs) => {
-            let lhs = to_node_rec(*lhs);
-            let rhs = to_node_rec(*rhs);
-            let op = op_to_node(op);
-            quote!({
+            let lhs = to_node_rec(lhs, as_pattern)?;
+            let rhs = to_node_rec(rhs, as_pattern)?;
+            let op = op_to_node(*op, as_pattern);
+            quote!{{
                     let lhs = #lhs;
                     let rhs = #rhs;
-                    let op = #op;
-                    expr.add_node(op)
-                })
+                    #op
+                }}
         },
-        Expr::PlaceHolder(_) => todo!(),
+        Expr::PlaceHolder(var) => {
+            if !as_pattern {
+                return Err(parse::Error::new(Span::call_site(), "placeholder not allowed in expressions, only in patterns"));
+            } else {
+                return Ok(quote!{
+                    pat.add(egraph::ENodeOrVar::Var(#var.into()))
+                })
+            }
+        },
         _ => todo!()
-    }
+    };
+
+    Ok(
+    if as_pattern {
+        quote! {{
+            let p = #node;
+            pat.add(egraph::ENodeOrVar::ENode(p))
+        }}
+    } else {
+        quote! {{
+            let n = #node;
+            expr.add_node(n)
+        }}
+    })
 }
 
-fn to_node(e: Expr) -> TokenStream {
-    let n = to_node_rec(e);
-    quote!({
-        let mut expr = ExprTree::default();
-        let root_id = #n;
-        expr.set_root(root_id);
-        expr
-    })
+fn to_node(e: &Expr, as_pattern: bool) -> parse::Result<TokenStream> {
+    let n = to_node_rec(e, as_pattern)?;
+    if !as_pattern {
+        Ok(quote!({
+            let mut expr = ExprTree::default();
+            let root_id = #n;
+            expr.set_root(root_id);
+            expr
+        }))
+    } else {
+        Ok(quote!({
+            let mut pat = egraph::RecExpr::default();
+            #n;
+            pat
+        }))
+        //let mut pat = egraph::RecExpr::default();
+    }
 }
 
 #[proc_macro]
 pub fn expr(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let expr = syn::parse_macro_input!(input as Expr);
-    let stream = to_node(expr);
+    let stream = to_node(&expr, false);
     //panic!("{}", stream);
-    stream.into()
+    match stream {
+        Ok(s) => s.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+#[proc_macro]
+pub fn pat(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let expr = syn::parse_macro_input!(input as Expr);
+    let stream = to_node(&expr, true);
+    match stream {
+        Ok(s) => s.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
 }
 
 #[proc_macro]

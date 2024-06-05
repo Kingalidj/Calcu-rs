@@ -6,7 +6,7 @@ mod egraph;
 mod expression;
 mod rational;
 mod util;
-pub use calcurs_macros::{calc, define_rules, expr};
+pub use calcurs_macros::{calc, define_rules, expr, pat};
 
 #[allow(unused_imports)]
 pub(crate) use crate::util::*;

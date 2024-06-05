@@ -137,6 +137,13 @@ impl<'a> From<&'a [Node]> for Pattern {
     }
 }
 
+impl From<RecExpr<Node>> for PatternAst {
+    fn from(expr: RecExpr<Node>) -> Self {
+        let nodes: Vec<_> = expr.nodes.into_iter().map(ENodeOrVar::ENode).collect();
+        RecExpr::from(nodes)
+    }
+}
+
 impl From<&RecExpr<Node>> for Pattern {
     fn from(expr: &RecExpr<Node>) -> Self {
         Self::from(expr.as_ref())

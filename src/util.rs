@@ -34,7 +34,7 @@ pub(crate) fn hashmap_with_capacity<K, V>(cap: usize) -> HashMap<K, V> {
 pub(crate) type IndexMap<K, V> = indexmap::IndexMap<K, V, BuildHasher>;
 pub(crate) type IndexSet<K> = indexmap::IndexSet<K, BuildHasher>;
 
-pub(crate) type Instant = std::time::Instant;
+pub(crate) type Instant = quanta::Instant;
 pub(crate) type Duration = std::time::Duration;
 
 pub(crate) fn concat_vecs<T>(to: &mut Vec<T>, mut from: Vec<T>) {

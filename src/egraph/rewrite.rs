@@ -411,6 +411,12 @@ impl Condition for ConditionEqual {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Var(GlobSymbol);
 
+impl<S: AsRef<str>> From<S> for Var {
+    fn from(value: S) -> Self {
+        Self(GlobSymbol::new(value))
+    }
+}
+
 impl Display for Var {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)

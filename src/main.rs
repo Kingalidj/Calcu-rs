@@ -6,14 +6,7 @@ fn main() {
     std::env::set_var("RUST_LOG", "=warn");
     env_logger::init();
 
-    let mut expr = expr!(x + x);
-    println!("{:?}", expr);
-    expr.simplify();
-    println!("{:?}", expr);
-    //println!("{:?}", expr);
-    expr.cleanup();
-    println!("{:?}", expr);
-    //println!("{:?}", expr);
+    //let expr = pat!(x + x);
 
     //let mut lhs = ExprTree::default();
     //let exp = lhs.push(Node::Rational(Rational::from((321u64, 43u64))));

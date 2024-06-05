@@ -1,5 +1,5 @@
 use crate::egraph::*;
-use language::Analysis;
+use construct::Analysis;
 use std::{
     borrow::BorrowMut,
     fmt::{self, Debug},
@@ -10,13 +10,13 @@ use log::*;
 /** A data structure to keep track of equalities between expressions.
 
 In `egg`, the main types associated with e-graphs are
-[`EGraph`], [`EClass`], [`Language`], and [`Id`].
+[`EGraph`], [`EClass`], [`construct`], and [`ID`].
 
-Many methods of [`EGraph`] deal with [`Id`]s, which represent e-classes.
-Because eclasses are frequently merged, many [`Id`]s will refer to the
+Many methods of [`EGraph`] deal with [`ID`]s, which represent e-classes.
+Because eclasses are frequently merged, many [`ID`]s will refer to the
 same e-class.
 
-You can use the `egraph[id]` syntax to get an [`EClass`] from an [`Id`]
+You can use the `egraph[id]` syntax to get an [`EClass`] from an [`ID`]
 
 [`add`]: EGraph::add()
 [`union`]: EGraph::union()
@@ -59,7 +59,7 @@ impl Default for EGraph {
     }
 }
 
-// manual debug impl to avoid L: Language bound on EGraph defn
+// manual debug impl to avoid L: Construct bound on EGraph defn
 impl Debug for EGraph {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("EGraph")
