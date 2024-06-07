@@ -5,16 +5,24 @@ mod egraph;
 
 mod expression;
 mod rational;
-mod util;
-pub use calcurs_macros::{calc, define_rules, expr, pat};
+mod utils;
+pub use calcurs_macros::{define_rules, expr, pat};
 
 #[allow(unused_imports)]
-pub(crate) use crate::util::*;
+pub(crate) use crate::utils::*;
 
 pub use crate::{
     expression::{ExprTree, Node, ID},
     rational::Rational,
 };
+
+pub fn mod_main() {
+
+    let mut expr = expr!((a * b) + (a * b));
+    expr.cleanup();
+    expr.simplify();
+    println!("{:?}", expr);
+}
 
 //#[cfg(test)]
 //mod tests;

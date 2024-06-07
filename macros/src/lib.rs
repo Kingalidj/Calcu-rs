@@ -111,7 +111,11 @@ impl Expr {
             match op.kind {
                 OpKind::Sub => {
                     let operand = Self::parse_operand(s)?;
-                    Ok(Expr::Binary(OpKind::Mul, Expr::Num(-1).into(), operand.into()))
+                    Ok(if let Expr::Num(n) = operand {
+                        Expr::Num(-1 * n)
+                    } else {
+                        Expr::Binary(OpKind::Mul, Expr::Num(-1).into(), operand.into())
+                    })
                 }
                 _ => Err(parse::Error::new(op.span, "expected unary operator"))
             }
@@ -161,34 +165,34 @@ impl Expr {
         }
     }
 
-    fn quote(&self) -> TokenStream {
-        match self {
-            Expr::Num(v) =>
-                quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Rational::from(#v))),
-            Expr::Float(v) =>
-                quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Float::from(#v))),
-            Expr::Symbol(s) =>
-                quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Symbol::new(#s))),
-                Expr::Binary(op, l, r) => {
-                    let lhs = l.quote();
-                    let rhs = r.quote();
-                    Self::eval_op(*op, lhs, rhs)
-                }
-            Expr::Infinity { sign } => {
-                if sign.is_negative() {
-                    quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Infinity::neg()))
-                } else {
-                    quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Infinity::pos()))
-                }
-            }
-            Expr::Undef => {
-                quote!(::calcu_rs::prelude::Expr::Undefined)
-            }
-            Expr::PlaceHolder(s) => {
-                quote!(::calcu_rs::prelude::Expr::PlaceHolder(#s))
-            }
-        }
-    }
+    //fn quote(&self) -> TokenStream {
+    //    match self {
+    //        Expr::Num(v) =>
+    //            quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Rational::from(#v))),
+    //        Expr::Float(v) =>
+    //            quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Float::from(#v))),
+    //        Expr::Symbol(s) =>
+    //            quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Symbol::new(#s))),
+    //        Expr::Binary(op, l, r) => {
+    //            let lhs = l.quote();
+    //            let rhs = r.quote();
+    //            Self::eval_op(*op, lhs, rhs)
+    //        }
+    //        Expr::Infinity { sign } => {
+    //            if sign.is_negative() {
+    //                quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Infinity::neg()))
+    //            } else {
+    //                quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Infinity::pos()))
+    //            }
+    //        }
+    //        Expr::Undef => {
+    //            quote!(::calcu_rs::prelude::Expr::Undefined)
+    //        }
+    //        Expr::PlaceHolder(s) => {
+    //            quote!(::calcu_rs::prelude::Expr::PlaceHolder(#s))
+    //        }
+    //    }
+    //}
 
 }
 
@@ -196,40 +200,6 @@ impl parse::Parse for Expr {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         Expr::parse_bin_expr(input, 0 + 1)
     }
-}
-
-//fn eval_expr(expr: &Expr) -> TokenStream {
-//    match expr {
-//        Expr::Num(v) =>
-//            quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Rational::from(#v))),
-//        Expr::Float(v) =>
-//            quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Float::from(#v))),
-//        Expr::Symbol(s) =>
-//            quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Symbol::new(#s))),
-//        Expr::Binary(op, l, r) => {
-//            let lhs = eval_expr(l);
-//            let rhs = eval_expr(r);
-//            eval_op(*op, lhs, rhs)
-//        }
-//        Expr::Infinity { sign } => {
-//            if sign.is_negative() {
-//                quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Infinity::neg()))
-//            } else {
-//                quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Infinity::pos()))
-//            }
-//        }
-//        Expr::Undef => {
-//            quote!(::calcu_rs::prelude::Expr::Undefined)
-//        }
-//        Expr::PlaceHolder(s) => {
-//            quote!(::calcu_rs::prelude::Expr::PlaceHolder(#s))
-//        }
-//    }
-//}
-
-#[proc_macro]
-pub fn calc(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    syn::parse_macro_input!(input as Expr).quote().into()
 }
 
 #[derive(Debug, Clone)]
@@ -377,11 +347,10 @@ impl RuleSet {
         }
 
         quote!(
-            pub fn #gen_name() -> [egraph::Rewrite; #n_rules] {
+            pub fn #gen_name() -> [egraph::Rewrite<ExprAnalysis>; #n_rules] {
                 #debug
                 [ #rules ]
-            }
-            )
+            })
     }
 }
 
@@ -404,25 +373,26 @@ impl Parse for RuleSet {
 }
 
 fn op_to_node(op: OpKind, as_pattern: bool) -> TokenStream {
-    let expr_or_pat = if as_pattern {
-        quote!(pat)
+    let (add_to_expr_or_pat, node_typ) = if as_pattern {
+        (quote!(pat.add), quote!(egraph::ENodeOrVar::ENode))
     } else {
-        quote!(expr)
+        (quote!(expr.add_node), quote!())
     };
+
     match op {
         OpKind::Add => quote!(Node::Add([lhs, rhs])),
         OpKind::Mul => quote!(Node::Mul([lhs, rhs])),
         OpKind::Pow => quote!(Node::Pow([lhs, rhs])),
 
         OpKind::Sub => quote! {{
-            let add = #expr_or_pat.add_node(Node::Add([lhs, rhs]));
-            let minus_one = #expr_or_pat.add_node(Node::Rational(Rational::from(-1)));
-            Node::Mul([minus_one, add])
+            let minus_one = #add_to_expr_or_pat(#node_typ(Node::Rational(Rational::from(-1))));
+            let minus_rhs = #add_to_expr_or_pat(#node_typ(Node::Mul([minus_one, rhs])));
+            Node::Add([lhs, minus_rhs])
         }},
         OpKind::Div => quote! {{
-            let mul = expr.add_node(Node::Mul([lhs, rhs]));
-            let minus_one = #expr_or_pat.add_node(Node::Rational(Rational::from(-1)));
-            Node::Pow([mul, minus_one])
+            let minus_one = #add_to_expr_or_pat(#node_typ(Node::Rational(Rational::from(-1))));
+            let inv_rhs = #add_to_expr_or_pat(#node_typ(Node::Pow([rhs, minus_one])));
+            Node::Mul([lhs, inv_rhs])
         }},
     }
 }

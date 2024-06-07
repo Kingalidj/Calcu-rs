@@ -32,10 +32,10 @@ impl MultiPattern {
     }
 }
 
-impl Searcher for MultiPattern {
+impl<A: Analysis> Searcher<A> for MultiPattern {
     fn search_eclass_with_limit(
         &self,
-        egraph: &EGraph,
+        egraph: &EGraph<A>,
         eclass: ID,
         limit: usize,
     ) -> Option<SearchMatches> {
@@ -67,10 +67,10 @@ impl Searcher for MultiPattern {
     }
 }
 
-impl Applier for MultiPattern {
+impl<A: Analysis> Applier<A> for MultiPattern {
     fn apply_one(
         &self,
-        _egraph: &mut EGraph,
+        _egraph: &mut EGraph<A>,
         _eclass: ID,
         _subst: &Subst,
         _searcher_ast: Option<&PatternAst>,
@@ -81,7 +81,7 @@ impl Applier for MultiPattern {
 
     fn apply_matches(
         &self,
-        egraph: &mut EGraph,
+        egraph: &mut EGraph<A>,
         matches: &[SearchMatches],
         _rule_name: GlobSymbol,
     ) -> Vec<ID> {

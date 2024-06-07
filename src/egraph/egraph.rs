@@ -26,9 +26,9 @@ You can use the `egraph[id]` syntax to get an [`EClass`] from an [`ID`]
 [extract]: Extractor
 **/
 #[derive(Clone)]
-pub struct EGraph {
+pub struct EGraph<A: Analysis> {
     /// The `Analysis` given when creating this `EGraph`.
-    pub analysis: ExprAnalysis,
+    pub analysis: A,
     /// The `Explain` used to explain equivalences in this `EGraph`.
     pub(crate) explain: Option<Explain>,
     unionfind: EClassUnion,
@@ -43,7 +43,7 @@ pub struct EGraph {
     /// not the canonical id of the eclass.
     pending: Vec<ID>,
     analysis_pending: UniqueQueue<ID>,
-    pub(crate) classes: HashMap<ID, EClass>,
+    pub(crate) classes: HashMap<ID, EClass<A::Data>>,
     pub(crate) classes_by_op: HashMap<<Node as Construct>::Discriminant, HashSet<ID>>,
     /// Whether or not reading operation are allowed on this e-graph.
     /// Mutating operations will set this to `false`, and
@@ -53,14 +53,14 @@ pub struct EGraph {
     pub clean: bool,
 }
 
-impl Default for EGraph {
+impl<A: Analysis + Default> Default for EGraph<A> {
     fn default() -> Self {
-        Self::new(ExprAnalysis::default())
+        Self::new(A::default())
     }
 }
 
 // manual debug impl to avoid L: Construct bound on EGraph defn
-impl Debug for EGraph {
+impl<A: Analysis> Debug for EGraph<A> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("EGraph")
             .field("memo", &self.memo)
@@ -69,9 +69,9 @@ impl Debug for EGraph {
     }
 }
 
-impl EGraph {
+impl<A: Analysis> EGraph<A> {
     /// Creates a new, empty `EGraph` with the given `Analysis`
-    pub fn new(analysis: ExprAnalysis) -> Self {
+    pub fn new(analysis: A) -> Self {
         Self {
             analysis,
             classes: Default::default(),
@@ -87,12 +87,12 @@ impl EGraph {
     }
 
     /// Returns an iterator over the eclasses in the egraph.
-    pub fn classes(&self) -> impl ExactSizeIterator<Item = &EClass> {
+    pub fn classes(&self) -> impl ExactSizeIterator<Item = &EClass<A::Data>> {
         self.classes.values()
     }
 
     /// Returns an mutating iterator over the eclasses in the egraph.
-    pub fn classes_mut(&mut self) -> impl ExactSizeIterator<Item = &mut EClass> {
+    pub fn classes_mut(&mut self) -> impl ExactSizeIterator<Item = &mut EClass<A::Data>> {
         self.classes.values_mut()
     }
 
@@ -155,7 +155,7 @@ impl EGraph {
     }
 
     /// Make a copy of the egraph with the same nodes, but no unions between them.
-    pub fn copy_without_unions(&self, analysis: ExprAnalysis) -> Self {
+    pub fn copy_without_unions(&self, analysis: A) -> Self {
         if self.explain.is_none() {
             panic!("Use runner.with_explanations_enabled() or egraph.with_explanations_enabled() before running to get a copied egraph without unions");
         }
@@ -168,7 +168,7 @@ impl EGraph {
     }
 
     /// Performs the union between two egraphs.
-    pub fn egraph_union(&mut self, other: &EGraph) {
+    pub fn egraph_union(&mut self, other: &EGraph<A>) {
         let right_unions = other.get_union_equalities();
         for (left, right, why) in right_unions {
             self.union_instantiations(
@@ -181,7 +181,7 @@ impl EGraph {
         self.rebuild();
     }
 
-    fn from_enodes(enodes: Vec<(Node, ID)>, analysis: ExprAnalysis) -> Self {
+    fn from_enodes(enodes: Vec<(Node, ID)>, analysis: A) -> Self {
         let mut egraph = Self::new(analysis);
         let mut ids: HashMap<ID, ID> = Default::default();
 
@@ -223,7 +223,7 @@ impl EGraph {
     /// Be wary, though, because terms which are not represented in both egraphs
     /// are not captured in the intersection.
     /// The runtime of this algorithm is O(|E1| * |E2|), where |E1| and |E2| are the number of enodes in each egraph.
-    pub fn egraph_intersect(&self, other: &EGraph, analysis: ExprAnalysis) -> EGraph {
+    pub fn egraph_intersect(&self, other: &EGraph<A>, analysis: A) -> EGraph<A> {
         let mut product_map: HashMap<(ID, ID), ID> = Default::default();
         let mut enodes = vec![];
 
@@ -248,7 +248,7 @@ impl EGraph {
 
     fn intersect_classes(
         &self,
-        other: &EGraph,
+        other: &EGraph<A>,
         res: &mut Vec<(Node, ID)>,
         class1: ID,
         class2: ID,
@@ -372,7 +372,7 @@ impl EGraph {
         if let Some(explain) = &mut self.explain {
             explain
                 .with_nodes(&self.nodes)
-                .get_num_congr(&self.classes, &self.unionfind)
+                .get_num_congr::<A>(&self.classes, &self.unionfind)
         } else {
             panic!("Use runner.with_explanations_enabled() or egraph.with_explanations_enabled() before running to get explanations.")
         }
@@ -419,7 +419,7 @@ impl EGraph {
             );
         }
         if let Some(explain) = &mut self.explain {
-            explain.with_nodes(&self.nodes).explain_equivalence(
+            explain.with_nodes(&self.nodes).explain_equivalence::<A>(
                 left,
                 right,
                 &mut self.unionfind,
@@ -484,7 +484,7 @@ impl EGraph {
             );
         }
         if let Some(explain) = &mut self.explain {
-            explain.with_nodes(&self.nodes).explain_equivalence(
+            explain.with_nodes(&self.nodes).explain_equivalence::<A>(
                 left,
                 right,
                 &mut self.unionfind,
@@ -513,8 +513,8 @@ impl EGraph {
 }
 
 /// Given an `Id` using the `egraph[id]` syntax, retrieve the e-class.
-impl std::ops::Index<ID> for EGraph {
-    type Output = EClass;
+impl<A: Analysis> std::ops::Index<ID> for EGraph<A> {
+    type Output = EClass<A::Data>;
     fn index(&self, id: ID) -> &Self::Output {
         let id = self.eclass_id(id);
         self.classes
@@ -525,7 +525,7 @@ impl std::ops::Index<ID> for EGraph {
 
 /// Given an `Id` using the `&mut egraph[id]` syntax, retrieve a mutable
 /// reference to the e-class.
-impl std::ops::IndexMut<ID> for EGraph {
+impl<A: Analysis> std::ops::IndexMut<ID> for EGraph<A> {
     fn index_mut(&mut self, id: ID) -> &mut Self::Output {
         let id = self.eclass_id_mut(id);
         self.classes
@@ -534,7 +534,7 @@ impl std::ops::IndexMut<ID> for EGraph {
     }
 }
 
-impl EGraph {
+impl<A: Analysis> EGraph<A> {
     /// Adds a [`RecExpr`] to the [`EGraph`], returning the id of the RecExpr's eclass.
     pub fn add_expr(&mut self, expr: &RecExpr<Node>) -> ID {
         let id = self.add_expr_uncanonical(expr);
@@ -713,7 +713,7 @@ impl EGraph {
             }
 
             // now that we updated explanations, run the analysis for the new eclass
-            ExprAnalysis::modify(self, id);
+            A::modify(self, id);
             self.clean = false;
             id
         }
@@ -726,7 +726,7 @@ impl EGraph {
         let class = EClass {
             id,
             nodes: vec![enode.clone()],
-            data: ExprAnalysis::make(self, &original),
+            data: A::make(self, &original),
             parents: Default::default(),
         };
 
@@ -842,7 +842,7 @@ impl EGraph {
         rule: Option<Justification>,
         any_new_rhs: bool,
     ) -> bool {
-        ExprAnalysis::pre_union(self, enode_id1, enode_id2, &rule);
+        A::pre_union(self, enode_id1, enode_id2, &rule);
 
         self.clean = false;
         let mut id1 = self.eclass_id_mut(enode_id1);
@@ -886,7 +886,7 @@ impl EGraph {
         concat_vecs(&mut class1.nodes, class2.nodes);
         concat_vecs(&mut class1.parents, class2.parents);
 
-        ExprAnalysis::modify(self, id1);
+        A::modify(self, id1);
         true
     }
 
@@ -895,12 +895,12 @@ impl EGraph {
     /// This also propagates the changes through the e-graph,
     /// so [`Analysis::make`] and [`Analysis::merge`] will get
     /// called for other parts of the e-graph on rebuild.
-    pub fn set_analysis_data(&mut self, id: ID, new_data: <ExprAnalysis as Analysis>::Data) {
+    pub fn set_analysis_data(&mut self, id: ID, new_data: A::Data) {
         let id = self.eclass_id_mut(id);
         let class = self.classes.get_mut(&id).unwrap();
         class.data = new_data;
         self.analysis_pending.extend(class.parents.iter().copied());
-        ExprAnalysis::modify(self, id)
+        A::modify(self, id)
     }
 
     /// Returns a more debug-able representation of the egraph.
@@ -916,7 +916,7 @@ impl EGraph {
     }
 }
 
-impl EGraph {
+impl<A: Analysis> EGraph<A> {
     /// Panic if the given eclass doesn't contain the given patterns
     ///
     /// Useful for testing.
@@ -944,7 +944,7 @@ impl EGraph {
 }
 
 // All the rebuilding stuff
-impl EGraph {
+impl<A: Analysis> EGraph<A> {
     #[inline(never)]
     fn rebuild_classes(&mut self) -> usize {
         let mut classes_by_op = std::mem::take(&mut self.classes_by_op);
@@ -1051,13 +1051,13 @@ impl EGraph {
             while let Some(class_id) = self.analysis_pending.pop() {
                 let node = self.nodes[class_id.val()].clone();
                 let class_id = self.eclass_id_mut(class_id);
-                let node_data = ExprAnalysis::make(self, &node);
+                let node_data = A::make(self, &node);
                 let class = self.classes.get_mut(&class_id).unwrap();
 
                 let did_merge = self.analysis.merge(&mut class.data, node_data);
                 if did_merge.0 {
                     self.analysis_pending.extend(class.parents.iter().copied());
-                    ExprAnalysis::modify(self, class_id)
+                    A::modify(self, class_id)
                 }
             }
         }
@@ -1115,7 +1115,7 @@ impl EGraph {
         n_unions
     }
 
-    pub(crate) fn check_each_explain(&mut self, rules: &[&Rewrite]) -> bool {
+    pub(crate) fn check_each_explain(&mut self, rules: &[&Rewrite<A>]) -> bool {
         if let Some(explain) = &mut self.explain {
             explain.with_nodes(&self.nodes).check_each_explain(rules)
         } else {
@@ -1127,7 +1127,7 @@ impl EGraph {
 /// An equivalence class of enodes.
 #[non_exhaustive]
 #[derive(Debug, Clone)]
-pub struct EClass {
+pub struct EClass<D> {
     /// This eclass's id.
     pub id: ID,
     /// The equivalent enodes in this equivalence class.
@@ -1136,12 +1136,12 @@ pub struct EClass {
     ///
     /// Modifying this field will _not_ cause changes to propagate through the e-graph.
     /// Prefer [`EGraph::set_analysis_data`] instead.
-    pub data: <ExprAnalysis as Analysis>::Data,
+    pub data: D,
     /// The original Ids of parent enodes.
     pub(crate) parents: Vec<ID>,
 }
 
-impl EClass {
+impl<D> EClass<D> {
     /// Returns `true` if the `eclass` is empty.
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
@@ -1232,9 +1232,9 @@ impl EClassUnion {
     }
 }
 
-struct EGraphDump<'a>(&'a EGraph);
+struct EGraphDump<'a, A: Analysis>(&'a EGraph<A>);
 
-impl<'a> Debug for EGraphDump<'a> {
+impl<'a, A: Analysis> Debug for EGraphDump<'a, A> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut ids: Vec<ID> = self.0.classes().map(|c| c.id).collect();
         ids.sort();

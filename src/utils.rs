@@ -4,6 +4,8 @@ use std::{
     fmt::{self, Debug, Display, Formatter},
     iter::FromIterator,
 };
+use std::hash::{BuildHasherDefault, Hasher};
+use std::marker::PhantomData;
 
 /// This is provided by the [`symbol_table`](https://crates.io/crates/symbol_table) crate.
 ///
@@ -25,6 +27,26 @@ mod hashmap {
     use super::BuildHasher;
     pub(crate) type HashMap<K, V> = std::collections::HashMap<K, V, BuildHasher>;
     pub(crate) type HashSet<K> = std::collections::HashSet<K, BuildHasher>;
+}
+
+/// use the value itself as hash value
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct U64Hasher(u64);
+pub type BuildU64Hasher = BuildHasherDefault<U64Hasher>;
+
+impl Hasher for U64Hasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        panic!("use write_u64 function");
+    }
+
+    fn write_u64(&mut self, u: u64) {
+        debug_assert_eq!(self.0, 0, "only one write to hasher is allowed");
+        self.0 = u;
+    }
 }
 
 pub(crate) fn hashmap_with_capacity<K, V>(cap: usize) -> HashMap<K, V> {

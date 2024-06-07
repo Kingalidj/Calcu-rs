@@ -16,7 +16,7 @@ pub struct ExprAnalysis;
 impl Analysis for ExprAnalysis {
     type Data = ();
 
-    fn make(_egraph: &mut EGraph, _enode: &Node) -> Self::Data {
+    fn make(_egraph: &mut EGraph<Self>, _enode: &Node) -> Self::Data {
         ()
     }
 
@@ -226,8 +226,8 @@ pub struct RecExpr<L> {
 }
 
 impl From<ExprTree> for RecExpr<Node> {
-    fn from(value: ExprTree) -> Self {
-        Self { nodes: value.nodes }
+    fn from(mut value: ExprTree) -> Self {
+        Self { nodes: value.nodes.into_iter().collect() }
     }
 }
 
@@ -417,7 +417,7 @@ pub trait Analysis: Sized {
     /// Doing so will create an infinite loop.
     ///
     /// Note that `enode`'s children may not be canonical
-    fn make(egraph: &mut EGraph, enode: &Node) -> Self::Data;
+    fn make(egraph: &mut EGraph<Self>, enode: &Node) -> Self::Data;
 
     /// An optional hook that allows inspection before a [`union`] occurs.
     /// When explanations are enabled, it gives two ids that represent the two particular terms being unioned, not the canonical ids for the two eclasses.
@@ -430,7 +430,7 @@ pub trait Analysis: Sized {
     ///
     /// [`union`]: EGraph::union()
     #[allow(unused_variables)]
-    fn pre_union(egraph: &EGraph, id1: ID, id2: ID, justification: &Option<Justification>) {}
+    fn pre_union(egraph: &EGraph<Self>, id1: ID, id2: ID, justification: &Option<Justification>) {}
 
     /// Defines how to merge two `Data`s when their containing
     /// [`EClass`]es merge.
@@ -463,7 +463,7 @@ pub trait Analysis: Sized {
     /// This function is called immediately following
     /// `Analysis::merge` when unions are performed.
     #[allow(unused_variables)]
-    fn modify(egraph: &mut EGraph, id: ID) {}
+    fn modify(egraph: &mut EGraph<Self>, id: ID) {}
 
     /// Whether or not e-matching should allow finding cycles.
     ///
@@ -563,7 +563,9 @@ mod expr_test {
         };
 
         let rules = [r1, r2];
-        let runner = Runner::default().with_expr(&add_expr).run(&rules);
+        let runner = Runner::<_, ()>::new(ExprAnalysis)
+            .with_expr(&add_expr)
+            .run(&rules);
         let extractor = Extractor::new(&runner.egraph, AstSize);
         let (_bc, be) = extractor.find_best(runner.roots[0]);
         assert_eq!(be, x, "0 + x !-> x");

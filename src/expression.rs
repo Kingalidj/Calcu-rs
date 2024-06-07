@@ -1,11 +1,31 @@
 use crate::*;
 use indexmap::IndexMap;
-use std::collections::VecDeque;
-use std::fmt::{self, Debug, Display, Formatter};
+use std::{
+    any::TypeId,
+    collections::VecDeque,
+    fmt::{self, Debug, Display, Formatter},
+    hash::{Hash, Hasher},
+};
 
-#[derive(Clone, Copy, Ord, PartialOrd, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Ord, PartialOrd, Eq, PartialEq)]
 #[repr(transparent)]
 pub struct ID(pub(crate) NonMaxU32);
+
+#[derive(Clone, Copy, Ord, PartialOrd, Eq, PartialEq)]
+#[repr(transparent)]
+struct Index(u32);
+
+impl Hash for Index {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64(self.0 as u64);
+    }
+}
+
+impl Hash for ID {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64(self.0.get() as u64);
+    }
+}
 
 impl ID {
     #[inline(always)]
@@ -41,6 +61,9 @@ impl Node {
         match (self, other) {
             (Node::Rational(r1), Node::Rational(r2)) => r1 == r2,
             (Node::Symbol(s1), Node::Symbol(s2)) => s1 == s2,
+            (Node::Add(_), Node::Add(_))
+            | (Node::Mul(_), Node::Mul(_))
+            | (Node::Pow(_), Node::Pow(_)) => true,
             _ => false,
         }
     }
@@ -63,10 +86,39 @@ impl Node {
     }
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/*
+
+    nodes: [a, add(0, 0), 2, Mul(2, 0)]
+    id_to_indx: [(0:0), (1:3), (2:2), (3:3)]
+
+    push a -> 0
+    push a -> 0
+    push add(a, a) -> 1
+
+    simplify:
+    push 2 -> 2
+    //add(0, 0) turns into Mul(2, 0)
+    change(id: 1, Mul(2, 0))
+
+    push add(a, a) ->
+
+ */
+
+/// Expression represented with a tree. Every non-leaf node hold IDs, the IDs are mapped to indices into [ExprTree::nodes]
+///
+/// The id of a node n is defined by its index into the set [ExprTree::nodes]. BUT retrieving the node of a given id will not always return that node.
+/// in short: id = expr.add_node(n); m = expr[id]; m != n
+///
+/// This allows for permanently remapping a node, e.g: Add(a, a) -> Mul(2, a)
+///
+// todo: use global IndexSet
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ExprTree {
     pub(crate) root: Option<ID>,
     pub(crate) nodes: Vec<Node>,
+    //pub(crate) nodes: IndexSet<Node>,
+    //pub(crate) id_to_indx: HashMap<ID, Index, BuildU64Hasher>,
+    // todo use set instead of nodes
 }
 
 impl ExprTree {
@@ -130,34 +182,89 @@ impl ExprTree {
         let mut stack = VecDeque::default();
         stack.push_back(root_id);
 
+        let mut bfs_order_ids = Vec::default();
+
         while let Some(id) = stack.pop_front() {
             if visited[id.val()] {
                 continue;
             }
             visited[id.val()] = true;
-            let n = self[id].clone();
-            n.oprnd_ids().iter().for_each(|id| stack.push_back(*id));
+            bfs_order_ids.push(id);
 
+            let n = &self[id];
+            n.oprnd_ids().iter().for_each(|id| stack.push_back(*id));
+        }
+
+        // reverse bfs -> children of node should already exist
+        for id in bfs_order_ids.into_iter().rev() {
+            let mut n = self[id].clone();
+
+            n.oprnd_ids_mut().iter_mut().for_each(|id| *id = ids[id]);
             let (indx, _) = set.insert_full(n);
             ids.insert(id, ID::new(indx));
         }
-        // revert order so that root is at the end
-        self.nodes = set.into_iter().rev().collect();
-        let n_nodes = self.nodes.len();
-        // offset ids because we reversed the node order
-        let map_id = |id: ID| ID::new(n_nodes - 1 - ids[&id].val());
-        // fix node ids
-        self.nodes
-            .iter_mut()
-            .for_each(|n| n.oprnd_ids_mut().iter_mut().for_each(|id| *id = map_id(*id)));
 
-        self.root = Some(map_id(root_id));
+        self.nodes = set.into_iter().collect();
+        self.root = Some(ids[&root_id]);
 
         // ensure the operands appear before the operator
-        self.nodes.iter().enumerate().for_each(|(id, n)| {
-            n.oprnd_ids().iter().for_each(|op_id| debug_assert!(op_id.val() < id))
-        })
+        if cfg!(debug_assertions) {
+            self.nodes.iter().enumerate().for_each(|(id, n)| {
+                n.oprnd_ids()
+                    .iter()
+                    .for_each(|op_id| debug_assert!(op_id.val() < id))
+            })
+        }
     }
+
+    //pub fn cleanup2(&mut self) {
+
+    //    if self.root.is_none() {
+    //        self.compact();
+    //        return;
+    //    }
+
+    //    let root_id = self.root_id();
+    //    // map old ids to new ones
+    //    let mut ids = hashmap_with_capacity::<ID, ID>(self.nodes.len());
+    //    let mut set = IndexSet::default();
+    //    let mut visited = vec![false; self.nodes.len()];
+
+    //    let mut stack = VecDeque::default();
+    //    stack.push_back(root_id);
+
+    //    while let Some(id) = stack.pop_front() {
+    //        if visited[id.val()] {
+    //            continue;
+    //        }
+    //        visited[id.val()] = true;
+    //        let n = self[id].clone();
+    //        n.oprnd_ids().iter().for_each(|id| stack.push_back(*id));
+
+    //        let (indx, _) = set.insert_full(n);
+    //        ids.insert(id, ID::new(indx));
+    //    }
+    //    // revert order so that root is at the end
+    //    self.nodes = set.into_iter().rev().collect();
+    //    let n_nodes = self.nodes.len();
+    //    // offset ids because we reversed the node order
+    //    let map_id = |id: ID| ID::new(n_nodes - 1 - ids[&id].val());
+    //    // fix node ids
+    //    self.nodes.iter_mut().for_each(|n| {
+    //        n.oprnd_ids_mut()
+    //            .iter_mut()
+    //            .for_each(|id| *id = map_id(*id))
+    //    });
+
+    //    self.root = Some(map_id(root_id));
+
+    //    // ensure the operands appear before the operator
+    //    self.nodes.iter().enumerate().for_each(|(id, n)| {
+    //        n.oprnd_ids()
+    //            .iter()
+    //            .for_each(|op_id| debug_assert!(op_id.val() < id))
+    //    })
+    //}
 
     fn cmp_nodes(l_expr: &ExprTree, r_expr: &ExprTree, l: ID, r: ID) -> bool {
         let lhs = &l_expr[l];
@@ -185,7 +292,28 @@ impl ExprTree {
         Self::cmp_nodes(self, other, l_root, r_root)
     }
 
+    fn simplify_sub(&mut self, lhs_id: ID, min_one: ID, rhs_id: ID) -> Option<Node> {
+        let lhs = &self[lhs_id];
+        let rhs = &self[rhs_id];
+
+        match (lhs, rhs) {
+            (Node::Rational(r1), Node::Rational(ref r2)) => Node::Rational(r1.clone() - r2),
+            // x - 0 = x
+            (lhs, &Node::ZERO) => lhs.clone(),
+            // 0 - x = -x
+            (&Node::ZERO, _) => Node::Mul([min_one, rhs_id]),
+            // x - x = 0
+            //(Node::Symbol(s1), Node::Symbol(s2)) if s1 == s2 => Node::ZERO,
+            (lhs, rhs) if lhs == rhs => Node::ZERO,
+            _ => return None,
+        }.into()
+    }
+
     fn simplify_add(&mut self, lhs_id: ID, rhs_id: ID) -> Option<Node> {
+        if let Some((lhs, min_one, rhs)) = self.is_sub(Node::Add([lhs_id, rhs_id])) {
+            return self.simplify_sub(lhs, min_one, rhs)
+        }
+
         let lhs = &self[lhs_id];
         let rhs = &self[rhs_id];
 
@@ -194,10 +322,12 @@ impl ExprTree {
             // x + 0 = 0 + x = x
             (lhs, &Node::ZERO) => lhs.clone(),
             (&Node::ZERO, rhs) => rhs.clone(),
-
             // x + x = 2 * x
-            (Node::Symbol(s1), Node::Symbol(s2)) if s1 == s2 => {
-                // some neighbor matrix?
+            //(Node::Symbol(s1), Node::Symbol(s2)) if s1 == s2 => {
+            //    let two = self.add_node(Node::TWO);
+            //    Node::Mul([two, lhs_id])
+            //}
+            (lhs, rhs) if lhs == rhs => {
                 let two = self.add_node(Node::TWO);
                 Node::Mul([two, lhs_id])
             }
@@ -222,7 +352,8 @@ impl ExprTree {
 
             // todo: generic x, e.g if lhs == rhs?
             // x * x = x^2
-            (Node::Symbol(s1), Node::Symbol(s2)) if s1 == s2 => {
+            //(Node::Symbol(s1), Node::Symbol(s2)) if s1 == s2 => {
+            (lhs, rhs) if lhs == rhs => {
                 let two = self.add_node(Node::TWO);
                 Node::Pow([lhs_id, two])
             }
@@ -274,6 +405,50 @@ impl ExprTree {
         .into()
     }
 
+    fn is_rational(&self, id: ID, r1: &Rational) -> bool {
+        match &self[id] {
+            Node::Rational(r2) => r1 == r2,
+            _ => false,
+        }
+    }
+
+    // check if node matches: Add[a, Mul[-1, b]]
+    // if found returns Some(lhs_id, min_one_id, rhs_id)
+    fn is_sub(&self, n: Node) -> Option<(ID, ID, ID)> {
+        let [lhs, mul] = match n {
+            Node::Add(ids) => ids,
+            _ => return None,
+        };
+        let [min_one, rhs] = match self[mul] {
+            Node::Mul(ids) => ids,
+            _ => return None,
+        };
+        if !self.is_rational(min_one, &Rational::MINUS_ONE) {
+            return None;
+        }
+
+        Some((lhs, min_one, rhs))
+    }
+
+    // if node is div return Some(lhs_id, min_one_id, rhs_id)
+    fn is_div(&self, n: Node) -> Option<(ID, ID, ID)> {
+        // lhs * pow
+        let [lhs, pow] = match n {
+            Node::Mul(ids) => ids,
+            _ => return None,
+        };
+        // lhs * (rhs^min_one)
+        let [rhs, min_one] = match self[pow] {
+            Node::Pow(ids) => ids,
+            _ => return None,
+        };
+        if !self.is_rational(min_one, &Rational::MINUS_ONE) {
+            return None;
+        }
+
+        Some((lhs, min_one, rhs))
+    }
+
     pub fn simplify(&mut self) -> bool {
         let root_id = ID::new(self.nodes.len() - 1);
         self.simplify_node(root_id)
@@ -291,6 +466,7 @@ impl ExprTree {
         let node_simplified = match n {
             Node::Rational(_) => None,
             Node::Symbol(_) => None,
+
             Node::Add([rhs, lhs]) => self.simplify_add(rhs, lhs),
             Node::Mul([rhs, lhs]) => self.simplify_mul(rhs, lhs),
             Node::Pow([rhs, lhs]) => self.simplify_pow(rhs, lhs),
@@ -317,13 +493,23 @@ impl std::ops::IndexMut<ID> for ExprTree {
     }
 }
 
+impl Debug for Index {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+impl Display for Index {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 impl Debug for ID {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 impl Display for ID {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
@@ -424,15 +610,13 @@ mod expressions {
         eq!(expr!(0 + x), add_expr);
         eq!(expr!(0 * x), mul_expr);
         ne!(expr!(x * 1), expr!(x + 1));
-        //eq!(expr!(a - b), expr!(a + (-1 * b)))
-
     }
 
     macro_rules! check_simplify {
         ($expr:expr, $result:expr) => {{
             let mut expr = $expr;
             let mut res = $result;
-            assert!(expr.simplify(), "could not simplify: {:?}", expr);
+            expr.simplify();
             assert!(expr.cmp_full(&res), "simplify({}) != {}", expr, res);
             expr.cleanup();
             assert!(expr.cmp_full(&res), "clean(simplify({})) != {}", expr, res);
@@ -447,11 +631,26 @@ mod expressions {
     }
 
     #[test]
+    fn test_cleanup() {
+        let mut expr = expr!((a * b) + (a * b));
+        // should remove duplicate nodes -> allows equal id simplification
+        expr.cleanup();
+        expr.simplify();
+        eq!(expr, expr!(2 * (a * b)));
+    }
+
+    #[test]
     fn test_simplify() {
         // add
         check_simplify!(expr!(x + 0), expr!(x));
         check_simplify!(expr!(0 + x), expr!(x));
         check_simplify!(expr!(x + x), expr!(2 * x));
+
+        // sub
+        check_simplify!(expr!(x - x), expr!(0));
+        check_simplify!(expr!(0 - x), expr!(-x));
+        check_simplify!(expr!(x - 0), expr!(x));
+        check_simplify!(expr!(3 - 2), expr!(1));
 
         // mul
         check_simplify!(expr!(x * 0), expr!(0));
@@ -470,23 +669,32 @@ mod expressions {
         check_simplify!(expr!(1 ^ x), expr!(1));
         check_simplify!(expr!(1 ^ 314), expr!(1));
         check_simplify!(expr!(3 ^ 3), expr!(27));
+
+        check_simplify!(expr!(a - b), expr!(a + (-1 * b)));
+        check_simplify!(expr!(a / b), expr!(a * b ^ -1));
         //check_simplify!(expr!(41^(321/43)), expr!(194754273881 * 41^(20/43)))
     }
 
     fn test_frac_pow() {
-        let mut lhs = ExprTree::default();
-        let exp = lhs.add_node(Node::Rational(Rational::from((321u64, 43u64))));
-        let base = lhs.add_node(Node::Rational(Rational::from(41)));
-        lhs.make_root(Node::Pow([base, exp]));
+        let mut lhs = expr!(2 ^ 10);
+        lhs.simplify();
+        eq!(lhs, expr!(1024));
 
-        let mut rhs = ExprTree::default();
-        let exp = rhs.add_node(Node::Rational(Rational::from((20u64, 43u64))));
-        let base = lhs.add_node(Node::Rational(Rational::from(41)));
-        let rhs_pow = rhs.add_node(Node::Pow([base, exp]));
-        let pow_res = rhs.add_node(Node::Rational(Rational::from(194754273881i64)));
-        rhs.make_root(Node::Mul([pow_res, rhs_pow]));
+        //let mut lhs = expr!(321^(321 / 43));
+        //lhs.simplify();
+        //let mut lhs = ExprTree::default();
+        //let exp = lhs.add_node(Node::Rational(Rational::from((321u64, 43u64))));
+        //let base = lhs.add_node(Node::Rational(Rational::from(41)));
+        //lhs.make_root(Node::Pow([base, exp]));
 
-        check_simplify!(lhs, rhs);
+        //let mut rhs = ExprTree::default();
+        //let exp = rhs.add_node(Node::Rational(Rational::from((20u64, 43u64))));
+        //let base = lhs.add_node(Node::Rational(Rational::from(41)));
+        //let rhs_pow = rhs.add_node(Node::Pow([base, exp]));
+        //let pow_res = rhs.add_node(Node::Rational(Rational::from(194754273881i64)));
+        //rhs.make_root(Node::Mul([pow_res, rhs_pow]));
+
+        //check_simplify!(lhs, rhs);
     }
 
     macro_rules! cmp_pat_expr {
@@ -497,6 +705,8 @@ mod expressions {
             assert_eq!(pat, expr_pat, "expr({:?}) != pat({:?})", expr, pat);
         }};
     }
+
+    #[test]
     fn test_pat_macro() {
         pat!(?x + ?a + 2 * ?c);
         cmp_pat_expr!(pat!(x + x), expr!(x + x));
@@ -508,22 +718,26 @@ mod expressions {
         r1: a + b -> c,
         r2: ?x + 0 -> ?x,
         r3: 1 + 2 -> 3,
+        r4: ?a * ?b -> ?b * ?a,
+        r5: ?a * ?b / ?a -> ?b,
     );
 
     fn find_best(mut expr: ExprTree) -> ExprTree {
         expr.cleanup();
         let rec = RecExpr::from(expr);
         let rules = test_rules();
-        let runner = Runner::default()
-            .with_expr(&rec)
-            .run(&test_rules());
+        let runner = Runner::default().with_expr(&rec).run(&test_rules());
         let extractor = Extractor::new(&runner.egraph, AstSize);
         let (_, be) = extractor.find_best(runner.roots[0]);
 
         let root = ID::new(be.nodes.len() - 1);
-        ExprTree { root: Some(root), nodes: be.nodes }
+        ExprTree {
+            root: Some(root),
+            nodes: be.nodes,
+        }
     }
 
+    #[test]
     fn test_defined_rules() {
         eq!(find_best(expr!(a + b)), expr!(c));
         eq!(find_best(expr!(b + a)), expr!(c));

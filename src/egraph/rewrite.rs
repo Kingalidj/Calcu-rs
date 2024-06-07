@@ -15,16 +15,16 @@ use std::sync::Arc;
 ///
 #[derive(Clone)]
 #[non_exhaustive]
-pub struct Rewrite {
+pub struct Rewrite<A> {
     /// The name of the rewrite.
     pub name: GlobSymbol,
     /// The searcher (left-hand side) of the rewrite.
-    pub searcher: Arc<dyn Searcher + Sync + Send>,
+    pub searcher: Arc<dyn Searcher<A> + Sync + Send>,
     /// The applier (right-hand side) of the rewrite.
-    pub applier: Arc<dyn Applier + Sync + Send>,
+    pub applier: Arc<dyn Applier<A> + Sync + Send>,
 }
 
-impl Debug for Rewrite {
+impl<A: Analysis> Debug for Rewrite<A> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut d = f.debug_struct("Rewrite");
         d.field("name", &self.name);
@@ -46,14 +46,14 @@ impl Debug for Rewrite {
     }
 }
 
-impl Rewrite {
+impl<A: Analysis> Rewrite<A> {
     /// Create a new [`Rewrite`]. You typically want to use the
     /// [`rewrite!`] macro instead.
     ///
     pub fn new(
         name: impl Into<GlobSymbol>,
-        searcher: impl Searcher + Send + Sync + 'static,
-        applier: impl Applier + Send + Sync + 'static,
+        searcher: impl Searcher<A> + Send + Sync + 'static,
+        applier: impl Applier<A> + Send + Sync + 'static,
     ) -> Result<Self, String> {
         let name = name.into();
         let searcher = Arc::new(searcher);
@@ -76,28 +76,28 @@ impl Rewrite {
     /// Call [`search`] on the [`Searcher`].
     ///
     /// [`search`]: Searcher::search()
-    pub fn search(&self, egraph: &EGraph) -> Vec<SearchMatches<'_>> {
+    pub fn search(&self, egraph: &EGraph<A>) -> Vec<SearchMatches<'_>> {
         self.searcher.search(egraph)
     }
 
     /// Call [`search_with_limit`] on the [`Searcher`].
     ///
     /// [`search_with_limit`]: Searcher::search_with_limit()
-    pub fn search_with_limit(&self, egraph: &EGraph, limit: usize) -> Vec<SearchMatches<'_>> {
+    pub fn search_with_limit(&self, egraph: &EGraph<A>, limit: usize) -> Vec<SearchMatches<'_>> {
         self.searcher.search_with_limit(egraph, limit)
     }
 
     /// Call [`apply_matches`] on the [`Applier`].
     ///
     /// [`apply_matches`]: Applier::apply_matches()
-    pub fn apply(&self, egraph: &mut EGraph, matches: &[SearchMatches<'_>]) -> Vec<ID> {
+    pub fn apply(&self, egraph: &mut EGraph<A>, matches: &[SearchMatches<'_>]) -> Vec<ID> {
         self.applier.apply_matches(egraph, matches, self.name)
     }
 
     /// This `run` is for testing use only. You should use things
     /// from the `egg::run` module
     #[cfg(test)]
-    pub(crate) fn run(&self, egraph: &mut EGraph) -> Vec<ID> {
+    pub(crate) fn run(&self, egraph: &mut EGraph<A>) -> Vec<ID> {
         let start = Instant::now();
 
         let matches = self.search(egraph);
@@ -119,14 +119,14 @@ impl Rewrite {
 }
 
 /// Searches the given list of e-classes with a limit.
-pub(crate) fn search_eclasses_with_limit<'a, I, S>(
+pub(crate) fn search_eclasses_with_limit<'a, A: Analysis, I, S>(
     searcher: &'a S,
-    egraph: &EGraph,
+    egraph: &EGraph<A>,
     eclasses: I,
     mut limit: usize,
 ) -> Vec<SearchMatches<'a>>
 where
-    S: Searcher + ?Sized,
+    S: Searcher<A> + ?Sized,
     I: IntoIterator<Item = ID>,
 {
     let mut ms = vec![];
@@ -153,10 +153,10 @@ where
 /// matching substitutions.
 /// Right now the only significant [`Searcher`] is [`Pattern`].
 ///
-pub trait Searcher {
+pub trait Searcher<A: Analysis> {
     /// Search one eclass, returning None if no matches can be found.
     /// This should not return a SearchMatches with no substs.
-    fn search_eclass(&self, egraph: &EGraph, eclass: ID) -> Option<SearchMatches<'_>> {
+    fn search_eclass(&self, egraph: &EGraph<A>, eclass: ID) -> Option<SearchMatches<'_>> {
         self.search_eclass_with_limit(egraph, eclass, usize::MAX)
     }
 
@@ -169,7 +169,7 @@ pub trait Searcher {
     /// [`search_eclass_with_limit`]: Searcher::search_eclass_with_limit
     fn search_eclass_with_limit(
         &self,
-        egraph: &EGraph,
+        egraph: &EGraph<A>,
         eclass: ID,
         limit: usize,
     ) -> Option<SearchMatches>;
@@ -177,19 +177,19 @@ pub trait Searcher {
     /// Search the whole [`EGraph`], returning a list of all the
     /// [`SearchMatches`] where something was found.
     /// This just calls [`Searcher::search_with_limit`] with a big limit.
-    fn search(&self, egraph: &EGraph) -> Vec<SearchMatches> {
+    fn search(&self, egraph: &EGraph<A>) -> Vec<SearchMatches> {
         self.search_with_limit(egraph, usize::MAX)
     }
 
     /// Similar to [`search`], but return at most `limit` many matches.
     ///
     /// [`search`]: Searcher::search
-    fn search_with_limit(&self, egraph: &EGraph, limit: usize) -> Vec<SearchMatches> {
+    fn search_with_limit(&self, egraph: &EGraph<A>, limit: usize) -> Vec<SearchMatches> {
         search_eclasses_with_limit(self, egraph, egraph.classes().map(|e| e.id), limit)
     }
 
     /// Returns the number of matches in the e-graph
-    fn n_matches(&self, egraph: &EGraph) -> usize {
+    fn n_matches(&self, egraph: &EGraph<A>) -> usize {
         self.search(egraph).iter().map(|m| m.substs.len()).sum()
     }
 
@@ -214,7 +214,7 @@ pub trait Searcher {
 /// Additionally, `egg` provides [`ConditionalApplier`] to stack
 /// [`Condition`]s onto an [`Applier`], which in many cases can save
 /// you from having to implement your own applier.
-pub trait Applier {
+pub trait Applier<A: Analysis> {
     /// Apply many substitutions.
     ///
     /// This method should call [`apply_one`] for each match.
@@ -226,7 +226,7 @@ pub trait Applier {
     /// [`apply_one`]: Applier::apply_one()
     fn apply_matches(
         &self,
-        egraph: &mut EGraph,
+        egraph: &mut EGraph<A>,
         matches: &[SearchMatches],
         rule_name: GlobSymbol,
     ) -> Vec<ID> {
@@ -264,7 +264,7 @@ pub trait Applier {
     /// [`apply_matches`]: Applier::apply_matches()
     fn apply_one(
         &self,
-        egraph: &mut EGraph,
+        egraph: &mut EGraph<A>,
         eclass: ID,
         subst: &Subst,
         searcher_ast: Option<&PatternAst>,
@@ -305,10 +305,11 @@ pub struct ConditionalApplier<C, A> {
     pub applier: A,
 }
 
-impl<C, A> Applier for ConditionalApplier<C, A>
+impl<C, A, N> Applier<N> for ConditionalApplier<C, A>
 where
-    C: Condition,
-    A: Applier,
+    C: Condition<N>,
+    N: Analysis,
+    A: Applier<N>,
 {
     fn get_pattern_ast(&self) -> Option<&PatternAst> {
         self.applier.get_pattern_ast()
@@ -316,7 +317,7 @@ where
 
     fn apply_one(
         &self,
-        egraph: &mut EGraph,
+        egraph: &mut EGraph<N>,
         eclass: ID,
         subst: &Subst,
         searcher_ast: Option<&PatternAst>,
@@ -346,13 +347,13 @@ where
 ///
 /// [`check`]: Condition::check()
 /// [`Fn`]: std::ops::Fn
-pub trait Condition {
+pub trait Condition<A: Analysis> {
     /// Check a condition.
     ///
     /// `eclass` is the eclass [`Id`] where the match (`subst`) occured.
     /// If this is true, then the [`ConditionalApplier`] will fire.
     ///
-    fn check(&self, egraph: &mut EGraph, eclass: ID, subst: &Subst) -> bool;
+    fn check(&self, egraph: &mut EGraph<A>, eclass: ID, subst: &Subst) -> bool;
 
     /// Returns a list of variables that this Condition assumes are bound.
     ///
@@ -365,11 +366,12 @@ pub trait Condition {
     }
 }
 
-impl<F> Condition for F
+impl<F, A> Condition<A> for F
 where
-    F: Fn(&mut EGraph, ID, &Subst) -> bool,
+    A: Analysis,
+    F: Fn(&mut EGraph<A>, ID, &Subst) -> bool,
 {
-    fn check(&self, egraph: &mut EGraph, eclass: ID, subst: &Subst) -> bool {
+    fn check(&self, egraph: &mut EGraph<A>, eclass: ID, subst: &Subst) -> bool {
         self(egraph, eclass, subst)
     }
 }
@@ -392,8 +394,8 @@ impl ConditionEqual {
     }
 }
 
-impl Condition for ConditionEqual {
-    fn check(&self, egraph: &mut EGraph, _eclass: ID, subst: &Subst) -> bool {
+impl<A: Analysis> Condition<A> for ConditionEqual {
+    fn check(&self, egraph: &mut EGraph<A>, _eclass: ID, subst: &Subst) -> bool {
         let mut id_buf_1 = vec![ID::new(0); self.p1.ast.as_ref().len()];
         let mut id_buf_2 = vec![ID::new(0); self.p2.ast.as_ref().len()];
         let a1 = apply_pat(&mut id_buf_1, self.p1.ast.as_ref(), egraph, subst);

@@ -193,10 +193,10 @@ pub struct SearchMatches<'a> {
     pub ast: Option<Cow<'a, PatternAst>>,
 }
 
-impl Searcher for Pattern {
+impl<A: Analysis> Searcher<A> for Pattern {
     fn search_eclass_with_limit(
         &self,
-        egraph: &EGraph,
+        egraph: &EGraph<A>,
         eclass: ID,
         limit: usize,
     ) -> Option<SearchMatches> {
@@ -213,7 +213,7 @@ impl Searcher for Pattern {
         }
     }
 
-    fn search_with_limit(&self, egraph: &EGraph, limit: usize) -> Vec<SearchMatches> {
+    fn search_with_limit(&self, egraph: &EGraph<A>, limit: usize) -> Vec<SearchMatches> {
         match self.ast.as_ref().last().unwrap() {
             ENodeOrVar::ENode(e) => {
                 let key = e.discriminant();
@@ -245,10 +245,10 @@ impl Searcher for Pattern {
     }
 }
 
-impl Applier for Pattern {
+impl<A: Analysis> Applier<A> for Pattern {
     fn apply_matches(
         &self,
-        egraph: &mut EGraph,
+        egraph: &mut EGraph<A>,
         matches: &[SearchMatches],
         rule_name: GlobSymbol,
     ) -> Vec<ID> {
@@ -284,7 +284,7 @@ impl Applier for Pattern {
 
     fn apply_one(
         &self,
-        egraph: &mut EGraph,
+        egraph: &mut EGraph<A>,
         eclass: ID,
         subst: &Subst,
         searcher_ast: Option<&PatternAst>,
@@ -314,10 +314,10 @@ impl Applier for Pattern {
     }
 }
 
-pub(crate) fn apply_pat(
+pub(crate) fn apply_pat<A: Analysis>(
     ids: &mut [ID],
     pat: &[ENodeOrVar],
-    egraph: &mut EGraph,
+    egraph: &mut EGraph<A>,
     subst: &Subst,
 ) -> ID {
     debug_assert_eq!(pat.len(), ids.len());

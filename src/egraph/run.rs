@@ -76,9 +76,9 @@ You can add your own data to this by implementing the
 [`Iteration`]s, but by default it uses `()`.
 **/
 
-pub struct Runner<IterData = ()> {
+pub struct Runner<A: Analysis, IterData = ()> {
     /// The [`EGraph`] used.
-    pub egraph: EGraph,
+    pub egraph: EGraph<A>,
     /// Data accumulated over each [`Iteration`].
     pub iterations: Vec<Iteration<IterData>>,
     /// The roots of expressions added by the
@@ -99,16 +99,26 @@ pub struct Runner<IterData = ()> {
     time_limit: Duration,
 
     start_time: Option<Instant>,
-    scheduler: Box<dyn RewriteScheduler>,
+    scheduler: Box<dyn RewriteScheduler<A>>,
 }
 
-impl Default for Runner<()> {
-    fn default() -> Self {
-        Runner::new(ExprAnalysis::default())
+impl Analysis for () {
+    type Data = ();
+
+    fn make(egraph: &mut EGraph<Self>, enode: &Node) -> Self::Data {}
+
+    fn merge(&mut self, a: &mut Self::Data, b: Self::Data) -> DidMerge {
+        DidMerge(false, false)
     }
 }
 
-impl<IterData> Debug for Runner<IterData>
+impl<A: Analysis + Default> Default for Runner<A, ()> {
+    fn default() -> Self {
+        Runner::new(A::default())
+    }
+}
+
+impl<A: Analysis, IterData> Debug for Runner<A, IterData>
 where
     IterData: Debug,
 {
@@ -233,12 +243,12 @@ pub struct Iteration<IterData> {
 
 type RunnerResult<T> = std::result::Result<T, StopReason>;
 
-impl<IterData> Runner<IterData>
+impl<A: Analysis, IterData> Runner<A, IterData>
 where
-    IterData: IterationData,
+    IterData: IterationData<A>,
 {
     /// Create a new `Runner` with the given analysis and default parameters.
-    pub fn new(analysis: ExprAnalysis) -> Self {
+    pub fn new(analysis: A) -> Self {
         Self {
             iter_limit: 30,
             node_limit: 10_000,
@@ -287,7 +297,7 @@ where
     /// Change out the [`RewriteScheduler`] used by this [`Runner`].
     /// The default one is [`BackoffScheduler`].
     ///
-    pub fn with_scheduler(self, scheduler: impl RewriteScheduler + 'static) -> Self {
+    pub fn with_scheduler(self, scheduler: impl RewriteScheduler<A> + 'static) -> Self {
         let scheduler = Box::new(scheduler);
         Self { scheduler, ..self }
     }
@@ -304,7 +314,7 @@ where
     }
 
     /// Replace the [`EGraph`] of this `Runner`.
-    pub fn with_egraph(self, egraph: EGraph) -> Self {
+    pub fn with_egraph(self, egraph: EGraph<A>) -> Self {
         Self { egraph, ..self }
     }
 
@@ -314,9 +324,10 @@ where
     /// set.
     pub fn run<'a, R>(mut self, rules: R) -> Self
     where
-        R: IntoIterator<Item = &'a Rewrite>,
+        A: Analysis + 'a,
+        R: IntoIterator<Item = &'a Rewrite<A>>,
     {
-        let rules: Vec<&Rewrite> = rules.into_iter().collect();
+        let rules: Vec<&Rewrite<A>> = rules.into_iter().collect();
         check_rules(&rules);
         self.egraph.rebuild();
         loop {
@@ -418,7 +429,7 @@ where
         }
     }
 
-    fn run_one(&mut self, rules: &[&Rewrite]) -> Iteration<IterData> {
+    fn run_one(&mut self, rules: &[&Rewrite<A>]) -> Iteration<IterData> {
         assert!(self.stop_reason.is_none());
 
         info!("\nIteration {}", self.iterations.len());
@@ -549,7 +560,7 @@ where
     }
 }
 
-fn check_rules(rules: &[&Rewrite]) {
+fn check_rules<A>(rules: &[&Rewrite<A>]) {
     let mut name_counts = IndexMap::default();
     for rw in rules {
         *name_counts.entry(rw.name).or_default() += 1
@@ -575,7 +586,7 @@ the [`EGraph`] and dominating how much time is spent while running the
 
 */
 #[allow(unused_variables)]
-pub trait RewriteScheduler {
+pub trait RewriteScheduler<A: Analysis> {
     /// Whether or not the [`Runner`] is allowed
     /// to say it has saturated.
     ///
@@ -593,8 +604,8 @@ pub trait RewriteScheduler {
     fn search_rewrite<'a>(
         &mut self,
         iteration: usize,
-        egraph: &EGraph,
-        rewrite: &'a Rewrite,
+        egraph: &EGraph<A>,
+        rewrite: &'a Rewrite<A>,
     ) -> Vec<SearchMatches<'a>> {
         rewrite.search(egraph)
     }
@@ -608,8 +619,8 @@ pub trait RewriteScheduler {
     fn apply_rewrite(
         &mut self,
         iteration: usize,
-        egraph: &mut EGraph,
-        rewrite: &Rewrite,
+        egraph: &mut EGraph<A>,
+        rewrite: &Rewrite<A>,
         matches: Vec<SearchMatches>,
     ) -> usize {
         rewrite.apply(egraph, &matches).len()
@@ -630,7 +641,7 @@ pub trait RewriteScheduler {
 #[derive(Debug)]
 pub struct SimpleScheduler;
 
-impl RewriteScheduler for SimpleScheduler {}
+impl<A: Analysis> RewriteScheduler<A> for SimpleScheduler {}
 
 /// A [`RewriteScheduler`] that implements exponentional rule backoff.
 ///
@@ -718,7 +729,7 @@ impl Default for BackoffScheduler {
     }
 }
 
-impl RewriteScheduler for BackoffScheduler {
+impl<A: Analysis> RewriteScheduler<A> for BackoffScheduler {
     fn can_stop(&mut self, iteration: usize) -> bool {
         let n_stats = self.stats.len();
 
@@ -764,8 +775,8 @@ impl RewriteScheduler for BackoffScheduler {
     fn search_rewrite<'a>(
         &mut self,
         iteration: usize,
-        egraph: &EGraph,
-        rewrite: &'a Rewrite,
+        egraph: &EGraph<A>,
+        rewrite: &'a Rewrite<A>,
     ) -> Vec<SearchMatches<'a>> {
         let stats = self.rule_stats(rewrite.name);
 
@@ -814,22 +825,22 @@ impl RewriteScheduler for BackoffScheduler {
 /// [`Runner`] is generic over the [`IterationData`] that it will be in the
 /// [`Iteration`]s, but by default it uses `()`.
 ///
-pub trait IterationData: Sized {
+pub trait IterationData<A: Analysis>: Sized {
     /// Given the current [`Runner`], make the
     /// data to be put in this [`Iteration`].
-    fn make(runner: &Runner<Self>) -> Self;
+    fn make(runner: &Runner<A, Self>) -> Self;
 }
 
-impl IterationData for () {
-    fn make(_: &Runner<Self>) -> Self {}
+impl<A: Analysis> IterationData<A> for () {
+    fn make(_: &Runner<A, Self>) -> Self {}
 }
 
 /// Extracting a single [`RecExpr`] from an [`EGraph`].
 #[derive(Debug)]
-pub struct Extractor<'a, CF: CostFunction> {
+pub struct Extractor<'a, A: Analysis, CF: CostFunction> {
     cost_function: CF,
     costs: HashMap<ID, (CF::Cost, Node)>,
-    egraph: &'a EGraph,
+    egraph: &'a EGraph<A>,
 }
 
 /** A cost function that can be used by an [`Extractor`].
@@ -912,8 +923,9 @@ fn cmp<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
     }
 }
 
-impl<'a, CF> Extractor<'a, CF>
+impl<'a, A, CF> Extractor<'a, A, CF>
 where
+    A: Analysis,
     CF: CostFunction,
 {
     /// Create a new `Extractor` given an `EGraph` and a
@@ -922,7 +934,7 @@ where
     /// The extraction does all the work on creation, so this function
     /// performs the greedy search for cheapest representative of each
     /// eclass.
-    pub fn new(egraph: &'a EGraph, cost_function: CF) -> Self {
+    pub fn new(egraph: &'a EGraph<A>, cost_function: CF) -> Self {
         let costs = HashMap::default();
         let mut extractor = Extractor {
             costs,
@@ -997,7 +1009,7 @@ where
         }
     }
 
-    fn make_pass(&mut self, eclass: &EClass) -> Option<(CF::Cost, Node)> {
+    fn make_pass(&mut self, eclass: &EClass<A::Data>) -> Option<(CF::Cost, Node)> {
         let (cost, node) = eclass
             .iter()
             .map(|n| (self.node_total_cost(n), n))

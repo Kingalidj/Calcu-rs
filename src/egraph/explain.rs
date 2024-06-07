@@ -303,11 +303,11 @@ impl Explanation {
 
     /// Check the validity of the explanation with respect to the given rules.
     /// This only is able to check rule applications when the rules are implement `get_pattern_ast`.
-    pub fn check_proof<'a, R, N: Analysis>(&mut self, rules: R)
+    pub fn check_proof<'a, R, N: Analysis + 'a>(&mut self, rules: R)
     where
-        R: IntoIterator<Item = &'a Rewrite>,
+        R: IntoIterator<Item = &'a Rewrite<N>>,
     {
-        let rules: Vec<&Rewrite> = rules.into_iter().collect();
+        let rules: Vec<&Rewrite<N>> = rules.into_iter().collect();
         let rule_table = Explain::make_rule_table(rules.as_slice());
         self.make_flat_explanation();
         let flat_explanation = self.flat_explanation.as_ref().unwrap();
@@ -329,11 +329,11 @@ impl Explanation {
         }
     }
 
-    fn check_rewrite_at(
+    fn check_rewrite_at<A: Analysis>(
         &self,
         current: &FlatTerm,
         next: &FlatTerm,
-        table: &HashMap<GlobSymbol, &Rewrite>,
+        table: &HashMap<GlobSymbol, &Rewrite<A>>,
         is_forward: bool,
     ) -> bool {
         if is_forward && next.forward_rule.is_some() {
@@ -362,7 +362,11 @@ impl Explanation {
     }
 
     // if the rewrite is just patterns, then it can check it
-    fn check_rewrite<'a>(current: &'a FlatTerm, next: &'a FlatTerm, rewrite: &Rewrite) -> bool {
+    fn check_rewrite<'a, A: Analysis>(
+        current: &'a FlatTerm,
+        next: &'a FlatTerm,
+        rewrite: &Rewrite<A>,
+    ) -> bool {
         if let Some(lhs) = rewrite.searcher.get_pattern_ast() {
             if let Some(rhs) = rewrite.applier.get_pattern_ast() {
                 let rewritten = current.rewrite(lhs, rhs);
@@ -811,8 +815,8 @@ impl<I: Eq + PartialEq> PartialOrd for HeapState<I> {
 }
 
 impl Explain {
-    fn make_rule_table<'a>(rules: &[&'a Rewrite]) -> HashMap<GlobSymbol, &'a Rewrite> {
-        let mut table: HashMap<GlobSymbol, &'a Rewrite> = Default::default();
+    fn make_rule_table<'a, A>(rules: &[&'a Rewrite<A>]) -> HashMap<GlobSymbol, &'a Rewrite<A>> {
+        let mut table: HashMap<GlobSymbol, &'a Rewrite<A>> = Default::default();
         for r in rules {
             table.insert(r.name, r);
         }
@@ -1003,7 +1007,7 @@ impl<'x> ExplainNodes<'x> {
         FlatTerm::new(node, children)
     }
 
-    pub fn check_each_explain(&self, rules: &[&Rewrite]) -> bool {
+    pub fn check_each_explain<A: Analysis>(&self, rules: &[&Rewrite<A>]) -> bool {
         let rule_table = Explain::make_rule_table(rules);
         for i in 0..self.explainfind.len() {
             let explain_node = &self.explainfind[i];
@@ -1048,15 +1052,15 @@ impl<'x> ExplainNodes<'x> {
         true
     }
 
-    pub(crate) fn explain_equivalence(
+    pub(crate) fn explain_equivalence<A: Analysis>(
         &mut self,
         left: ID,
         right: ID,
         unionfind: &mut EClassUnion,
-        classes: &HashMap<ID, EClass>,
+        classes: &HashMap<ID, EClass<A::Data>>,
     ) -> Explanation {
         if self.optimize_explanation_lengths {
-            self.calculate_shortest_explanations(left, right, classes, unionfind);
+            self.calculate_shortest_explanations::<A>(left, right, classes, unionfind);
         }
 
         let mut cache = Default::default();
@@ -1485,9 +1489,9 @@ impl<'x> ExplainNodes<'x> {
         distance_memo.parent_distance[enode.val()].1.clone()
     }
 
-    fn find_congruence_neighbors(
+    fn find_congruence_neighbors<A: Analysis>(
         &self,
-        classes: &HashMap<ID, EClass>,
+        classes: &HashMap<ID, EClass<A::Data>>,
         congruence_neighbors: &mut [Vec<ID>],
         unionfind: &EClassUnion,
     ) {
@@ -1531,9 +1535,13 @@ impl<'x> ExplainNodes<'x> {
         }
     }
 
-    pub fn get_num_congr(&self, classes: &HashMap<ID, EClass>, unionfind: &EClassUnion) -> usize {
+    pub fn get_num_congr<A: Analysis>(
+        &self,
+        classes: &HashMap<ID, EClass<A::Data>>,
+        unionfind: &EClassUnion,
+    ) -> usize {
         let mut congruence_neighbors = vec![vec![]; self.explainfind.len()];
-        self.find_congruence_neighbors(classes, &mut congruence_neighbors, unionfind);
+        self.find_congruence_neighbors::<A>(classes, &mut congruence_neighbors, unionfind);
         let mut count = 0;
         for v in congruence_neighbors {
             count += v.len();
@@ -1744,9 +1752,9 @@ impl<'x> ExplainNodes<'x> {
         self.explainfind[enode.val()].parent_connection.next
     }
 
-    fn calculate_common_ancestor(
+    fn calculate_common_ancestor<D>(
         &self,
-        classes: &HashMap<ID, EClass>,
+        classes: &HashMap<ID, EClass<D>>,
         congruence_neighbors: &[Vec<ID>],
     ) -> HashMap<(ID, ID), ID> {
         let mut common_ancestor_queries = HashMap::default();
@@ -1812,15 +1820,15 @@ impl<'x> ExplainNodes<'x> {
         common_ancestor
     }
 
-    fn calculate_shortest_explanations(
+    fn calculate_shortest_explanations<A: Analysis>(
         &mut self,
         start: ID,
         end: ID,
-        classes: &HashMap<ID, EClass>,
+        classes: &HashMap<ID, EClass<A::Data>>,
         unionfind: &EClassUnion,
     ) {
         let mut congruence_neighbors = vec![vec![]; self.explainfind.len()];
-        self.find_congruence_neighbors(classes, &mut congruence_neighbors, unionfind);
+        self.find_congruence_neighbors::<A>(classes, &mut congruence_neighbors, unionfind);
         let mut parent_distance = vec![(ID::new(0), BigUint::zero()); self.explainfind.len()];
         for (i, entry) in parent_distance.iter_mut().enumerate() {
             entry.0 = ID::new(i);

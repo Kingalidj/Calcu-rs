@@ -1,11 +1,10 @@
-extern crate calcu_rs;
-
 use calcu_rs::*;
 
 fn main() {
     std::env::set_var("RUST_LOG", "=warn");
     env_logger::init();
 
+    mod_main();
     //let expr = pat!(x + x);
 
     //let mut lhs = ExprTree::default();

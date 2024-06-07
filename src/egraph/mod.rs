@@ -6,10 +6,9 @@ This code is a modified fork of the work by [Willsey et al.] <a href="#ref1">[1]
 
 */
 
-
+mod construct;
 mod egraph;
 mod explain;
-mod construct;
 mod machine;
 mod multipattern;
 mod pattern;
@@ -19,14 +18,14 @@ mod run;
 pub(crate) use {crate::*, egraph::EClassUnion, explain::Explain};
 
 pub use {
-    calcu_rs::util::*,
+    calcu_rs::utils::*,
+    construct::*,
     egraph::EClass,
     egraph::EGraph,
     explain::{
         Explanation, FlatExplanation, FlatTerm, Justification, TreeExplanation, TreeTerm,
         UnionEqualities,
     },
-    construct::*,
     multipattern::*,
     pattern::{ENodeOrVar, Pattern, PatternAst, SearchMatches},
     rewrite::{

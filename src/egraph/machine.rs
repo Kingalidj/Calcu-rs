@@ -1,4 +1,4 @@
-use calcu_rs::{egraph::*, util::*, *};
+use calcu_rs::{egraph::*, utils::*, *};
 use std::{fmt::Debug, result};
 
 type Result = result::Result<(), ()>;
@@ -36,8 +36,8 @@ enum ENodeOrReg {
 
 /// applies a function to all matching nodes (according to [ExprNode::matches]) in the [EClass]
 #[inline(always)]
-fn for_each_matching_node(
-    eclass: &EClass,
+fn for_each_matching_node<A: Analysis>(
+    eclass: &EClass<A::Data>,
     node: &Node,
     mut f: impl FnMut(&Node) -> Result,
 ) -> Result {
@@ -94,9 +94,9 @@ impl Machine {
         self.reg[reg.0 as usize]
     }
 
-    fn run(
+    fn run<A: Analysis>(
         &mut self,
-        egraph: &EGraph,
+        egraph: &EGraph<A>,
         instructions: &[Instruction],
         subst: &Subst,
         yield_fn: &mut impl FnMut(&Self, &Subst) -> Result,
@@ -112,7 +112,7 @@ impl Machine {
                 Instruction::Bind { i, out, node } => {
                     let remaining_instructions = instructions.as_slice();
                     let eclass = &egraph[self.reg(*i)];
-                    return for_each_matching_node(eclass, node, |matched| {
+                    return for_each_matching_node::<A>(eclass, node, |matched| {
                         self.reg.truncate(out.0 as usize);
                         matched.for_each_oprnd(|id| self.reg.push(id));
                         self.run(egraph, remaining_instructions, subst, yield_fn)
@@ -371,7 +371,12 @@ impl Program {
         compiler.extract()
     }
 
-    pub fn run_with_limit(&self, egraph: &EGraph, eclass: ID, mut limit: usize) -> Vec<Subst> {
+    pub fn run_with_limit<A: Analysis>(
+        &self,
+        egraph: &EGraph<A>,
+        eclass: ID,
+        mut limit: usize,
+    ) -> Vec<Subst> {
         assert!(egraph.clean, "Tried to search a dirty e-graph!");
 
         if limit == 0 {
