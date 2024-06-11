@@ -1391,9 +1391,9 @@ impl<'x> ExplainNodes<'x> {
         self.calculate_parent_distance(right, ancestor, distance_memo);
 
         // now all three share an ancestor
-        let a = self.calculate_parent_distance(ancestor, ID::new(usize::MAX), distance_memo);
-        let b = self.calculate_parent_distance(left, ID::new(usize::MAX), distance_memo);
-        let c = self.calculate_parent_distance(right, ID::new(usize::MAX), distance_memo);
+        let a = self.calculate_parent_distance(ancestor, ID(NonMaxU32::MAX), distance_memo);
+        let b = self.calculate_parent_distance(left, ID(NonMaxU32::MAX), distance_memo);
+        let c = self.calculate_parent_distance(right, ID(NonMaxU32::MAX), distance_memo);
 
         assert!(
             distance_memo.parent_distance[ancestor.val()].0
@@ -1460,7 +1460,7 @@ impl<'x> ExplainNodes<'x> {
                 let new_dist = dist + distance_memo.parent_distance[parent.val()].1.clone();
                 distance_memo.parent_distance[enode.val()] = (parent_parent, new_dist);
             } else {
-                if ancestor == ID::new(usize::MAX) {
+                if ancestor == ID(NonMaxU32::MAX) {
                     break;
                 }
                 if distance_memo.tree_depth.get(&parent).unwrap()

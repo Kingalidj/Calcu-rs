@@ -18,6 +18,11 @@ impl Rational {
     pub const ZERO: Self = Rational(mal::Rational::const_from_signed(0));
     pub const ONE: Self = Rational(mal::Rational::const_from_signed(1));
     pub const TWO: Self = Rational(mal::Rational::const_from_signed(2));
+    pub const MINUS_TWO: Self = Rational(mal::Rational::const_from_signed(-2));
+
+    pub const fn new_int(n: i64) -> Self {
+        Rational(mal::Rational::const_from_signed(n))
+    }
 
     #[inline(always)]
     pub fn is_zero(&self) -> bool {
@@ -123,6 +128,15 @@ impl Rational {
 
         // no change
         (self, rhs)
+    }
+
+    pub fn pow_basic(mut self, mut rhs: Self) -> Option<Self> {
+        let (pow, rest) = self.pow(rhs);
+        if rest != Rational::ZERO {
+            None
+        } else {
+            Some(pow)
+        }
     }
 }
 

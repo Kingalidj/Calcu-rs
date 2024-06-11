@@ -1,7 +1,7 @@
 use calcu_rs::*;
 
 fn main() {
-    std::env::set_var("RUST_LOG", "=warn");
+    std::env::set_var("RUST_LOG", "=info");
     env_logger::init();
 
     mod_main();

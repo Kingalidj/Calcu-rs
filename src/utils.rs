@@ -1,11 +1,11 @@
 use log::warn;
 use std::collections::VecDeque;
+use std::hash::{BuildHasherDefault, Hasher};
+use std::marker::PhantomData;
 use std::{
     fmt::{self, Debug, Display, Formatter},
     iter::FromIterator,
 };
-use std::hash::{BuildHasherDefault, Hasher};
-use std::marker::PhantomData;
 
 /// This is provided by the [`symbol_table`](https://crates.io/crates/symbol_table) crate.
 ///

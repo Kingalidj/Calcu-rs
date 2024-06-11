@@ -10,21 +10,6 @@ use std::{
     ops::{BitOr, Index, IndexMut},
 };
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ExprAnalysis;
-
-impl Analysis for ExprAnalysis {
-    type Data = ();
-
-    fn make(_egraph: &mut EGraph<Self>, _enode: &Node) -> Self::Data {
-        ()
-    }
-
-    fn merge(&mut self, _a: &mut Self::Data, _b: Self::Data) -> DidMerge {
-        DidMerge(false, false)
-    }
-}
-
 impl Construct for Node {
     type Discriminant = std::mem::Discriminant<Node>;
 
@@ -225,9 +210,11 @@ pub struct RecExpr<L> {
     pub(crate) nodes: Vec<L>,
 }
 
-impl From<ExprTree> for RecExpr<Node> {
-    fn from(mut value: ExprTree) -> Self {
-        Self { nodes: value.nodes.into_iter().collect() }
+impl From<Expr> for RecExpr<Node> {
+    fn from(mut value: Expr) -> Self {
+        Self {
+            nodes: value.nodes.into_iter().collect(),
+        }
     }
 }
 
@@ -534,20 +521,20 @@ mod expr_test {
     #[test]
     fn basic_rules() {
         let mut x = RecExpr::default();
-        x.add(Node::Symbol("x".into()));
+        x.add(Node::Var("x".into()));
 
         let mut zero = RecExpr::default();
         zero.add(Node::Rational(0.into()));
 
         let mut add_expr = RecExpr::default();
         let lhs = add_expr.add(Node::Rational(0.into()));
-        let rhs = add_expr.add(Node::Symbol("x".into()));
+        let rhs = add_expr.add(Node::Var("x".into()));
         let add = Node::Add([lhs, rhs]);
         add_expr.add(add);
 
         let mut mul_expr = RecExpr::default();
         let lhs = mul_expr.add(Node::Rational(0.into()));
-        let rhs = mul_expr.add(Node::Symbol("x".into()));
+        let rhs = mul_expr.add(Node::Var("x".into()));
         let mul = Node::Mul([lhs, rhs]);
         mul_expr.add(mul);
 
@@ -563,7 +550,7 @@ mod expr_test {
         };
 
         let rules = [r1, r2];
-        let runner = Runner::<_, ()>::new(ExprAnalysis)
+        let runner = Runner::<_, ()>::new(ExprFold)
             .with_expr(&add_expr)
             .run(&rules);
         let extractor = Extractor::new(&runner.egraph, AstSize);

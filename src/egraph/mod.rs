@@ -7,6 +7,7 @@ This code is a modified fork of the work by [Willsey et al.] <a href="#ref1">[1]
 */
 
 mod construct;
+mod dot;
 mod egraph;
 mod explain;
 mod machine;

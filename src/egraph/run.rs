@@ -6,7 +6,6 @@ use std::{
 use log::*;
 
 use crate::egraph::*;
-use construct::ExprAnalysis;
 
 /** Faciliates running rewrites over an [`EGraph`].
 

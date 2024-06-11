@@ -5,6 +5,7 @@ use std::{
     fmt::{self, Debug},
 };
 
+use crate::egraph::dot::Dot;
 use log::*;
 
 /** A data structure to keep track of equalities between expressions.
@@ -510,6 +511,16 @@ impl<A: Analysis> EGraph<A> {
     fn eclass_id_mut(&mut self, id: ID) -> ID {
         self.unionfind.root_mut(id)
     }
+
+    /// Creates a [Dot] to visualize this egraph
+    ///
+    pub fn dot(&self) -> Dot<A> {
+        Dot {
+            egraph: self,
+            config: vec![],
+            use_anchors: true,
+        }
+    }
 }
 
 /// Given an `Id` using the `egraph[id]` syntax, retrieve the e-class.
@@ -722,7 +733,7 @@ impl<A: Analysis> EGraph<A> {
     /// This function makes a new eclass in the egraph (but doesn't touch explanations)
     fn make_new_eclass(&mut self, enode: Node, original: Node) -> ID {
         let id = self.unionfind.init_class();
-        log::trace!("  ...adding to {}", id);
+        log::trace!("...adding {:?} to class {}", enode, id);
         let class = EClass {
             id,
             nodes: vec![enode.clone()],

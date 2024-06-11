@@ -347,7 +347,7 @@ impl RuleSet {
         }
 
         quote!(
-            pub fn #gen_name() -> [egraph::Rewrite<ExprAnalysis>; #n_rules] {
+            pub fn #gen_name() -> [egraph::Rewrite<ExprFold>; #n_rules] {
                 #debug
                 [ #rules ]
             })
@@ -402,7 +402,8 @@ fn to_node_rec(e: &Expr, as_pattern: bool) -> parse::Result<TokenStream> {
     let node =
     match e {
         Expr::Num(n) => quote!(Node::Rational(Rational::from(#n))),
-        Expr::Symbol(s) => quote!(Node::Symbol(#s.into())),
+        Expr::Symbol(s) => quote!(Node::Var(#s.into())),
+        Expr::Undef => quote!(Node::Undef),
         Expr::Binary(op, lhs, rhs) => {
             let lhs = to_node_rec(lhs, as_pattern)?;
             let rhs = to_node_rec(rhs, as_pattern)?;
@@ -443,7 +444,7 @@ fn to_node(e: &Expr, as_pattern: bool) -> parse::Result<TokenStream> {
     let n = to_node_rec(e, as_pattern)?;
     if !as_pattern {
         Ok(quote!({
-            let mut expr = ExprTree::default();
+            let mut expr = Expr::default();
             let root_id = #n;
             expr.set_root(root_id);
             expr
