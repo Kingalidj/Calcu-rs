@@ -1,6 +1,5 @@
 use crate::*;
 use calcu_rs::egraph::{merge_option, Analysis, DidMerge, EGraph};
-use std::cell::RefCell;
 use std::fmt::{Display, Formatter};
 use std::ops;
 
@@ -31,7 +30,7 @@ pub enum FoldData {
 /// c * v_1^e_1 * ... * v_n^e_n
 ///
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Monomial {
+struct Monomial {
     /// c
     coeff: Rational,
     /// v_i^e_i

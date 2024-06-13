@@ -47,6 +47,11 @@ impl Hasher for U64Hasher {
         debug_assert_eq!(self.0, 0, "only one write to hasher is allowed");
         self.0 = u;
     }
+
+    fn write_usize(&mut self, u: usize) {
+        debug_assert_eq!(self.0, 0, "only one write to hasher is allowed");
+        self.0 = u as u64;
+    }
 }
 
 pub(crate) fn hashmap_with_capacity<K, V>(cap: usize) -> HashMap<K, V> {

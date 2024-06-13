@@ -19,9 +19,13 @@ pub use crate::{
 };
 
 pub fn mod_main() {
-    let mut expr = expr!((x + 1) / x);
+    //let mut expr = expr!(x ^ 2 + 2 * x * y + y ^ 2);
+    //let mut expr = expr!(2^(8/3));
+    //let res = expr.apply_rules(&scalar_rules());
+    //let res = Rational::from(2).pow(Rational::from((8u64, 3u64)));
+    let mut expr = expr!(2^8);
     let res = expr.apply_rules(&scalar_rules());
-    println!("\nres: {}", res);
+    println!("\nres: {:?}", res);
 }
 
 //#[cfg(test)]

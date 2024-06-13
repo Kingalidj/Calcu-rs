@@ -2,12 +2,11 @@ use crate::egraph::{merge_option, RecExpr, Rewrite};
 use crate::*;
 use calcu_rs::egraph::{Analysis, DidMerge, EGraph};
 use indexmap::IndexMap;
-use std::{
-    any::TypeId,
-    collections::VecDeque,
-    fmt::{self, Debug, Display, Formatter},
-    hash::{Hash, Hasher},
-};
+use std::{any::TypeId, collections, collections::VecDeque, fmt::{self, Debug, Display, Formatter}, hash::{Hash, Hasher}, rc};
+use std::cell::OnceCell;
+use std::ops::Index;
+use std::rc::Rc;
+use symbol_table::{Symbol, SymbolTable};
 
 #[derive(Clone, Copy, Ord, PartialOrd, Eq, PartialEq)]
 #[repr(transparent)]
@@ -78,6 +77,228 @@ impl Node {
         self.oprnd_ids().is_empty()
     }
 }
+
+pub type NodeSet = IndexSet<Node>;
+//pub type NodeSetRef = rc::Weak<IndexSet<Node>>;
+
+#[derive(Clone)]
+pub struct ExprContext {
+    symbols: Rc<SymbolTable>,
+    nodes: NodeSet,
+}
+
+impl ExprContext {
+    pub fn new() -> Self {
+        Self {
+            symbols: Rc::new(SymbolTable::new()),
+            nodes: IndexSet::default(),
+        }
+    }
+
+    pub fn insert(&mut self, n: Node) -> ID {
+        let (indx, _) = self.nodes.insert_full(n);
+        ID::new(indx)
+    }
+
+    pub fn get_node(&self, id: ID) -> &Node {
+        self.nodes.get_index(id.val()).unwrap()
+    }
+
+    pub fn make_root(&mut self, n: Node) -> Expr2<'_> {
+        let root = self.insert(n);
+        Expr2 { root, nodes: &self.nodes }
+    }
+
+    pub fn symbol<S: for<'a> Into<&'a str>>(&self, s: S) -> Symbol {
+        let s = s.into();
+        self.symbols.intern(s)
+    }
+
+    pub fn symbol_str(&self, s: Symbol) -> &str {
+        self.symbols.resolve(s)
+    }
+
+    fn simplify_add(&mut self, lhs_id: ID, rhs_id: ID) -> Option<ID> {
+        //if let Some((lhs, min_one, rhs)) = self.is_sub(Node::Add([lhs_id, rhs_id])) {
+        //    return self.simplify_sub(lhs, min_one, rhs);
+        //}
+
+        let lhs = &self[lhs_id];
+        let rhs = &self[rhs_id];
+
+        match (lhs, rhs) {
+            (Node::Rational(r1), Node::Rational(ref r2)) => {
+                self.insert(Node::Rational(r1.clone() + r2))
+            },
+            // x + 0 = 0 + x = x
+            (lhs, &Node::ZERO) => lhs_id,
+            (&Node::ZERO, rhs) => rhs_id,
+            // x + x = 2 * x
+            //(Node::Symbol(s1), Node::Symbol(s2)) if s1 == s2 => {
+            //    let two = self.add_node(Node::TWO);
+            //    Node::Mul([two, lhs_id])
+            //}
+            (lhs, rhs) if lhs == rhs => {
+                let two = self.insert(Node::TWO);
+                self.insert(Node::Mul([two, lhs_id]))
+            }
+            _ => return None,
+        }
+            .into()
+    }
+
+    fn simplify_mul(&mut self, lhs_id: ID, rhs_id: ID) -> Option<ID> {
+        let lhs = &self[lhs_id];
+        let rhs = &self[rhs_id];
+
+        match (lhs, rhs) {
+            (Node::Rational(r1), Node::Rational(r2)) => {
+                self.insert(Node::Rational(r1.clone() * r2))
+            },
+
+            // x * 0 = 0 * x = 0
+            (&Node::ZERO, _) | (_, &Node::ZERO) => self.insert(Node::ZERO),
+
+            // x * 1 = 1 * x = x
+            (lhs, &Node::ONE) => lhs_id,
+            (&Node::ONE, rhs) => rhs_id,
+
+            // x * x = x^2
+            //(Node::Symbol(s1), Node::Symbol(s2)) if s1 == s2 => {
+            (lhs, rhs) if lhs == rhs => {
+                let two = self.insert(Node::TWO);
+                self.insert(Node::Pow([lhs_id, two]))
+            }
+
+            _ => return None,
+        }.into()
+    }
+
+    fn simplify_pow(&mut self, lhs_id: ID, rhs_id: ID) -> Option<ID> {
+        let lhs = &self[lhs_id];
+        let rhs = &self[rhs_id];
+
+        match (lhs, rhs) {
+            (&Node::ZERO, &Node::ZERO) => {
+                self.insert(Node::Undef)
+            }
+            (&Node::ZERO, Node::Rational(r)) if r.is_neg() => {
+                self.insert(Node::Undef)
+            }
+            // 0^a = 0 if Re(a) > 0
+            // rem: complex number -> 0^i = undef
+            (&Node::ZERO, Node::Rational(r)) if r.is_pos() => lhs_id,
+            // a^0 = 1 if a != 0
+            (Node::Rational(r), &Node::ZERO) if !r.is_zero() => self.insert(Node::ONE),
+            // 1^x = 1
+            (&Node::ONE, _) => lhs_id,
+            // x^1 = x
+            (lhs, &Node::ONE) => lhs_id,
+
+            // a^b
+            (Node::Rational(a), Node::Rational(b)) => {
+                let a_id = lhs_id;
+                let b_id = rhs_id;
+                // a^b = pow * a^rest
+                let (pow, rest) = a.clone().pow(b.clone());
+
+                if rest == Rational::ZERO {
+                    self.insert(Node::Rational(pow))
+                } else {
+                    let pow = self.insert(Node::Rational(pow));
+                    let rest = self.insert(Node::Rational(rest));
+                    let a_pow_rest = self.insert(Node::Pow([a_id, rest]));
+                    self.insert(Node::Mul([pow, a_pow_rest]))
+                }
+            }
+            _ => return None,
+        }
+            .into()
+    }
+
+    pub fn simplify_node(&mut self, root: ID) -> ID {
+        match self[root] {
+            Node::Rational(_) | Node::Var(_) | Node::Undef => Some(root),
+            Node::Add([lhs, rhs]) => self.simplify_add(lhs, rhs),
+            Node::Mul([lhs, rhs]) => self.simplify_mul(lhs, rhs),
+            Node::Pow([lhs, rhs]) => self.simplify_pow(lhs, rhs),
+        }.unwrap_or(root)
+    }
+}
+
+impl Index<ID> for ExprContext {
+    type Output = Node;
+
+    fn index(&self, index: ID) -> &Self::Output {
+        self.get_node(index)
+    }
+}
+impl Index<Symbol> for ExprContext {
+    type Output = str;
+
+    fn index(&self, index: Symbol) -> &Self::Output {
+        self.symbols.resolve(index)
+    }
+}
+
+impl Debug for ExprContext {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ExprContext")
+            .field("nodes", &self.nodes)
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Expr2<'a> {
+    pub(crate) nodes: &'a NodeSet,
+    pub(crate) root: ID,
+}
+
+impl Expr2<'_> {
+    fn extract_self(&self) -> Vec<Node> {
+        // map old ids to new ones
+        let mut ids = hashmap_with_capacity::<ID, ID>(self.nodes.len());
+        let mut nodes = Vec::default();
+        let mut stack = VecDeque::default();
+        let mut bfs_order_ids = Vec::default();
+
+        stack.push_back(self.root);
+        while let Some(id) = stack.pop_front() {
+            bfs_order_ids.push(id);
+            let n = &self[id];
+            n.oprnd_ids().iter().for_each(|id| stack.push_back(*id));
+        }
+
+        // reverse bfs -> children of node should already exist
+        bfs_order_ids.into_iter().rev().for_each(|id| {
+            let mut n = self[id].clone();
+            n.oprnd_ids_mut().iter_mut().for_each(|id| *id = ids[id]);
+            nodes.push(n);
+            let new_id = ID::new(nodes.len() - 1);
+            ids.insert(id, new_id);
+        });
+
+        // ensure the operands appear before the operator
+        if cfg!(debug_assertions) {
+            nodes.iter().enumerate().for_each(|(id, n)| {
+                n.oprnd_ids()
+                    .iter()
+                    .for_each(|op_id| debug_assert!(op_id.val() < id))
+            })
+        }
+
+        nodes
+    }
+}
+
+impl Index<ID> for Expr2<'_> {
+    type Output = Node;
+    fn index(&self, index: ID) -> &Self::Output {
+        self.nodes.get_index(index.val()).unwrap()
+    }
+}
+
 
 // wip:
 // Expression represented with a tree. Every non-leaf node hold IDs, the IDs are mapped to indices into [ExprTree::nodes]
@@ -412,11 +633,10 @@ impl Expr {
         self.cleanup();
         let rec = RecExpr::from(self);
         let mut runner = egraph::Runner::default()
-            //.with_time_limit(Duration::from_secs(1))
-            .with_iter_limit(3)
+            .with_time_limit(Duration::from_millis(500))
             .with_expr(&rec)
             .run(rules);
-        //runner.egraph.dot().to_png("graph.png").unwrap();
+        runner.egraph.dot().to_png("graph.png").unwrap();
         let extractor = egraph::Extractor::new(&runner.egraph, ExprCost);
         let (_, be) = extractor.find_best(runner.roots[0]);
 
@@ -614,10 +834,10 @@ mod test_expressions {
         //check_simplify!(expr!(41^(321/43)), expr!(194754273881 * 41^(20/43)))
     }
 
+    #[test]
     fn test_frac_pow() {
-        let mut lhs = expr!(2 ^ 10);
-        lhs.simplify();
-        eq!(lhs, expr!(1024));
+        check_simplify!(expr!(2^10), expr!(1024))
+        //eq!(expr!(2^10), expr!(1024));
 
         //let mut lhs = expr!(321^(321 / 43));
         //lhs.simplify();

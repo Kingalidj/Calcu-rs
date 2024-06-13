@@ -81,7 +81,7 @@ impl Rational {
     /// if the exponent is (a/b) non-int: we calculate the power to the int quotient of a/b
     /// and return the remainder: (self^quot, rem).
     ///
-    /// n^(a/b) = n^(quot + rest) = n^(quot) * n^(rest)
+    /// n^(a/b) = n^(quot + rem) = n^(quot) * n^(rem) -> (n^quot, rem)
     ///
     /// quot: Int, rest: Fraction, n^(quot): Rational
     ///
