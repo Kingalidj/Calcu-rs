@@ -1,7 +1,9 @@
 use crate::*;
 use calcu_rs::egraph::{merge_option, Analysis, DidMerge, EGraph};
-use std::fmt::{Display, Formatter};
-use std::ops;
+use std::{
+    fmt::{Display, Formatter},
+    ops,
+};
 
 define_rules!(scalar_rules:
     commutative add:                ?a + ?b -> ?b + ?a,
@@ -14,17 +16,22 @@ define_rules!(scalar_rules:
 
     power multiplication:           ?a^?b * ?a^?c <-> ?a^(?b + ?c),
     power distributivity 1:         (?a * ?b)^?c <-> ?a^?c * ?b^?c,
-    power distributivity 2:         (?a^?b)^?c <-> ?a^(?b*?c),
-    power distributivity 3:         (?a + ?b)^2 <-> ?a^2 + 2*?a*?b + ?b^2,
+    //power distributivity 2:         (?a^?b)^?c <-> ?a^(?b*?c), ONLY IF B, C ARE POSITIVE
+    power distributivity 2:         (?a + ?b)^2 <-> ?a^2 + 2*?a*?b + ?b^2,
 );
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct ExprFold;
 
 #[derive(Debug, Clone)]
 pub enum FoldData {
     Undef,
     Monomial(Monomial),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PowProd {
+    vars: HashMap<Symbol, Rational, BuildU64Hasher>,
 }
 
 /// c * v_1^e_1 * ... * v_n^e_n
@@ -34,11 +41,11 @@ struct Monomial {
     /// c
     coeff: Rational,
     /// v_i^e_i
-    vars: HashMap<String, Rational>,
+    vars: HashMap<Symbol, Rational>,
 }
 
 impl Monomial {
-    fn mul_var(&mut self, var: String, exp: Rational) {
+    fn mul_var(&mut self, var: Symbol, exp: Rational) {
         self.vars
             .entry(var.clone())
             .and_modify(|mut e| *e += exp.clone())
@@ -46,7 +53,7 @@ impl Monomial {
     }
 
     fn pow(mut self, exp: &Self) -> Option<FoldData> {
-        if self.coeff.is_zero() && exp.coeff.is_zero() | self.coeff.is_zero() && exp.coeff.is_neg()
+        if self.coeff.is_zero() && exp.coeff.is_zero() || self.coeff.is_zero() && exp.coeff.is_neg()
         {
             return Some(FoldData::Undef);
         }
@@ -62,7 +69,8 @@ impl Monomial {
             return eg.add(Node::Rational(self.coeff));
         }
 
-        let ids: Vec<_> = self.vars
+        let ids: Vec<_> = self
+            .vars
             .into_iter()
             .filter(|(_, e)| !e.is_zero())
             .map(|(var, exp)| {
@@ -95,7 +103,7 @@ impl Display for Monomial {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.coeff)?;
         self.vars.iter().for_each(|(v, e)| {
-            write!(f, " * {}^{}", v, e).unwrap();
+            write!(f, " * {v}^{e}").unwrap();
         });
         Ok(())
     }
@@ -132,7 +140,6 @@ impl ops::Mul<Self> for Monomial {
         if vars.len() < other_vars.len() {
             std::mem::swap(&mut vars, &mut other_vars);
         }
-
         let mut p = Self { coeff, vars };
 
         other_vars.into_iter().for_each(|(var, exp)| {
@@ -150,31 +157,33 @@ impl From<Rational> for Monomial {
         }
     }
 }
-impl From<String> for Monomial {
-    fn from(var: String) -> Self {
+impl From<Symbol> for Monomial {
+    fn from(var: Symbol) -> Self {
         let mut p = Self::from(Rational::ONE);
         p.mul_var(var, Rational::ONE);
         p
     }
 }
 
+#[cfg(debug_assertions)]
 impl Eq for FoldData {}
+#[cfg(debug_assertions)]
 impl PartialEq for FoldData {
     fn eq(&self, other: &Self) -> bool {
-        if let (FoldData::Monomial(mut a), FoldData::Monomial(mut b)) =
-            (self.clone(), other.clone())
-        {
-            if a.coeff.is_zero() {
-                a.vars.clear();
+        match (self.clone(), other.clone()) {
+            (FoldData::Monomial(mut a), FoldData::Monomial(mut b)) => {
+                if a.coeff.is_zero() {
+                    a.vars.clear();
+                }
+                if b.coeff.is_zero() {
+                    b.vars.clear();
+                }
+                a.vars.retain(|v, e| !e.is_zero());
+                b.vars.retain(|v, e| !e.is_zero());
+                a == b
             }
-            if b.coeff.is_zero() {
-                b.vars.clear();
-            }
-            a.vars.retain(|v, e| !e.is_zero());
-            b.vars.retain(|v, e| !e.is_zero());
-            a == b
-        } else {
-            self == other
+            (FoldData::Undef, FoldData::Undef) => true,
+            _ => false,
         }
     }
 }
@@ -225,14 +234,36 @@ impl Analysis for ExprFold {
     fn make(eg: &mut EGraph<Self>, node: &Node) -> Self::Data {
         let x = |i: &ID| eg[*i].data.as_ref();
 
-        match node {
+        let n = match node {
             Node::Undef => Some(FoldData::Undef),
             Node::Rational(r) => Some(FoldData::Monomial(r.clone().into())),
             Node::Var(s) => Some(FoldData::Monomial(s.clone().into())),
-            Node::Add([lhs, rhs]) => x(lhs)?.clone() + x(rhs)?,
-            Node::Mul([lhs, rhs]) => x(lhs)?.clone() * x(rhs)?.clone(),
-            Node::Pow([lhs, rhs]) => x(lhs)?.clone().pow(x(rhs)?),
-        }
+            Node::Add([lhs, rhs]) => {
+                //print!("({lhs}, {rhs}): {} + {} => ", x(lhs)?, x(rhs)?);
+                x(lhs)?.clone() + x(rhs)?
+            }
+            Node::Mul([lhs, rhs]) => {
+                //print!("({lhs}, {rhs}): {} * {} => ", x(lhs)?, x(rhs)?);
+                x(lhs)?.clone() * x(rhs)?.clone()
+            }
+            Node::Pow([lhs, rhs]) => {
+                print!("({lhs}, {rhs}): {}.pow({}) => ", x(lhs)?, x(rhs)?);
+                let n = x(lhs)?.clone().pow(x(rhs)?);
+                match n {
+                    None => None,
+                    Some(n) => {
+                        println!("{}", n);
+                        Some(n)
+                    }
+                }
+            }
+        };
+
+        //match n {
+        //    None => println!("none"),
+        //    Some(ref n) => println!("{n}"),
+        //}
+        n
     }
 
     // does nothing, because when eclasses merge, their data should be equal
@@ -250,6 +281,8 @@ impl Analysis for ExprFold {
                 FoldData::Monomial(p) => p.write_to_graph(eg),
             };
             eg.union(x, id);
+            //let len = eg[id].nodes.len();
+            //eg[id].nodes.drain(..len-1);
         }
     }
 }
@@ -266,9 +299,9 @@ impl egraph::CostFunction for ExprCost {
     {
         let op_cost = match enode {
             Node::Undef => 0,
-            Node::Rational(_) | Node::Var(_) | Node::Pow(_) => 2,
-            Node::Mul(_) => 4,
-            Node::Add(_) => 8,
+            Node::Rational(_) | Node::Var(_) | Node::Pow(_) => 1,
+            Node::Mul(_) => 2,
+            Node::Add(_) => 4,
         };
         egraph::Construct::fold(enode, op_cost, |sum, i| sum.saturating_add(costs(i)))
     }
@@ -282,28 +315,60 @@ mod test_rules {
         ($lhs:expr, $rhs:expr) => {{
             let lhs = $lhs;
             let rhs = $rhs;
-            assert!(lhs.cmp_full(&rhs), "{} != {}", lhs, rhs);
+            assert!(lhs == rhs, "{} != {}", lhs, rhs);
         }};
     }
 
     macro_rules! run {
-        ($lhs: expr, $rhs: expr) => {
-            let res = $lhs.apply_rules(&scalar_rules());
-            cmp!(res, $rhs);
-        };
+        ($lhs: expr, $rhs: expr) => {{
+            let lhs = $lhs;
+            let rhs = $rhs;
+            let res = lhs.apply_rules(ExprFold, &scalar_rules());
+            cmp!(res, rhs);
+        }};
     }
 
     #[test]
     fn test_scalar_rules() {
-        run!(expr!(a + 0), expr!(a));
-        run!(expr!(0 + a), expr!(a));
-        run!(expr!(1 + 2), expr!(3));
-        run!(expr!(a + a), expr!(2 * a));
-        run!(expr!(a + a + a), expr!(3 * a));
-        run!(expr!(a * a), expr!(a ^ 2));
-        run!(expr!(a * a * a), expr!(a ^ 3));
-        run!(expr!((x * x + x) / x), expr!(x + 1));
-        run!(expr!((x * x + x) / (1 / x)), expr!(x ^ 3 + x ^ 2));
-        run!(expr!(x ^ 2 + 2 * x * y + y ^ 2), expr!((x + y) ^ 2));
+        let mut c = ExprContext::new();
+        run!(expr!(c: a + 0), expr!(c: a));
+        run!(expr!(c: 0 + a), expr!(c: a));
+        run!(expr!(c: 1 + 2), expr!(c: 3));
+        run!(expr!(c: a + a), expr!(c: 2 * a));
+        run!(expr!(c: a + a + a), expr!(c: 3 * a));
+        run!(expr!(c: a * a), expr!(c: a ^ 2));
+        run!(expr!(c: a * a * a), expr!(c: a ^ 3));
+        run!(expr!(c: (a * b) + (a * b)), expr!(c: 2 * a * b));
+        run!(expr!(c: (x * x + x) / x), expr!(c: x + 1));
+        run!(expr!(c: (x * x + x) / (1 / x)), expr!(c: x ^ 3 + x ^ 2));
+        run!(expr!(c: x ^ 2 + 2 * x * y + y ^ 2), expr!(c: (x + y) ^ 2));
+
+        run!(expr!(c: x + 0), expr!(c: x));
+        run!(expr!(c: 0 + x), expr!(c: x));
+        run!(expr!(c: x + x), expr!(c: 2 * x));
+
+        run!(expr!(c: x - x), expr!(c: 0));
+        run!(expr!(c: 0 - x), expr!(c: -x));
+        run!(expr!(c: x - 0), expr!(c: x));
+        run!(expr!(c: 3 - 2), expr!(c: 1));
+
+        run!(expr!(c: x * 0), expr!(c: 0));
+        run!(expr!(c: 0 * x), expr!(c: 0));
+        run!(expr!(c: x * 1), expr!(c: x));
+        run!(expr!(c: 1 * x), expr!(c: x));
+        run!(expr!(c: x * x), expr!(c: x ^ 2));
+
+        run!(expr!(c: 0 ^ 1), expr!(c: 0));
+        run!(expr!(c: 0 ^ 314), expr!(c: 0));
+        run!(expr!(c: 1 ^ 0), expr!(c: 1));
+        run!(expr!(c: 314 ^ 0), expr!(c: 1));
+        run!(expr!(c: 314 ^ 1), expr!(c: 314));
+        run!(expr!(c: x ^ 1), expr!(c: x));
+        run!(expr!(c: 1 ^ x), expr!(c: 1));
+        run!(expr!(c: 1 ^ 314), expr!(c: 1));
+        run!(expr!(c: 3 ^ 3), expr!(c: 27));
+
+        run!(expr!(c: a - b), expr!(c: a + (-1 * b)));
+        run!(expr!(c: a / b), expr!(c: a * b ^ -1));
     }
 }

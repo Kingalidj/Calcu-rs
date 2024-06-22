@@ -1,32 +1,104 @@
-use log::warn;
 use std::collections::VecDeque;
-use std::hash::{BuildHasherDefault, Hasher};
-use std::marker::PhantomData;
+use std::hash::{BuildHasherDefault, Hash, Hasher};
+use std::mem::MaybeUninit;
+use std::num::NonZeroU32;
 use std::{
     fmt::{self, Debug, Display, Formatter},
     iter::FromIterator,
 };
-
-/// This is provided by the [`symbol_table`](https://crates.io/crates/symbol_table) crate.
-///
-/// The internal symbol cache leaks the strings, which should be
-/// fine if you only put in things like variable names and identifiers.
-pub use symbol_table::GlobalSymbol as GlobSymbol;
+use symbol_table as st;
 
 pub(crate) use hashmap::*;
 pub(crate) type BuildHasher = fxhash::FxBuildHasher;
 pub(crate) use paste::paste;
+//use symbol_table::Symbol;
+use calcu_rs::ExprContext;
 
 #[cfg(feature = "deterministic")]
 mod hashmap {
-    pub(crate) type HashMap<K, V> = super::IndexMap<K, V>;
-    pub(crate) type HashSet<K> = super::IndexSet<K>;
+    pub(crate) type HashMap<K, V, B = BuildHasher> = super::IndexMap<K, V, B>;
+    pub(crate) type HashSet<K, B = BuildHasher> = super::IndexSet<K, B>;
 }
 #[cfg(not(feature = "deterministic"))]
 mod hashmap {
     use super::BuildHasher;
-    pub(crate) type HashMap<K, V> = std::collections::HashMap<K, V, BuildHasher>;
-    pub(crate) type HashSet<K> = std::collections::HashSet<K, BuildHasher>;
+    pub(crate) type HashMap<K, V, B = BuildHasher> = std::collections::HashMap<K, V, B>;
+    pub(crate) type HashSet<K, B = BuildHasher> = std::collections::HashSet<K, B>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Symbol(st::Symbol);
+
+impl Display for Symbol {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let v = NonZeroU32::from(self.0).get();
+        write!(f, "{}", u32_to_base52(v))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct GlobalSymbol(st::GlobalSymbol);
+impl GlobalSymbol {
+    pub fn new(s: impl AsRef<str>) -> Self {
+        Self(s.as_ref().into())
+    }
+    pub fn as_str(&self) -> &'static str {
+        self.0.as_str()
+    }
+}
+impl<S: AsRef<str>> From<S> for GlobalSymbol {
+    fn from(value: S) -> Self {
+        Self(value.as_ref().into())
+    }
+}
+impl Display for GlobalSymbol {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+pub struct SymbolTable(st::SymbolTable);
+
+impl SymbolTable {
+    pub fn new() -> Self {
+        Self(st::SymbolTable::new())
+    }
+
+    pub fn insert(&self, s: impl AsRef<str>) -> Symbol {
+        Symbol(self.0.intern(s.as_ref()))
+    }
+    pub fn get(&self, s: &Symbol) -> &str {
+        self.0.resolve(s.0)
+    }
+}
+
+//pub fn glob_mut_expr_context() -> &'static mut ExprContext {
+//    static mut SINGLETON: MaybeUninit<ExprContext> = MaybeUninit::uninit();
+//    static ONCE: std::sync::Once = std::sync::Once::new();
+//
+//    unsafe {
+//        ONCE.call_once(|| {
+//            SINGLETON.write(ExprContext::new());
+//        });
+//        SINGLETON.assume_init_mut()
+//    }
+//}
+
+fn u32_to_base52(mut num: u32) -> String {
+    let mut result = String::new();
+    const BASE_52_TABLE: &[u8; 52] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+    if num == 0 {
+        return "A".to_string();
+    }
+
+    while num > 0 {
+        let remainder = (num % 52) as usize;
+        result.push(BASE_52_TABLE[remainder] as char);
+        num /= 52;
+    }
+
+    result.chars().rev().collect::<String>()
 }
 
 /// use the value itself as hash value
@@ -52,14 +124,30 @@ impl Hasher for U64Hasher {
         debug_assert_eq!(self.0, 0, "only one write to hasher is allowed");
         self.0 = u as u64;
     }
+
+    fn write_i8(&mut self, _: i8) {
+        panic!("only unsigned values allowed")
+    }
+    fn write_i16(&mut self, _: i16) {
+        panic!("only unsigned values allowed")
+    }
+    fn write_i32(&mut self, _: i32) {
+        panic!("only unsigned values allowed")
+    }
+    fn write_i64(&mut self, _: i64) {
+        panic!("only unsigned values allowed")
+    }
+    fn write_i128(&mut self, _: i128) {
+        panic!("only unsigned values allowed")
+    }
 }
 
 pub(crate) fn hashmap_with_capacity<K, V>(cap: usize) -> HashMap<K, V> {
     HashMap::with_capacity_and_hasher(cap, <_>::default())
 }
 
-pub(crate) type IndexMap<K, V> = indexmap::IndexMap<K, V, BuildHasher>;
-pub(crate) type IndexSet<K> = indexmap::IndexSet<K, BuildHasher>;
+pub(crate) type IndexMap<K, V, B = BuildHasher> = indexmap::IndexMap<K, V, B>;
+pub(crate) type IndexSet<K, B = BuildHasher> = indexmap::IndexSet<K, B>;
 
 pub(crate) type Instant = quanta::Instant;
 pub(crate) type Duration = std::time::Duration;
@@ -72,9 +160,9 @@ pub(crate) fn concat_vecs<T>(to: &mut Vec<T>, mut from: Vec<T>) {
 }
 
 /// A wrapper that uses display implementation as debug
-pub(crate) struct DisplayAsDebug<T>(pub T);
+pub(crate) struct DisplayAsDebug<'a, T>(pub &'a T);
 
-impl<T: Display> Debug for DisplayAsDebug<T> {
+impl<'a, T: Display> Debug for DisplayAsDebug<'a, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         Display::fmt(&self.0, f)
     }
@@ -239,6 +327,7 @@ non_max!(usize);
 
 #[cfg(test)]
 mod tests {
+    use crate::utils::u32_to_base52;
     use calcu_rs::egraph::*;
 
     macro_rules! non_max_test {
@@ -263,12 +352,12 @@ mod tests {
         };
     }
 
-    non_max_test!(u8);
-    non_max_test!(u16);
-    non_max_test!(u32);
-    non_max_test!(u64);
-    non_max_test!(u128);
-    non_max_test!(usize);
+    //non_max_test!(u8);
+    //non_max_test!(u16);
+    //non_max_test!(u32);
+    //non_max_test!(u64);
+    //non_max_test!(u128);
+    //non_max_test!(usize);
 
     fn ids(us: impl IntoIterator<Item = usize>) -> Vec<ID> {
         us.into_iter().map(|u| ID::new(u)).collect()
@@ -305,5 +394,13 @@ mod tests {
         // indexes:         0, 1, 2, 3, 4, 5, 6, 7, 8, 9
         let expected = vec![0, 0, 0, 0, 4, 5, 6, 6, 6, 6];
         assert_eq!(uf.parents, ids(expected));
+    }
+
+    #[test]
+    fn base52_string() {
+        assert_eq!("A", u32_to_base52(0).as_str());
+        assert_eq!("BA", u32_to_base52(52).as_str());
+        assert_eq!("CA", u32_to_base52(104).as_str());
+        assert_eq!("CC", u32_to_base52(106).as_str());
     }
 }

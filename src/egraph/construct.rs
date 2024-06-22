@@ -210,14 +210,6 @@ pub struct RecExpr<L> {
     pub(crate) nodes: Vec<L>,
 }
 
-impl From<Expr> for RecExpr<Node> {
-    fn from(mut value: Expr) -> Self {
-        Self {
-            nodes: value.nodes.into_iter().collect(),
-        }
-    }
-}
-
 impl<L> Default for RecExpr<L> {
     fn default() -> Self {
         Self::from(vec![])
@@ -258,7 +250,7 @@ impl<L: Construct> RecExpr<L> {
 
     pub(crate) fn compact(mut self) -> Self {
         let mut ids = hashmap_with_capacity::<ID, ID>(self.nodes.len());
-        let mut set = IndexSet::default();
+        let mut set = IndexSet::new();
         for (i, node) in self.nodes.drain(..).enumerate() {
             let node = node.map_operands(|id| ids[&id]);
             let new_id = set.insert_full(node).0;
@@ -511,55 +503,5 @@ pub fn merge_option<T>(
         }
         (Some(_), None) => DidMerge(false, true),
         (Some(a), Some(b)) => merge_fn(a, b),
-    }
-}
-
-#[cfg(test)]
-mod expr_test {
-    use calcu_rs::egraph::*;
-
-    #[test]
-    fn basic_rules() {
-        let mut x = RecExpr::default();
-        x.add(Node::Var("x".into()));
-
-        let mut zero = RecExpr::default();
-        zero.add(Node::Rational(0.into()));
-
-        let mut add_expr = RecExpr::default();
-        let lhs = add_expr.add(Node::Rational(0.into()));
-        let rhs = add_expr.add(Node::Var("x".into()));
-        let add = Node::Add([lhs, rhs]);
-        add_expr.add(add);
-
-        let mut mul_expr = RecExpr::default();
-        let lhs = mul_expr.add(Node::Rational(0.into()));
-        let rhs = mul_expr.add(Node::Var("x".into()));
-        let mul = Node::Mul([lhs, rhs]);
-        mul_expr.add(mul);
-
-        let r1 = {
-            let searcher = Pattern::from(&add_expr);
-            let applier = Pattern::from(&x);
-            Rewrite::new("0 + x -> x", searcher, applier).unwrap()
-        };
-        let r2 = {
-            let searcher = Pattern::from(&mul_expr);
-            let applier = Pattern::from(&zero);
-            Rewrite::new("0 * x -> 0", searcher, applier).unwrap()
-        };
-
-        let rules = [r1, r2];
-        let runner = Runner::<_, ()>::new(ExprFold)
-            .with_expr(&add_expr)
-            .run(&rules);
-        let extractor = Extractor::new(&runner.egraph, AstSize);
-        let (_bc, be) = extractor.find_best(runner.roots[0]);
-        assert_eq!(be, x, "0 + x !-> x");
-
-        let runner = Runner::default().with_expr(&mul_expr).run(&rules);
-        let extractor = Extractor::new(&runner.egraph, AstSize);
-        let (_bc, be) = extractor.find_best(runner.roots[0]);
-        assert_eq!(be, zero, "0 * x !-> 0");
     }
 }

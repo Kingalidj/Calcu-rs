@@ -21,8 +21,8 @@ pub(crate) use {crate::*, egraph::EClassUnion, explain::Explain};
 pub use {
     calcu_rs::utils::*,
     construct::*,
-    egraph::EClass,
-    egraph::EGraph,
+    dot::Dot,
+    egraph::{EClass, EGraph},
     explain::{
         Explanation, FlatExplanation, FlatTerm, Justification, TreeExplanation, TreeTerm,
         UnionEqualities,

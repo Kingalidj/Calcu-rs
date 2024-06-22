@@ -21,7 +21,7 @@ const GREEDY_NUM_ITERS: usize = 2;
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Justification {
     /// Justification by a rule with this name.
-    Rule(GlobSymbol),
+    Rule(GlobalSymbol),
     /// Justification by congruence.
     Congruence,
 }
@@ -96,7 +96,7 @@ pub type FlatExplanation = Vec<FlatTerm>;
 
 /// A vector of equalities based on enode ids. Each entry represents
 /// two enode ids that are equal and why.
-pub type UnionEqualities = Vec<(ID, ID, GlobSymbol)>;
+pub type UnionEqualities = Vec<(ID, ID, GlobalSymbol)>;
 
 // given two adjacent nodes and the direction of the proof
 type ExplainCache = HashMap<(ID, ID), Rc<TreeTerm>>;
@@ -333,7 +333,7 @@ impl Explanation {
         &self,
         current: &FlatTerm,
         next: &FlatTerm,
-        table: &HashMap<GlobSymbol, &Rewrite<A>>,
+        table: &HashMap<GlobalSymbol, &Rewrite<A>>,
         is_forward: bool,
     ) -> bool {
         if is_forward && next.forward_rule.is_some() {
@@ -398,9 +398,9 @@ pub struct TreeTerm {
     /// A node representing this TreeTerm's operator. The children of the node should be ignored.
     pub node: Node,
     /// A rule rewriting this TreeTerm's initial term back to the last TreeTerm's final term.
-    pub backward_rule: Option<GlobSymbol>,
+    pub backward_rule: Option<GlobalSymbol>,
     /// A rule rewriting the last TreeTerm's final term to this TreeTerm's initial term.
-    pub forward_rule: Option<GlobSymbol>,
+    pub forward_rule: Option<GlobalSymbol>,
     /// A list of child proofs, each transforming the initial term to the final term for that child.
     pub child_proofs: Vec<TreeExplanation>,
 
@@ -529,9 +529,9 @@ pub struct FlatTerm {
     /// The children of the node should be ignored.
     pub node: Node,
     /// A rule rewriting this FlatTerm back to the last FlatTerm.
-    pub backward_rule: Option<GlobSymbol>,
+    pub backward_rule: Option<GlobalSymbol>,
     /// A rule rewriting the last FlatTerm to this FlatTerm.
-    pub forward_rule: Option<GlobSymbol>,
+    pub forward_rule: Option<GlobalSymbol>,
     /// The children of this FlatTerm.
     pub children: FlatExplanation,
 }
@@ -815,8 +815,8 @@ impl<I: Eq + PartialEq> PartialOrd for HeapState<I> {
 }
 
 impl Explain {
-    fn make_rule_table<'a, A>(rules: &[&'a Rewrite<A>]) -> HashMap<GlobSymbol, &'a Rewrite<A>> {
-        let mut table: HashMap<GlobSymbol, &'a Rewrite<A>> = Default::default();
+    fn make_rule_table<'a, A>(rules: &[&'a Rewrite<A>]) -> HashMap<GlobalSymbol, &'a Rewrite<A>> {
+        let mut table: HashMap<GlobalSymbol, &'a Rewrite<A>> = Default::default();
         for r in rules {
             table.insert(r.name, r);
         }
@@ -1391,9 +1391,9 @@ impl<'x> ExplainNodes<'x> {
         self.calculate_parent_distance(right, ancestor, distance_memo);
 
         // now all three share an ancestor
-        let a = self.calculate_parent_distance(ancestor, ID(NonMaxU32::MAX), distance_memo);
-        let b = self.calculate_parent_distance(left, ID(NonMaxU32::MAX), distance_memo);
-        let c = self.calculate_parent_distance(right, ID(NonMaxU32::MAX), distance_memo);
+        let a = self.calculate_parent_distance(ancestor, ID::MAX, distance_memo);
+        let b = self.calculate_parent_distance(left, ID::MAX, distance_memo);
+        let c = self.calculate_parent_distance(right, ID::MAX, distance_memo);
 
         assert!(
             distance_memo.parent_distance[ancestor.val()].0
@@ -1460,7 +1460,7 @@ impl<'x> ExplainNodes<'x> {
                 let new_dist = dist + distance_memo.parent_distance[parent.val()].1.clone();
                 distance_memo.parent_distance[enode.val()] = (parent_parent, new_dist);
             } else {
-                if ancestor == ID(NonMaxU32::MAX) {
+                if ancestor == ID::MAX {
                     break;
                 }
                 if distance_memo.tree_depth.get(&parent).unwrap()
@@ -1572,8 +1572,8 @@ impl<'x> ExplainNodes<'x> {
             },
         });
 
-        let mut last = HashMap::default();
-        let mut path_cost = HashMap::default();
+        let mut last = HashMap::new();
+        let mut path_cost = HashMap::new();
 
         'outer: loop {
             if todo.is_empty() {

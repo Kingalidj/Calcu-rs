@@ -250,7 +250,7 @@ impl<A: Analysis> Applier<A> for Pattern {
         &self,
         egraph: &mut EGraph<A>,
         matches: &[SearchMatches],
-        rule_name: GlobSymbol,
+        rule_name: GlobalSymbol,
     ) -> Vec<ID> {
         let mut added = vec![];
         let ast = self.ast.as_ref();
@@ -288,7 +288,7 @@ impl<A: Analysis> Applier<A> for Pattern {
         eclass: ID,
         subst: &Subst,
         searcher_ast: Option<&PatternAst>,
-        rule_name: GlobSymbol,
+        rule_name: GlobalSymbol,
     ) -> Vec<ID> {
         let ast = self.ast.as_ref();
         let mut id_buf = vec![ID::new(0); ast.len()];

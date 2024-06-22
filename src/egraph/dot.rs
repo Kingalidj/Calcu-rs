@@ -30,6 +30,7 @@ instead of to its own eclass.
  **/
 pub struct Dot<'a, N: Analysis> {
     pub(crate) egraph: &'a EGraph<N>,
+    pub(crate) symbols: &'a SymbolTable,
     /// A list of strings to be output top part of the dot file.
     pub config: Vec<String>,
     /// Whether or not to anchor the edges in the output.
@@ -165,7 +166,13 @@ where
             writeln!(f, "  subgraph cluster_{} {{", class.id)?;
             writeln!(f, "    style=dotted")?;
             for (i, node) in class.iter().enumerate() {
-                writeln!(f, "    {}.{}[label = \"{}\"]", class.id, i, node)?;
+                writeln!(
+                    f,
+                    "    {}.{}[label = \"{}\"]",
+                    class.id,
+                    i,
+                    node.fmt_symbols(self.symbols)
+                )?;
             }
             writeln!(f, "  }}")?;
         }
@@ -176,7 +183,7 @@ where
                 node.try_for_each_oprnd(|child| {
                     // write the edge to the child, but clip it to the eclass with lhead
                     let (anchor, label) = self.edge(arg_i, node.len());
-                    let child_leader = self.egraph.eclass_id(child);
+                    let child_leader = self.egraph.canon_id(child);
 
                     if child_leader == class.id {
                         writeln!(

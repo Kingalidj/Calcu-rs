@@ -3,6 +3,7 @@ use std::{
     fmt::{self, Debug, Display, Formatter},
 };
 
+use calcu_rs::expression::NodeSet;
 use log::*;
 
 use crate::egraph::*;
@@ -220,7 +221,7 @@ pub struct Iteration<IterData> {
     pub egraph_classes: usize,
     /// A map from rule name to number of times it was _newly_ applied
     /// in this iteration.
-    pub applied: IndexMap<GlobSymbol, usize>,
+    pub applied: IndexMap<GlobalSymbol, usize>,
     /// Seconds spent running hooks.
     pub hook_time: f64,
     /// Seconds spent searching in this iteration.
@@ -306,7 +307,7 @@ where
     /// The eclass id of this addition will be recorded in the
     /// [`roots`](Runner::roots) field, ordered by
     /// insertion order.
-    pub fn with_expr(mut self, expr: &RecExpr<Node>) -> Self {
+    pub fn with_expr(mut self, expr: &Expr) -> Self {
         let id = self.egraph.add_expr(expr);
         self.roots.push(id);
         self
@@ -375,16 +376,12 @@ where
     }
 
     /// Calls [`EGraph::explain_equivalence`](EGraph::explain_equivalence()).
-    pub fn explain_equivalence(
-        &mut self,
-        left: &RecExpr<Node>,
-        right: &RecExpr<Node>,
-    ) -> Explanation {
+    pub fn explain_equivalence(&mut self, left: &Expr, right: &Expr) -> Explanation {
         self.egraph.explain_equivalence(left, right)
     }
 
     /// Calls [`EGraph::explain_existance`](EGraph::explain_existance()).
-    pub fn explain_existance(&mut self, expr: &RecExpr<Node>) -> Explanation {
+    pub fn explain_existance(&mut self, expr: &Expr) -> Explanation {
         self.egraph.explain_existance(expr)
     }
 
@@ -400,7 +397,7 @@ where
     /// Get an explanation for why an expression matches a pattern.
     pub fn explain_matches(
         &mut self,
-        left: &RecExpr<Node>,
+        left: &Expr,
         right: &PatternAst,
         subst: &Subst,
     ) -> Explanation {
@@ -560,7 +557,7 @@ where
 }
 
 fn check_rules<A>(rules: &[&Rewrite<A>]) {
-    let mut name_counts = IndexMap::default();
+    let mut name_counts = IndexMap::new();
     for rw in rules {
         *name_counts.entry(rw.name).or_default() += 1
     }
@@ -658,7 +655,7 @@ impl<A: Analysis> RewriteScheduler<A> for SimpleScheduler {}
 pub struct BackoffScheduler {
     default_match_limit: usize,
     default_ban_length: usize,
-    stats: IndexMap<GlobSymbol, RuleStats>,
+    stats: IndexMap<GlobalSymbol, RuleStats>,
 }
 
 #[derive(Debug)]
@@ -685,7 +682,7 @@ impl BackoffScheduler {
         self
     }
 
-    fn rule_stats(&mut self, name: GlobSymbol) -> &mut RuleStats {
+    fn rule_stats(&mut self, name: GlobalSymbol) -> &mut RuleStats {
         if self.stats.contains_key(&name) {
             &mut self.stats[&name]
         } else {
@@ -700,19 +697,19 @@ impl BackoffScheduler {
     }
 
     /// Never ban a particular rule.
-    pub fn do_not_ban(mut self, name: impl Into<GlobSymbol>) -> Self {
+    pub fn do_not_ban(mut self, name: impl Into<GlobalSymbol>) -> Self {
         self.rule_stats(name.into()).match_limit = usize::MAX;
         self
     }
 
     /// Set the initial match limit for a rule.
-    pub fn rule_match_limit(mut self, name: impl Into<GlobSymbol>, limit: usize) -> Self {
+    pub fn rule_match_limit(mut self, name: impl Into<GlobalSymbol>, limit: usize) -> Self {
         self.rule_stats(name.into()).match_limit = limit;
         self
     }
 
     /// Set the initial ban length for a rule.
-    pub fn rule_ban_length(mut self, name: impl Into<GlobSymbol>, length: usize) -> Self {
+    pub fn rule_ban_length(mut self, name: impl Into<GlobalSymbol>, length: usize) -> Self {
         self.rule_stats(name.into()).ban_length = length;
         self
     }
@@ -948,28 +945,87 @@ where
     /// Find the cheapest (lowest cost) represented `RecExpr` in the
     /// given eclass.
     pub fn find_best(&self, eclass: ID) -> (CF::Cost, RecExpr<Node>) {
-        let (cost, root) = self.costs[&self.egraph.eclass_id(eclass)].clone();
+        let (cost, root) = self.costs[&self.egraph.canon_id(eclass)].clone();
         let expr = root.build_recexpr(|id| self.find_best_node(id).clone());
         (cost, expr)
     }
 
+    // TODO: somehow finds cycles?
+    fn extract_into_nodes<F>(
+        root: Node,
+        cntxt: &ExprContext,
+        mut get_node: F,
+    ) -> Expr
+    where
+        F: FnMut(ID) -> Node,
+    {
+        //let mut set = IndexSet::<Node>::default();
+        let mut ids = HashMap::<ID, ID>::default();
+        let mut todo = root.operands().to_vec();
+
+        while let Some(id) = todo.last().copied() {
+            if ids.contains_key(&id) {
+                todo.pop();
+                continue;
+            }
+
+            let node = get_node(id);
+
+            // check to see if we can do this node yet
+            let mut ids_has_all_children = true;
+            for child in node.operands() {
+                if !ids.contains_key(child) {
+                    ids_has_all_children = false;
+                    todo.push(*child)
+                }
+            }
+
+            // all children are processed, so we can lookup this node safely
+            if ids_has_all_children {
+                let node = node.map_operands(|id| ids[&id]);
+                let new_id = cntxt.insert(node);
+                ids.insert(id, new_id);
+                todo.pop();
+            }
+        }
+
+        // finally, add the root node and create the expression
+        //let root_id = ID::new(cntxt.nodes.insert_full(root.map_operands(|id| ids[&id])).0);
+        let root_id = cntxt.insert(root.map_operands(|id| ids[&id]));
+        Expr::from_id(root_id, cntxt)
+    }
+
+    pub fn find_best2<'b>(
+        &self,
+        eclass: ID,
+        cntxt: &'b ExprContext,
+    ) -> (CF::Cost, Expr<'b>) {
+        let (cost, root) = self.costs[&self.egraph.canon_id(eclass)].clone();
+
+        let expr = Self::extract_into_nodes(root, cntxt, |id| self.find_best_node(id).clone());
+        (cost, expr)
+        //let expr = root.build_recexpr(|id| self.find_best_node(id).clone());
+        //let expr = root.build_recexpr(|id| self.find_best_node(id).clone());
+        //(cost, expr)
+    }
+
     /// Find the cheapest e-node in the given e-class.
     pub fn find_best_node(&self, eclass: ID) -> &Node {
-        &self.costs[&self.egraph.eclass_id(eclass)].1
+        &self.costs[&self.egraph.canon_id(eclass)].1
     }
 
     /// Find the cost of the term that would be extracted from this e-class.
     pub fn find_best_cost(&self, eclass: ID) -> CF::Cost {
-        let (cost, _) = &self.costs[&self.egraph.eclass_id(eclass)];
+        let (cost, _) = &self.costs[&self.egraph.canon_id(eclass)];
         cost.clone()
     }
 
     fn node_total_cost(&mut self, node: &Node) -> Option<CF::Cost> {
         let eg = &self.egraph;
-        let has_cost = |id| self.costs.contains_key(&eg.eclass_id(id));
+        let has_cost = |id| self.costs.contains_key(&eg.canon_id(id));
         if node.check_all(has_cost) {
             let costs = &self.costs;
-            let cost_f = |id| costs[&eg.eclass_id(id)].0.clone();
+            let cost_f = |id| costs[&eg.canon_id(id)].0.clone();
             Some(self.cost_function.cost(node, cost_f))
         } else {
             None

@@ -3,8 +3,8 @@ use calcu_rs::*;
 fn main() {
     std::env::set_var("RUST_LOG", "=info");
     env_logger::init();
-
     mod_main();
+
     //let expr = pat!(x + x);
 
     //let mut lhs = ExprTree::default();

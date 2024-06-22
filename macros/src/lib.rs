@@ -1,4 +1,4 @@
-use proc_macro2::{TokenStream, Span};
+use proc_macro2::{TokenStream, Span, Ident};
 use quote::{quote, ToTokens};
 use syn::{parse::{discouraged::Speculative, Parse, ParseStream}, parse, punctuated as punc, Token};
 use std::fmt::Write;
@@ -164,36 +164,6 @@ impl Expr {
             OpKind::Pow => quote!((#lhs.pow(#rhs))),
         }
     }
-
-    //fn quote(&self) -> TokenStream {
-    //    match self {
-    //        Expr::Num(v) =>
-    //            quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Rational::from(#v))),
-    //        Expr::Float(v) =>
-    //            quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Float::from(#v))),
-    //        Expr::Symbol(s) =>
-    //            quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Symbol::new(#s))),
-    //        Expr::Binary(op, l, r) => {
-    //            let lhs = l.quote();
-    //            let rhs = r.quote();
-    //            Self::eval_op(*op, lhs, rhs)
-    //        }
-    //        Expr::Infinity { sign } => {
-    //            if sign.is_negative() {
-    //                quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Infinity::neg()))
-    //            } else {
-    //                quote!(::calcu_rs::prelude::Expr::from(::calcu_rs::prelude::Infinity::pos()))
-    //            }
-    //        }
-    //        Expr::Undef => {
-    //            quote!(::calcu_rs::prelude::Expr::Undefined)
-    //        }
-    //        Expr::PlaceHolder(s) => {
-    //            quote!(::calcu_rs::prelude::Expr::PlaceHolder(#s))
-    //        }
-    //    }
-    //}
-
 }
 
 impl parse::Parse for Expr {
@@ -214,8 +184,8 @@ struct RewriteRule {
 impl RewriteRule {
 
     fn quote_lhs_to_rhs(name: &String, lhs: &Expr, rhs: &Expr, cond: &Option<syn::Expr>, dbg: bool) -> TokenStream {
-        let lhs = to_node(lhs, true).unwrap();
-        let rhs = to_node(rhs, true).unwrap();
+        let lhs = to_pat_stream(lhs).unwrap();
+        let rhs = to_pat_stream(rhs).unwrap();
 
         let mut debug = TokenStream::new();
         if dbg {
@@ -315,7 +285,7 @@ impl Parse for RewriteRule {
 
 #[derive(Debug, Clone)]
 struct RuleSet {
-    gen_name: syn::Ident,
+    gen_name: Ident,
     rules: Vec<RewriteRule>,
     debug: bool,
 }
@@ -372,42 +342,37 @@ impl Parse for RuleSet {
     }
 }
 
-fn op_to_node(op: OpKind, as_pattern: bool) -> TokenStream {
-    let (add_to_expr_or_pat, node_typ) = if as_pattern {
-        (quote!(pat.add), quote!(egraph::ENodeOrVar::ENode))
-    } else {
-        (quote!(expr.add_node), quote!())
-    };
-
+fn op_to_pat_stream(op: OpKind) -> TokenStream {
     match op {
         OpKind::Add => quote!(Node::Add([lhs, rhs])),
         OpKind::Mul => quote!(Node::Mul([lhs, rhs])),
         OpKind::Pow => quote!(Node::Pow([lhs, rhs])),
 
         OpKind::Sub => quote! {{
-            let minus_one = #add_to_expr_or_pat(#node_typ(Node::Rational(Rational::from(-1))));
-            let minus_rhs = #add_to_expr_or_pat(#node_typ(Node::Mul([minus_one, rhs])));
+            let minus_one = pat.add(egraph::ENodeOrVar::ENode(Node::Rational(Rational::from(-1))));
+            let minus_rhs = pat.add(egraph::ENodeOrVar::ENode(Node::Mul([minus_one, rhs])));
             Node::Add([lhs, minus_rhs])
         }},
         OpKind::Div => quote! {{
-            let minus_one = #add_to_expr_or_pat(#node_typ(Node::Rational(Rational::from(-1))));
-            let inv_rhs = #add_to_expr_or_pat(#node_typ(Node::Pow([rhs, minus_one])));
+            let minus_one = pat.add(egraph::ENodeOrVar::ENode(Node::Rational(Rational::from(-1))));
+            let inv_rhs = pat.add(egraph::ENodeOrVar::ENode(Node::Pow([rhs, minus_one])));
             Node::Mul([lhs, inv_rhs])
         }},
     }
 }
 
-fn to_node_rec(e: &Expr, as_pattern: bool) -> parse::Result<TokenStream> {
-    //let var = syn::Ident::new(node_name, Span::call_site());
+fn expr_to_pat_stream(e: &Expr) -> parse::Result<TokenStream> {
     let node =
     match e {
         Expr::Num(n) => quote!(Node::Rational(Rational::from(#n))),
-        Expr::Symbol(s) => quote!(Node::Var(#s.into())),
+        Expr::Symbol(s) => {
+            panic!("symbols currently not supported with patterns");
+        },
         Expr::Undef => quote!(Node::Undef),
         Expr::Binary(op, lhs, rhs) => {
-            let lhs = to_node_rec(lhs, as_pattern)?;
-            let rhs = to_node_rec(rhs, as_pattern)?;
-            let op = op_to_node(*op, as_pattern);
+            let lhs = expr_to_pat_stream(lhs)?;
+            let rhs = expr_to_pat_stream(rhs)?;
+            let op = op_to_pat_stream(*op);
             quote!{{
                     let lhs = #lhs;
                     let rhs = #rhs;
@@ -415,54 +380,104 @@ fn to_node_rec(e: &Expr, as_pattern: bool) -> parse::Result<TokenStream> {
                 }}
         },
         Expr::PlaceHolder(var) => {
-            if !as_pattern {
-                return Err(parse::Error::new(Span::call_site(), "placeholder not allowed in expressions, only in patterns"));
-            } else {
-                return Ok(quote!{
+            return Ok(quote!{
                     pat.add(egraph::ENodeOrVar::Var(#var.into()))
                 })
-            }
         },
         _ => todo!()
     };
 
     Ok(
-    if as_pattern {
         quote! {{
             let p = #node;
             pat.add(egraph::ENodeOrVar::ENode(p))
-        }}
-    } else {
-        quote! {{
-            let n = #node;
-            expr.add_node(n)
-        }}
-    })
+        }})
+
 }
 
-fn to_node(e: &Expr, as_pattern: bool) -> parse::Result<TokenStream> {
-    let n = to_node_rec(e, as_pattern)?;
-    if !as_pattern {
-        Ok(quote!({
-            let mut expr = Expr::default();
-            let root_id = #n;
-            expr.set_root(root_id);
-            expr
-        }))
-    } else {
+fn to_pat_stream(e: &Expr) -> parse::Result<TokenStream> {
+    let n = expr_to_pat_stream(e)?;
         Ok(quote!({
             let mut pat = egraph::RecExpr::default();
             #n;
             pat
         }))
-        //let mut pat = egraph::RecExpr::default();
+}
+
+fn to_expr_stream(e: &Expr, cntxt: &Ident) -> parse::Result<TokenStream> {
+    let n = expr_to_expr_stream(e, cntxt)?;
+    Ok(quote!({
+        let root_id = #n;
+        #cntxt.make_expr_id(root_id)
+    }))
+}
+
+fn expr_to_expr_stream(e: &Expr, cntxt: &Ident) -> parse::Result<TokenStream> {
+    let node =
+        match e {
+            Expr::Num(n) => quote!(Node::Rational(Rational::from(#n))),
+            Expr::Symbol(s) => quote!(#cntxt.var(#s)),
+            Expr::Undef => quote!(Node::Undef),
+            Expr::Binary(op, lhs, rhs) => {
+                let lhs = expr_to_expr_stream(lhs, cntxt)?;
+                let rhs = expr_to_expr_stream(rhs, cntxt)?;
+                let op = op_to_expr_stream(*op, cntxt);
+                quote!{{
+                    let lhs = #lhs;
+                    let rhs = #rhs;
+                    #op
+                }}
+            },
+            Expr::PlaceHolder(var) => {
+                return Err(parse::Error::new(Span::call_site(), "placeholder not allowed in expressions, only in patterns"));
+            },
+            _ => todo!()
+        };
+
+    Ok(quote! {{
+        let n = #node;
+        #cntxt.insert(n)
+    }})
+}
+
+fn op_to_expr_stream(op: OpKind, cntxt: &Ident) -> TokenStream {
+    match op {
+        OpKind::Add => quote!(Node::Add([lhs, rhs])),
+        OpKind::Mul => quote!(Node::Mul([lhs, rhs])),
+        OpKind::Pow => quote!(Node::Pow([lhs, rhs])),
+
+        OpKind::Sub => quote! {{
+            let minus_one = #cntxt.insert(Node::Rational(Rational::from(-1)));
+            let minus_rhs = #cntxt.insert(Node::Mul([minus_one, rhs]));
+            Node::Add([lhs, minus_rhs])
+        }},
+        OpKind::Div => quote! {{
+            let minus_one = #cntxt.insert(Node::Rational(Rational::from(-1)));
+            let inv_rhs = #cntxt.insert(Node::Pow([rhs, minus_one]));
+            Node::Mul([lhs, inv_rhs])
+        }},
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct ExprArgs {
+    cntxt: Ident,
+    expr: Expr,
+}
+
+impl Parse for ExprArgs {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let cntxt: Ident = input.parse()?;
+        let _: Token![:] = input.parse()?;
+        let expr: Expr = input.parse()?;
+        Ok(Self { expr, cntxt })
     }
 }
 
 #[proc_macro]
 pub fn expr(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let expr = syn::parse_macro_input!(input as Expr);
-    let stream = to_node(&expr, false);
+    let args = syn::parse_macro_input!(input as ExprArgs);
+    let stream = to_expr_stream(&args.expr, &args.cntxt);
     //panic!("{}", stream);
     match stream {
         Ok(s) => s.into(),
@@ -473,7 +488,7 @@ pub fn expr(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 #[proc_macro]
 pub fn pat(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let expr = syn::parse_macro_input!(input as Expr);
-    let stream = to_node(&expr, true);
+    let stream = to_pat_stream(&expr);
     match stream {
         Ok(s) => s.into(),
         Err(e) => e.to_compile_error().into(),

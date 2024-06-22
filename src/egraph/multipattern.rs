@@ -74,7 +74,7 @@ impl<A: Analysis> Applier<A> for MultiPattern {
         _eclass: ID,
         _subst: &Subst,
         _searcher_ast: Option<&PatternAst>,
-        _rule_name: GlobSymbol,
+        _rule_name: GlobalSymbol,
     ) -> Vec<ID> {
         panic!("Multipatterns do not support apply_one")
     }
@@ -83,7 +83,7 @@ impl<A: Analysis> Applier<A> for MultiPattern {
         &self,
         egraph: &mut EGraph<A>,
         matches: &[SearchMatches],
-        _rule_name: GlobSymbol,
+        _rule_name: GlobalSymbol,
     ) -> Vec<ID> {
         // TODO explanations?
         // the ids returned are kinda garbage
@@ -108,7 +108,7 @@ impl<A: Analysis> Applier<A> for MultiPattern {
     }
 
     fn vars(&self) -> Vec<Var> {
-        let mut bound_vars = HashSet::default();
+        let mut bound_vars = HashSet::new();
         let mut vars = vec![];
         for (bv, pat) in &self.asts {
             for n in pat.as_ref() {

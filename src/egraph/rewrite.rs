@@ -17,7 +17,7 @@ use std::sync::Arc;
 #[non_exhaustive]
 pub struct Rewrite<A> {
     /// The name of the rewrite.
-    pub name: GlobSymbol,
+    pub name: GlobalSymbol,
     /// The searcher (left-hand side) of the rewrite.
     pub searcher: Arc<dyn Searcher<A> + Sync + Send>,
     /// The applier (right-hand side) of the rewrite.
@@ -51,7 +51,7 @@ impl<A: Analysis> Rewrite<A> {
     /// [`rewrite!`] macro instead.
     ///
     pub fn new(
-        name: impl Into<GlobSymbol>,
+        name: impl Into<GlobalSymbol>,
         searcher: impl Searcher<A> + Send + Sync + 'static,
         applier: impl Applier<A> + Send + Sync + 'static,
     ) -> Result<Self, String> {
@@ -228,7 +228,7 @@ pub trait Applier<A: Analysis> {
         &self,
         egraph: &mut EGraph<A>,
         matches: &[SearchMatches],
-        rule_name: GlobSymbol,
+        rule_name: GlobalSymbol,
     ) -> Vec<ID> {
         let mut added = vec![];
         for mat in matches {
@@ -268,7 +268,7 @@ pub trait Applier<A: Analysis> {
         eclass: ID,
         subst: &Subst,
         searcher_ast: Option<&PatternAst>,
-        rule_name: GlobSymbol,
+        rule_name: GlobalSymbol,
     ) -> Vec<ID>;
 
     /// Returns a list of variables that this Applier assumes are bound.
@@ -321,7 +321,7 @@ where
         eclass: ID,
         subst: &Subst,
         searcher_ast: Option<&PatternAst>,
-        rule_name: GlobSymbol,
+        rule_name: GlobalSymbol,
     ) -> Vec<ID> {
         if self.condition.check(egraph, eclass, subst) {
             self.applier
@@ -411,11 +411,11 @@ impl<A: Analysis> Condition<A> for ConditionEqual {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Var(GlobSymbol);
+pub struct Var(GlobalSymbol);
 
 impl<S: AsRef<str>> From<S> for Var {
     fn from(value: S) -> Self {
-        Self(GlobSymbol::new(value))
+        Self(GlobalSymbol::new(value))
     }
 }
 

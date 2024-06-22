@@ -132,7 +132,7 @@ impl Machine {
                 }
 
                 Instruction::Compare { i, j } => {
-                    if egraph.eclass_id(self.reg(*i)) != egraph.eclass_id(self.reg(*j)) {
+                    if egraph.canon_id(self.reg(*i)) != egraph.canon_id(self.reg(*j)) {
                         return Ok(());
                     }
                 }
@@ -155,12 +155,12 @@ impl Machine {
                                 }
                             }
                             ENodeOrReg::Reg(r) => {
-                                self.lookup.push(egraph.eclass_id(self.reg(*r)));
+                                self.lookup.push(egraph.canon_id(self.reg(*r)));
                             }
                         }
                     }
 
-                    let id = egraph.eclass_id(self.reg(*i));
+                    let id = egraph.canon_id(self.reg(*i));
                     if self.lookup.last().copied() != Some(id) {
                         return Ok(());
                     }
