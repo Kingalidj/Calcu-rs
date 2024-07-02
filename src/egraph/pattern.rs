@@ -11,7 +11,7 @@ use calcu_rs::egraph::*;
 /// A pattern that can function as either a [`Searcher`] or [`Applier`].
 ///
 /// A [`Pattern`] is essentially a for-all quantified expression with
-/// [`Var`]s as the variables (in the logical sense).
+/// [`GlobalSymbol`]s as the variables (in the logical sense).
 ///
 /// When creating a [`Rewrite`], the most common thing to use as either
 /// the left hand side (the [`Searcher`]) or the right hand side
@@ -52,8 +52,8 @@ impl Pattern {
         Pattern { ast, program }
     }
 
-    /// Returns a list of the [`Var`]s in this pattern.
-    pub fn vars(&self) -> Vec<Var> {
+    /// Returns a list of the [`GlobalSymbol`]s in this pattern.
+    pub fn vars(&self) -> Vec<GlobalSymbol> {
         let mut vars = vec![];
         for n in self.ast.as_ref() {
             if let ENodeOrVar::Var(v) = n {
@@ -80,14 +80,14 @@ pub enum ENodeOrVar {
     /// An enode from the underlying [`Language`]
     ENode(Node),
     /// A pattern variable
-    Var(Var),
+    Var(GlobalSymbol),
 }
 
 /// The discriminant for the language of [`Pattern`]s.
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub enum ENodeOrVarDiscriminant {
     ENode(<Node as Construct>::Discriminant),
-    Var(Var),
+    Var(GlobalSymbol),
 }
 
 impl Construct for ENodeOrVar {
@@ -157,7 +157,7 @@ impl From<PatternAst> for Pattern {
 }
 
 impl TryFrom<Pattern> for RecExpr<Node> {
-    type Error = Var;
+    type Error = GlobalSymbol;
     fn try_from(pat: Pattern) -> Result<Self, Self::Error> {
         let nodes = pat.ast.as_ref().iter().cloned();
         let ns: Result<Vec<_>, _> = nodes
@@ -240,7 +240,7 @@ impl<A: Analysis> Searcher<A> for Pattern {
         Some(&self.ast)
     }
 
-    fn vars(&self) -> Vec<Var> {
+    fn vars(&self) -> Vec<GlobalSymbol> {
         Pattern::vars(self)
     }
 }
@@ -309,7 +309,7 @@ impl<A: Analysis> Applier<A> for Pattern {
         }
     }
 
-    fn vars(&self) -> Vec<Var> {
+    fn vars(&self) -> Vec<GlobalSymbol> {
         Pattern::vars(self)
     }
 }

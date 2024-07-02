@@ -16,22 +16,16 @@ mod pattern;
 mod rewrite;
 mod run;
 
-pub(crate) use {crate::*, egraph::EClassUnion, explain::Explain};
+pub(crate) use {crate::*, egraph::EClassUnion, explain::Explain, rewrite::ConditionalApplier};
 
 pub use {
     calcu_rs::utils::*,
     construct::*,
     dot::Dot,
     egraph::{EClass, EGraph},
-    explain::{
-        Explanation, FlatExplanation, FlatTerm, Justification, TreeExplanation, TreeTerm,
-        UnionEqualities,
-    },
-    multipattern::*,
+    explain::{Explanation, Justification, UnionEqualities},
     pattern::{ENodeOrVar, Pattern, PatternAst, SearchMatches},
-    rewrite::{
-        Applier, Condition, ConditionEqual, ConditionalApplier, Rewrite, Searcher, Subst, Var,
-    },
+    rewrite::{Applier, Condition, Rewrite, Searcher, Subst},
     run::*,
 };
 

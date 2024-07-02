@@ -1,18 +1,17 @@
-use std::collections::VecDeque;
-use std::hash::{BuildHasherDefault, Hash, Hasher};
-use std::mem::MaybeUninit;
-use std::num::NonZeroU32;
 use std::{
+    collections::VecDeque,
     fmt::{self, Debug, Display, Formatter},
+    hash::{BuildHasherDefault, Hash, Hasher},
     iter::FromIterator,
+    num::NonZeroU32,
 };
+
 use symbol_table as st;
 
 pub(crate) use hashmap::*;
 pub(crate) type BuildHasher = fxhash::FxBuildHasher;
 pub(crate) use paste::paste;
-//use symbol_table::Symbol;
-use calcu_rs::ExprContext;
+pub(crate) use log::{trace, info, warn, error, debug};
 
 #[cfg(feature = "deterministic")]
 mod hashmap {
@@ -26,14 +25,9 @@ mod hashmap {
     pub(crate) type HashSet<K, B = BuildHasher> = std::collections::HashSet<K, B>;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Symbol(st::Symbol);
-
-impl Display for Symbol {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let v = NonZeroU32::from(self.0).get();
-        write!(f, "{}", u32_to_base52(v))
-    }
+pub trait Pow<Rhs = Self> {
+    type Output;
+    fn pow(self, rhs: Rhs) -> Self::Output;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -57,33 +51,6 @@ impl Display for GlobalSymbol {
     }
 }
 
-pub struct SymbolTable(st::SymbolTable);
-
-impl SymbolTable {
-    pub fn new() -> Self {
-        Self(st::SymbolTable::new())
-    }
-
-    pub fn insert(&self, s: impl AsRef<str>) -> Symbol {
-        Symbol(self.0.intern(s.as_ref()))
-    }
-    pub fn get(&self, s: &Symbol) -> &str {
-        self.0.resolve(s.0)
-    }
-}
-
-//pub fn glob_mut_expr_context() -> &'static mut ExprContext {
-//    static mut SINGLETON: MaybeUninit<ExprContext> = MaybeUninit::uninit();
-//    static ONCE: std::sync::Once = std::sync::Once::new();
-//
-//    unsafe {
-//        ONCE.call_once(|| {
-//            SINGLETON.write(ExprContext::new());
-//        });
-//        SINGLETON.assume_init_mut()
-//    }
-//}
-
 fn u32_to_base52(mut num: u32) -> String {
     let mut result = String::new();
     const BASE_52_TABLE: &[u8; 52] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -101,6 +68,104 @@ fn u32_to_base52(mut num: u32) -> String {
     result.chars().rev().collect::<String>()
 }
 
+#[cfg(not(debug_assertions))]
+mod symbol {
+    use calcu_rs::utils::u32_to_base52;
+    use std::{
+        fmt,
+        fmt::{Display, Formatter},
+        hash::{Hash, Hasher},
+        num::NonZeroU32,
+    };
+    use symbol_table as st;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+    pub struct Symbol(st::Symbol);
+
+    impl Hash for Symbol {
+        fn hash<H: Hasher>(&self, state: &mut H) {
+            state.write_u32(NonZeroU32::from(self.0).get())
+        }
+    }
+
+    impl Display for Symbol {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            let v = NonZeroU32::from(self.0).get();
+            write!(f, "{}", u32_to_base52(v))
+        }
+    }
+
+    pub struct SymbolTable(st::SymbolTable);
+
+    impl Default for SymbolTable {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl SymbolTable {
+        pub fn new() -> Self {
+            Self(st::SymbolTable::new())
+        }
+
+        pub fn insert(&self, s: impl AsRef<str>) -> Symbol {
+            Symbol(self.0.intern(s.as_ref()))
+        }
+        pub fn get(&self, s: &Symbol) -> &str {
+            self.0.resolve(s.0)
+        }
+    }
+}
+/// Global symbols allocation are leaked, only use them for variables when debugging
+///
+#[cfg(debug_assertions)]
+mod symbol {
+    use std::{
+        fmt::{Display, Formatter},
+        hash::{Hash, Hasher},
+        num::NonZeroU32,
+    };
+    use symbol_table as st;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+    pub struct Symbol(st::GlobalSymbol);
+
+    impl Display for Symbol {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.0.as_str())
+        }
+    }
+
+    impl Hash for Symbol {
+        fn hash<H: Hasher>(&self, state: &mut H) {
+            state.write_u32(NonZeroU32::from(self.0).get())
+        }
+    }
+
+    pub struct SymbolTable;
+
+    impl Default for SymbolTable {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl SymbolTable {
+        pub fn new() -> Self {
+            Self
+        }
+
+        pub fn insert(&self, s: impl AsRef<str>) -> Symbol {
+            Symbol(st::GlobalSymbol::from(s.as_ref()))
+        }
+        pub fn get(&self, s: &Symbol) -> &str {
+            s.0.as_str()
+        }
+    }
+}
+
+pub use symbol::*;
+
 /// use the value itself as hash value
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct U64Hasher(u64);
@@ -111,15 +176,26 @@ impl Hasher for U64Hasher {
         self.0
     }
 
-    fn write(&mut self, bytes: &[u8]) {
+    fn write(&mut self, _bytes: &[u8]) {
         panic!("use write_u64 function");
     }
 
+    fn write_u8(&mut self, u: u8) {
+        debug_assert_eq!(self.0, 0, "only one write to hasher is allowed");
+        self.0 = u as u64;
+    }
+    fn write_u16(&mut self, u: u16) {
+        debug_assert_eq!(self.0, 0, "only one write to hasher is allowed");
+        self.0 = u as u64;
+    }
+    fn write_u32(&mut self, u: u32) {
+        debug_assert_eq!(self.0, 0, "only one write to hasher is allowed");
+        self.0 = u as u64;
+    }
     fn write_u64(&mut self, u: u64) {
         debug_assert_eq!(self.0, 0, "only one write to hasher is allowed");
         self.0 = u;
     }
-
     fn write_usize(&mut self, u: usize) {
         debug_assert_eq!(self.0, 0, "only one write to hasher is allowed");
         self.0 = u as u64;
@@ -175,7 +251,7 @@ Notably, insert/pop operations have O(1) expected amortized runtime complexity.
 #[derive(Clone)]
 pub(crate) struct UniqueQueue<T>
 where
-    T: Eq + std::hash::Hash + Clone,
+    T: Eq + Hash + Clone,
 {
     set: HashSet<T>,
     queue: VecDeque<T>,
@@ -183,7 +259,7 @@ where
 
 impl<T> Default for UniqueQueue<T>
 where
-    T: Eq + std::hash::Hash + Clone,
+    T: Eq + Hash + Clone,
 {
     fn default() -> Self {
         UniqueQueue {
@@ -195,7 +271,7 @@ where
 
 impl<T> UniqueQueue<T>
 where
-    T: Eq + std::hash::Hash + Clone,
+    T: Eq + Hash + Clone,
 {
     pub fn insert(&mut self, t: T) {
         if self.set.insert(t.clone()) {
@@ -227,7 +303,7 @@ where
 
 impl<T> IntoIterator for UniqueQueue<T>
 where
-    T: Eq + std::hash::Hash + Clone,
+    T: Eq + Hash + Clone,
 {
     type Item = T;
 
@@ -240,7 +316,7 @@ where
 
 impl<A> FromIterator<A> for UniqueQueue<A>
 where
-    A: Eq + std::hash::Hash + Clone,
+    A: Eq + Hash + Clone,
 {
     fn from_iter<T: IntoIterator<Item = A>>(iter: T) -> Self {
         let mut queue = UniqueQueue::default();
@@ -352,15 +428,15 @@ mod tests {
         };
     }
 
-    //non_max_test!(u8);
-    //non_max_test!(u16);
-    //non_max_test!(u32);
-    //non_max_test!(u64);
-    //non_max_test!(u128);
-    //non_max_test!(usize);
+    non_max_test!(u8);
+    non_max_test!(u16);
+    non_max_test!(u32);
+    non_max_test!(u64);
+    non_max_test!(u128);
+    non_max_test!(usize);
 
     fn ids(us: impl IntoIterator<Item = usize>) -> Vec<ID> {
-        us.into_iter().map(|u| ID::new(u)).collect()
+        us.into_iter().map(ID::new).collect()
     }
 
     #[test]

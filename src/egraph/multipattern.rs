@@ -20,13 +20,13 @@ use calcu_rs::egraph::*;
 /// Multipatterns currently do not support the explanations feature.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct MultiPattern {
-    asts: Vec<(Var, PatternAst)>,
+    asts: Vec<(GlobalSymbol, PatternAst)>,
     program: machine::Program,
 }
 
 impl MultiPattern {
     /// Creates a new multipattern, binding the given patterns to the corresponding variables.
-    pub fn new(asts: Vec<(Var, PatternAst)>) -> Self {
+    pub fn new(asts: Vec<(GlobalSymbol, PatternAst)>) -> Self {
         let program = machine::Program::compile_from_multi_pat(&asts);
         Self { asts, program }
     }
@@ -51,7 +51,7 @@ impl<A: Analysis> Searcher<A> for MultiPattern {
         }
     }
 
-    fn vars(&self) -> Vec<Var> {
+    fn vars(&self) -> Vec<GlobalSymbol> {
         let mut vars = vec![];
         for (v, pat) in &self.asts {
             vars.push(*v);
@@ -107,7 +107,7 @@ impl<A: Analysis> Applier<A> for MultiPattern {
         added
     }
 
-    fn vars(&self) -> Vec<Var> {
+    fn vars(&self) -> Vec<GlobalSymbol> {
         let mut bound_vars = HashSet::new();
         let mut vars = vec![];
         for (bv, pat) in &self.asts {

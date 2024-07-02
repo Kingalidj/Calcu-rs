@@ -1,4 +1,4 @@
-use proc_macro2::{TokenStream, Span, Ident};
+use proc_macro2::{TokenStream, Span, Ident, TokenTree};
 use quote::{quote, ToTokens};
 use syn::{parse::{discouraged::Speculative, Parse, ParseStream}, parse, punctuated as punc, Token};
 use std::fmt::Write;
@@ -166,7 +166,7 @@ impl Expr {
     }
 }
 
-impl parse::Parse for Expr {
+impl Parse for Expr {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         Expr::parse_bin_expr(input, 0 + 1)
     }
@@ -200,7 +200,7 @@ impl RewriteRule {
                 };
 
             debug = quote!(
-                println!("  {}: {} => {}{}", #name, __searcher, __applier, #cond_str);
+                info!("  {}: {} => {}{}", #name, __searcher, __applier, #cond_str);
                 )
         }
 
@@ -243,18 +243,29 @@ impl Parse for RewriteRule {
         let mut name = syn::Ident::parse(input)?.to_string();
 
         loop {
-            if let Ok(n) = syn::Ident::parse(input) {
-                name.push_str(" ");
-                name.push_str(&n.to_string());
-            } else if let Ok(n) = syn::Lit::parse(input) {
-                name.push_str(" ");
-                name.push_str(&n.to_token_stream().to_string());
-            } else {
-                break;
+            let token = proc_macro2::TokenTree::parse(input).expect("expected :");
+            match token {
+                TokenTree::Punct(punct) if punct.as_char() == ':' => break,
+                tok => {
+                    name.push_str(" ");
+                    name.push_str(&tok.to_string());
+                }
             }
+            //if let Ok(n) = syn::Ident::parse(input) {
+            //    name.push_str(" ");
+            //    name.push_str(&n.to_string());
+            //} else if let Ok(n) = syn::Lit::parse(input) {
+            //    name.push_str(" ");
+            //    name.push_str(&n.to_token_stream().to_string());
+            //} else if let Ok(eq) = syn::token::Eq::parse(input) {
+            //    name.push_str(" ");
+            //    name.push_str(&eq.to_token_stream().to_string());
+            //} else {
+            //    break;
+            //}
         }
 
-        let _ = input.parse::<Token![:]>()?;
+        //let _ = input.parse::<Token![:]>()?;
 
         let lhs = Expr::parse(input)?;
 
@@ -306,7 +317,7 @@ impl RuleSet {
 
         let mut rules = TokenStream::new();
         for r in &self.rules {
-            let r = r.quote_debug(self.debug);
+            let r = r.quote_debug(true); // r.quote_debug(self.debug)
             rules.extend(quote!(#r,))
         }
 
@@ -361,7 +372,7 @@ fn op_to_pat_stream(op: OpKind) -> TokenStream {
     }
 }
 
-fn expr_to_pat_stream(e: &Expr) -> parse::Result<TokenStream> {
+fn gen_pat_stream(e: &Expr) -> parse::Result<TokenStream> {
     let node =
     match e {
         Expr::Num(n) => quote!(Node::Rational(Rational::from(#n))),
@@ -370,8 +381,8 @@ fn expr_to_pat_stream(e: &Expr) -> parse::Result<TokenStream> {
         },
         Expr::Undef => quote!(Node::Undef),
         Expr::Binary(op, lhs, rhs) => {
-            let lhs = expr_to_pat_stream(lhs)?;
-            let rhs = expr_to_pat_stream(rhs)?;
+            let lhs = gen_pat_stream(lhs)?;
+            let rhs = gen_pat_stream(rhs)?;
             let op = op_to_pat_stream(*op);
             quote!{{
                     let lhs = #lhs;
@@ -396,7 +407,7 @@ fn expr_to_pat_stream(e: &Expr) -> parse::Result<TokenStream> {
 }
 
 fn to_pat_stream(e: &Expr) -> parse::Result<TokenStream> {
-    let n = expr_to_pat_stream(e)?;
+    let n = gen_pat_stream(e)?;
         Ok(quote!({
             let mut pat = egraph::RecExpr::default();
             #n;
@@ -405,22 +416,22 @@ fn to_pat_stream(e: &Expr) -> parse::Result<TokenStream> {
 }
 
 fn to_expr_stream(e: &Expr, cntxt: &Ident) -> parse::Result<TokenStream> {
-    let n = expr_to_expr_stream(e, cntxt)?;
+    let n = gen_expr_stream(e, cntxt)?;
     Ok(quote!({
         let root_id = #n;
         #cntxt.make_expr_id(root_id)
     }))
 }
 
-fn expr_to_expr_stream(e: &Expr, cntxt: &Ident) -> parse::Result<TokenStream> {
+fn gen_expr_stream(e: &Expr, cntxt: &Ident) -> parse::Result<TokenStream> {
     let node =
         match e {
             Expr::Num(n) => quote!(Node::Rational(Rational::from(#n))),
             Expr::Symbol(s) => quote!(#cntxt.var(#s)),
             Expr::Undef => quote!(Node::Undef),
             Expr::Binary(op, lhs, rhs) => {
-                let lhs = expr_to_expr_stream(lhs, cntxt)?;
-                let rhs = expr_to_expr_stream(rhs, cntxt)?;
+                let lhs = gen_expr_stream(lhs, cntxt)?;
+                let rhs = gen_expr_stream(rhs, cntxt)?;
                 let op = op_to_expr_stream(*op, cntxt);
                 quote!{{
                     let lhs = #lhs;

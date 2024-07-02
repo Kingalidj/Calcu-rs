@@ -1,25 +1,19 @@
-use crate::{
-    egraph::{merge_option, RecExpr, Rewrite},
-    *,
-};
-use calcu_rs::egraph::{Analysis, Construct, DidMerge, EGraph};
-use indexmap::IndexMap;
+use crate::{egraph::Rewrite, *};
+use calcu_rs::egraph::{Analysis, Construct, EGraph};
+
 use std::cell::Ref;
+use std::ops::Deref;
 use std::{
-    any::TypeId,
-    cell::{OnceCell, RefCell},
+    cell::RefCell,
     cmp::Ordering,
-    collections,
     collections::VecDeque,
     fmt::{self, Debug, Display, Formatter},
     hash::{Hash, Hasher},
     io,
     ops::Index,
-    rc,
-    rc::Rc,
 };
-use std::ops::{Deref, DerefMut};
 
+/// Most often used to store an index into an array of Nodes
 #[derive(Clone, Copy, Ord, PartialOrd, Eq, PartialEq)]
 #[repr(transparent)]
 pub struct ID(pub(crate) u32);
@@ -31,7 +25,7 @@ impl Hash for ID {
 }
 
 impl ID {
-    pub const MAX: ID = ID::new(usize::MAX);
+    pub const MAX: ID = ID::new(u32::MAX as usize);
 
     #[inline(always)]
     pub(crate) const fn val(self) -> usize {
@@ -41,22 +35,28 @@ impl ID {
     /// because rust has no private implementations of public types
     #[inline(always)]
     pub(crate) const fn new(val: usize) -> Self {
+        // is ok because if we overflow we have other problems
+        // u32::MAX * sizeof(Rational) ~= 240 gb
+        debug_assert!(val <= u32::MAX as usize);
         ID(val as u32)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Node {
+    // Primitives
     Rational(Rational),
     Var(Symbol),
     Undef,
 
+    // Operators
     Add([ID; 2]),
     Mul([ID; 2]),
     Pow([ID; 2]),
 }
 
 impl Node {
+    pub const MINUS_TWO: Self = Node::Rational(Rational::MINUS_TWO);
     pub const MINUS_ONE: Self = Node::Rational(Rational::MINUS_ONE);
     pub const ZERO: Self = Node::Rational(Rational::ZERO);
     pub const ONE: Self = Node::Rational(Rational::ONE);
@@ -99,6 +99,12 @@ pub struct ExprContext {
     pub(crate) nodes: RefCell<NodeSet>,
 }
 
+impl Default for ExprContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ExprContext {
     pub fn new() -> Self {
         Self {
@@ -107,32 +113,48 @@ impl ExprContext {
         }
     }
 
-    pub fn insert(&self, mut n: Node) -> ID {
-        match n {
-            Node::Add(ref mut ids) | Node::Mul(ref mut ids) => ids.sort_unstable(),
+    fn insert_node_impl(&self, mut n: Node) -> ID {
+        match &mut n {
+            Node::Add(ids) | Node::Mul(ids) => ids.sort_unstable(),
             Node::Rational(_) | Node::Var(_) | Node::Undef | Node::Pow(_) => {}
         }
         let (indx, _) = self.nodes.borrow_mut().insert_full(n);
         ID::new(indx)
     }
 
+    pub fn insert(&self, n: Node) -> ID {
+        self.insert_node_impl(n)
+    }
+
     pub fn get_node(&self, id: ID) -> Ref<Node> {
-        Ref::map(self.nodes.borrow(), |nodes| nodes.get_index(id.val()).unwrap())
+        Ref::map(self.nodes.borrow(), |nodes| {
+            nodes.get_index(id.val()).unwrap()
+        })
+    }
+
+    pub fn get_rational(&self, id: ID) -> Ref<Rational> {
+        Ref::map(self.get_node(id), |n| {
+            if let Node::Rational(r) = n {
+                r
+            } else {
+                panic!("get_rational on non-rational node")
+            }
+        })
     }
 
     pub fn make_expr_id(&self, root_id: ID) -> Expr {
         debug_assert!(self.nodes.borrow().get_index(root_id.val()).is_some());
         Expr {
             cntxt: self,
-                root: self.get_node(root_id).clone(),
-                root_id,
+            root: self.get_node(root_id).clone(),
+            id: root_id,
         }
     }
 
-    pub fn make_expr(&mut self, n: Node) -> Expr {
+    pub fn make_expr(&self, n: Node) -> Expr {
         let root_id = self.insert(n);
         Expr {
-            root_id,
+            id: root_id,
             root: self.get_node(root_id).clone(),
             cntxt: self,
         }
@@ -146,9 +168,78 @@ impl ExprContext {
         self.symbols.get(s)
     }
 
+    pub fn is_rational(&self, id: ID, r: &Rational) -> bool {
+        if let Node::Rational(rational) = &*self.get_node(id) {
+            rational == r
+        } else {
+            false
+        }
+    }
+
+    /// Check if we have the ast: Add([LHS, MUL([-1, RHS])])
+    pub fn is_sub(&self, id: ID) -> Option<(ID, ID)> {
+        let (lhs, mul) = if let Node::Add([lhs, rhs]) = &*self.get_node(id) {
+            (*lhs, *rhs)
+        } else {
+            return None;
+        };
+
+        let (mut min_one, mut rhs) = if let Node::Mul([lhs, rhs]) = &*self.get_node(mul) {
+            (*lhs, *rhs)
+        } else {
+            return None;
+        };
+
+        if self.is_rational(min_one, &Rational::MINUS_ONE) {
+            return Some((lhs, rhs));
+        }
+        std::mem::swap(&mut min_one, &mut rhs);
+        if self.is_rational(min_one, &Rational::MINUS_ONE) {
+            return Some((lhs, rhs));
+        }
+
+        None
+    }
+
+    /// Check if we have the ast: MUL([LHS, DIV([-1, RHS])])
+    pub fn is_div(&self, id: ID) -> Option<(ID, ID)> {
+        let (lhs, mul) = if let Node::Add([lhs, rhs]) = &*self.get_node(id) {
+            (*lhs, *rhs)
+        } else {
+            return None;
+        };
+
+        let (rhs, min_one) = if let Node::Pow([lhs, rhs]) = &*self.get_node(mul) {
+            (*lhs, *rhs)
+        } else {
+            return None;
+        };
+
+        if self.is_rational(min_one, &Rational::MINUS_ONE) {
+            Some((lhs, rhs))
+        } else {
+            None
+        }
+    }
+
+    pub fn fmt_id(&self, id: ID) -> fmt_ast::FmtAst<'_> {
+        use f::FmtAst as E;
+        use fmt_ast as f;
+        let n = self.get_node(id);
+        match n.deref() {
+            Node::Rational(_) => E::Atom(f::Atom::Rational(self.get_rational(id))),
+            Node::Var(v) => E::Atom(f::Atom::Var(self.var_str(v))),
+            Node::Undef => E::Atom(f::Atom::Undefined),
+            Node::Add([lhs, rhs]) => self.fmt_id(*lhs) + self.fmt_id(*rhs),
+            Node::Mul([lhs, rhs]) => self.fmt_id(*lhs) * self.fmt_id(*rhs),
+            Node::Pow([lhs, rhs]) => self.fmt_id(*lhs).pow(self.fmt_id(*rhs)),
+        }
+    }
+
     pub fn to_dot_to_png(&self, name: &str) -> io::Result<()> {
         let enodes: Vec<_> = self
-            .nodes.borrow()
+            .nodes
+            .borrow()
             .clone()
             .into_iter()
             .enumerate()
@@ -179,7 +270,7 @@ impl Debug for ExprContext {
 pub struct Expr<'a> {
     //pub(crate) nodes: &'a NodeSet ,
     cntxt: &'a ExprContext,
-    root_id: ID,
+    id: ID,
     root: Node,
 }
 
@@ -232,39 +323,32 @@ impl ID {
         let root_id = self;
         let root = cntxt.get_node(root_id).clone();
         Expr {
-            root_id,
+            id: root_id,
             root,
-            cntxt
+            cntxt,
         }
     }
 }
 
 impl<'a> Expr<'a> {
     pub fn id(&self) -> ID {
-        self.root_id
+        self.id
     }
 
     pub fn root(&self) -> &Node {
         &self.root
     }
 
-    pub fn root_id(&self) -> ID {
-        self.root_id
-    }
-
     pub fn from_id(root_id: ID, cntxt: &'a ExprContext) -> Self {
         let root = cntxt.get_node(root_id).clone();
         Self {
             cntxt,
-            root_id, root
+            id: root_id,
+            root,
         }
     }
 
-    pub fn apply_rules<A>(
-        self,
-        analysis: A,
-        rules: &[Rewrite<A>],
-    ) -> Expr<'a>
+    pub fn apply_rules<A>(self, analysis: A, rules: &[Rewrite<A>]) -> Expr<'a>
     where
         A: Analysis,
     {
@@ -272,15 +356,27 @@ impl<'a> Expr<'a> {
         let mut runner = egraph::Runner::<A, ()>::new(analysis)
             .with_explanations_enabled()
             .with_time_limit(Duration::from_millis(500))
-            .with_iter_limit(5)
             .with_expr(&self)
             .run(rules);
-        log::info!("apply_rules time: {} ms", start.elapsed().as_millis());
-        //runner.egraph.dot(&self.cntxt.symbols).to_png("egraph.png").unwrap();
+        info!("apply_rules time: {} ms", start.elapsed().as_millis());
+
+        #[cfg(not(test))]
+        if runner.egraph.total_number_of_nodes() <= 200 {
+            runner
+                .egraph
+                .dot(&self.cntxt.symbols)
+                .to_png("egraph.png")
+                .unwrap();
+        }
 
         let extractor = egraph::Extractor::new(&runner.egraph, ExprCost);
         let (_, be) = extractor.find_best2(runner.roots[0], self.cntxt);
 
+        //let one = self.cntxt.make_expr(Node::ZERO);
+        //println!("explanation: {}", runner.explain_existance(&one).get_flat_string());
+
+        //let mut expl = runner.explain_equivalence(&self, &be);
+        //println!("{}", expl.get_flat_string());
         be
     }
 
@@ -295,7 +391,7 @@ impl<'a> Expr<'a> {
         let mut stack = VecDeque::default();
         let mut bfs_order_ids = Vec::default();
 
-        stack.push_back(self.root_id());
+        stack.push_back(self.id());
         while let Some(id) = stack.pop_front() {
             bfs_order_ids.push(id);
             let n = &self.get_node(id);
@@ -376,7 +472,7 @@ impl Display for Node {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Node::Rational(n) => write!(f, "{n}"),
-            Node::Var(s) => write!(f, "var({s})"),
+            Node::Var(s) => write!(f, "{s}"),
             Node::Undef => write!(f, "undef"),
             Node::Add(_) => write!(f, "+"),
             Node::Mul(_) => write!(f, "*"),
@@ -447,7 +543,7 @@ mod test_expressions {
 
     #[test]
     fn test_expr_macro() {
-        let mut c = ExprContext::new();
+        let c = ExprContext::new();
         let var = c.var("x");
         let x = c.insert(var);
 
@@ -463,49 +559,10 @@ mod test_expressions {
         let rhs = c.insert(var);
         let mul_expr = c.insert(Node::Mul([lhs, rhs]));
 
-        eq!(expr!(c: x).root_id, x);
-        eq!(expr!(c: 0).root_id, zero);
-        eq!(expr!(c: 0 + x).root_id, add_expr);
-        eq!(expr!(c: 0 * x).root_id, mul_expr);
-        ne!(expr!(c: x * 1).root_id, expr!(c: x + 1).root_id);
+        eq!(expr!(c: x).id, x);
+        eq!(expr!(c: 0).id, zero);
+        eq!(expr!(c: 0 + x).id, add_expr);
+        eq!(expr!(c: 0 * x).id, mul_expr);
+        ne!(expr!(c: x * 1).id, expr!(c: x + 1).id);
     }
-
-    #[test]
-    fn test_frac_pow() {
-        //check_simplify!(expr!(2^10), expr!(1024))
-        //eq!(expr!(2^10), expr!(1024));
-
-        //let mut lhs = expr!(321^(321 / 43));
-        //lhs.simplify();
-        //let mut lhs = ExprTree::default();
-        //let exp = lhs.add_node(Node::Rational(Rational::from((321u64, 43u64))));
-        //let base = lhs.add_node(Node::Rational(Rational::from(41)));
-        //lhs.make_root(Node::Pow([base, exp]));
-
-        //let mut rhs = ExprTree::default();
-        //let exp = rhs.add_node(Node::Rational(Rational::from((20u64, 43u64))));
-        //let base = lhs.add_node(Node::Rational(Rational::from(41)));
-        //let rhs_pow = rhs.add_node(Node::Pow([base, exp]));
-        //let pow_res = rhs.add_node(Node::Rational(Rational::from(194754273881i64)));
-        //rhs.make_root(Node::Mul([pow_res, rhs_pow]));
-
-        //check_simplify!(lhs, rhs);
-    }
-
-    //macro_rules! cmp_pat_expr {
-    //    ($pat: expr, $expr: expr) => {{
-    //        let pat = $pat;
-    //        let expr = $expr;
-    //        let expr_pat = PatternAst::from(RecExpr::from(expr.clone()));
-    //        assert_eq!(pat, expr_pat, "expr({:?}) != pat({:?})", expr, pat);
-    //    }};
-    //}
-
-    //#[test]
-    //fn test_pat_macro() {
-    //    pat!(?x + ?a + 2 * ?c);
-    //    cmp_pat_expr!(pat!(x + x), expr!(x + x));
-    //    cmp_pat_expr!(pat!(-1 * x), expr!(-1 * x));
-    //    cmp_pat_expr!(pat!(x / a + 1), expr!(x * a ^ -1 + 1));
-    //}
 }

@@ -14,11 +14,11 @@ use std::{fmt, ops};
 pub struct Rational(pub(crate) mal::Rational);
 
 impl Rational {
+    pub const MINUS_TWO: Self = Rational(mal::Rational::const_from_signed(-2));
     pub const MINUS_ONE: Self = Rational(mal::Rational::const_from_signed(-1));
     pub const ZERO: Self = Rational(mal::Rational::const_from_signed(0));
     pub const ONE: Self = Rational(mal::Rational::const_from_signed(1));
     pub const TWO: Self = Rational(mal::Rational::const_from_signed(2));
-    pub const MINUS_TWO: Self = Rational(mal::Rational::const_from_signed(-2));
 
     pub const fn new_int(n: i64) -> Self {
         Rational(mal::Rational::const_from_signed(n))
@@ -130,7 +130,7 @@ impl Rational {
         (self, rhs)
     }
 
-    pub fn pow_basic(mut self, mut rhs: Self) -> Option<Self> {
+    pub fn pow_basic(self, rhs: Self) -> Option<Self> {
         let (pow, rest) = self.pow(rhs);
         if rest != Rational::ZERO {
             None
@@ -235,7 +235,7 @@ impl ops::Div for Rational {
         if rhs.is_zero() {
             None
         } else {
-            self.0 = self.0 / rhs.0;
+            self.0 /= rhs.0;
             Some(self)
         }
     }
@@ -248,7 +248,7 @@ impl ops::Div<&Rational> for Rational {
         if rhs.is_zero() {
             None
         } else {
-            self.0 = self.0 / &rhs.0;
+            self.0 /= &rhs.0;
             Some(self)
         }
     }

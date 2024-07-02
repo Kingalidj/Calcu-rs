@@ -741,7 +741,7 @@ impl FlatTerm {
     fn from_pattern(
         pattern: &[ENodeOrVar],
         location: usize,
-        bindings: &HashMap<Var, &FlatTerm>,
+        bindings: &HashMap<GlobalSymbol, &FlatTerm>,
     ) -> FlatTerm {
         match &pattern[location] {
             ENodeOrVar::Var(var) => (*bindings.get(var).unwrap()).clone(),
@@ -759,7 +759,7 @@ impl FlatTerm {
         &'a self,
         pattern: &[ENodeOrVar],
         location: usize,
-        bindings: &mut HashMap<Var, &'a FlatTerm>,
+        bindings: &mut HashMap<GlobalSymbol, &'a FlatTerm>,
     ) {
         match &pattern[location] {
             ENodeOrVar::Var(var) => {
@@ -1310,8 +1310,7 @@ impl<'x> ExplainNodes<'x> {
         let mut enodes = HashSet::default();
         let mut todo = vec![eclass];
 
-        while !todo.is_empty() {
-            let current = todo.pop().unwrap();
+        while let Some(current) = todo.pop() {
             if enodes.insert(current) {
                 for neighbor in &self.explainfind[current.val()].neighbors {
                     todo.push(neighbor.next);
@@ -1881,7 +1880,7 @@ pub(crate) fn pretty_print(
     sexpr: &SExpr,
     width: usize,
     level: usize,
-) -> std::fmt::Result {
+) -> fmt::Result {
     use std::fmt::Write;
     if let SExpr::List(list) = sexpr {
         let indent = sexpr.to_string().len() > width;

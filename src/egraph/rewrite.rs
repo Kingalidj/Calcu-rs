@@ -199,7 +199,7 @@ pub trait Searcher<A: Analysis> {
     }
 
     /// Returns a list of the variables bound by this Searcher
-    fn vars(&self) -> Vec<Var>;
+    fn vars(&self) -> Vec<GlobalSymbol>;
 }
 
 /// The righthand side of a [`Rewrite`].
@@ -277,7 +277,7 @@ pub trait Applier<A: Analysis> {
     /// variables.
     /// By default this return an empty `Vec`, which basically turns off the
     /// checking.
-    fn vars(&self) -> Vec<Var> {
+    fn vars(&self) -> Vec<GlobalSymbol> {
         vec![]
     }
 }
@@ -331,7 +331,7 @@ where
         }
     }
 
-    fn vars(&self) -> Vec<Var> {
+    fn vars(&self) -> Vec<GlobalSymbol> {
         let mut vars = self.applier.vars();
         vars.extend(self.condition.vars());
         vars
@@ -361,7 +361,7 @@ pub trait Condition<A: Analysis> {
     /// variables.
     /// By default this return an empty `Vec`, which basically turns off the
     /// checking.
-    fn vars(&self) -> Vec<Var> {
+    fn vars(&self) -> Vec<GlobalSymbol> {
         vec![]
     }
 }
@@ -403,33 +403,18 @@ impl<A: Analysis> Condition<A> for ConditionEqual {
         a1 == a2
     }
 
-    fn vars(&self) -> Vec<Var> {
+    fn vars(&self) -> Vec<GlobalSymbol> {
         let mut vars = self.p1.vars();
         vars.extend(self.p2.vars());
         vars
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Var(GlobalSymbol);
-
-impl<S: AsRef<str>> From<S> for Var {
-    fn from(value: S) -> Self {
-        Self(GlobalSymbol::new(value))
-    }
-}
-
-impl Display for Var {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-/// A substitution mapping [`Var`]s to eclass [`Id`]s.
+/// A substitution mapping [`GlobalSymbol`]s to eclass [`Id`]s.
 ///
 #[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Subst {
-    pub(crate) vec: smallvec::SmallVec<[(Var, ID); 3]>,
+    pub(crate) vec: smallvec::SmallVec<[(GlobalSymbol, ID); 3]>,
 }
 
 impl Subst {
@@ -441,7 +426,7 @@ impl Subst {
     }
 
     /// Insert something, returning the old `Id` if present.
-    pub fn insert(&mut self, var: Var, id: ID) -> Option<ID> {
+    pub fn insert(&mut self, var: GlobalSymbol, id: ID) -> Option<ID> {
         for pair in &mut self.vec {
             if pair.0 == var {
                 return Some(std::mem::replace(&mut pair.1, id));
@@ -453,17 +438,17 @@ impl Subst {
 
     /// Retrieve a `Var`, returning `None` if not present.
     #[inline(never)]
-    pub fn get(&self, var: Var) -> Option<&ID> {
+    pub fn get(&self, var: GlobalSymbol) -> Option<&ID> {
         self.vec
             .iter()
             .find_map(|(v, id)| if *v == var { Some(id) } else { None })
     }
 }
 
-impl std::ops::Index<Var> for Subst {
+impl std::ops::Index<GlobalSymbol> for Subst {
     type Output = ID;
 
-    fn index(&self, var: Var) -> &Self::Output {
+    fn index(&self, var: GlobalSymbol) -> &Self::Output {
         match self.get(var) {
             Some(id) => id,
             None => panic!("Var '{}={}' not found in {:?}", var, var, self),

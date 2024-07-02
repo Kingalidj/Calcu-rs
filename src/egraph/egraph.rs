@@ -392,11 +392,7 @@ impl<A: Analysis> EGraph<A> {
     /// The [`Explanation`] can be used in it's default tree form or in a less compact
     /// flattened form. Each of these also has a s-expression string representation,
     /// given by [`get_flat_string`](Explanation::get_flat_string) and [`get_string`](Explanation::get_string).
-    pub fn explain_equivalence(
-        &mut self,
-        left_expr: &Expr,
-        right_expr: &Expr,
-    ) -> Explanation {
+    pub fn explain_equivalence(&mut self, left_expr: &Expr, right_expr: &Expr) -> Explanation {
         let left = self.add_expr_uncanonical(left_expr);
         let right = self.add_expr_uncanonical(right_expr);
 

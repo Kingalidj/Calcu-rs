@@ -3,7 +3,6 @@ use std::{
     fmt::{self, Debug, Display, Formatter},
 };
 
-use calcu_rs::expression::NodeSet;
 use log::*;
 
 use crate::egraph::*;
@@ -94,9 +93,9 @@ pub struct Runner<A: Analysis, IterData = ()> {
     pub hooks: Vec<Box<dyn FnMut(&mut Self) -> Result<(), String>>>,
 
     // limits
-    iter_limit: usize,
-    node_limit: usize,
-    time_limit: Duration,
+    pub(crate) iter_limit: usize,
+    pub(crate) node_limit: usize,
+    pub(crate) time_limit: Duration,
 
     start_time: Option<Instant>,
     scheduler: Box<dyn RewriteScheduler<A>>,
@@ -105,9 +104,9 @@ pub struct Runner<A: Analysis, IterData = ()> {
 impl Analysis for () {
     type Data = ();
 
-    fn make(egraph: &mut EGraph<Self>, enode: &Node) -> Self::Data {}
+    fn make(_egraph: &mut EGraph<Self>, _enode: &Node) -> Self::Data {}
 
-    fn merge(&mut self, a: &mut Self::Data, b: Self::Data) -> DidMerge {
+    fn merge(&mut self, _a: &mut Self::Data, _b: Self::Data) -> DidMerge {
         DidMerge(false, false)
     }
 }
@@ -261,7 +260,7 @@ where
             hooks: vec![],
 
             start_time: None,
-            scheduler: Box::new(BackoffScheduler::default()),
+            scheduler: Box::<BackoffScheduler>::default(),
         }
     }
 
@@ -951,11 +950,7 @@ where
     }
 
     // TODO: somehow finds cycles?
-    fn extract_into_nodes<F>(
-        root: Node,
-        cntxt: &ExprContext,
-        mut get_node: F,
-    ) -> Expr
+    fn extract_into_nodes<F>(root: Node, cntxt: &ExprContext, mut get_node: F) -> Expr
     where
         F: FnMut(ID) -> Node,
     {
@@ -995,11 +990,7 @@ where
         Expr::from_id(root_id, cntxt)
     }
 
-    pub fn find_best2<'b>(
-        &self,
-        eclass: ID,
-        cntxt: &'b ExprContext,
-    ) -> (CF::Cost, Expr<'b>) {
+    pub fn find_best2<'b>(&self, eclass: ID, cntxt: &'b ExprContext) -> (CF::Cost, Expr<'b>) {
         let (cost, root) = self.costs[&self.egraph.canon_id(eclass)].clone();
 
         let expr = Self::extract_into_nodes(root, cntxt, |id| self.find_best_node(id).clone());

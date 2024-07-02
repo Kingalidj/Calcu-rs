@@ -174,8 +174,8 @@ impl Machine {
 
 struct Compiler {
     // map variable to register
-    v2r: IndexMap<Var, Reg>,
-    free_vars: Vec<HashSet<Var>>,
+    v2r: IndexMap<GlobalSymbol, Reg>,
+    free_vars: Vec<HashSet<GlobalSymbol>>,
     subtree_size: Vec<usize>,
     // map id and register to expr with that id
     todo_nodes: HashMap<(ID, Reg), Node>,
@@ -275,7 +275,7 @@ impl Compiler {
             .all(|v| self.v2r.contains_key(v))
     }
 
-    fn compile(&mut self, patternbinder: Option<Var>, pattern: &PatternAst) {
+    fn compile(&mut self, patternbinder: Option<GlobalSymbol>, pattern: &PatternAst) {
         self.load_pattern(pattern);
         let last_i = pattern.as_ref().len() - 1;
 
@@ -363,7 +363,7 @@ impl Program {
         program
     }
 
-    pub(crate) fn compile_from_multi_pat(patterns: &[(Var, PatternAst)]) -> Self {
+    pub(crate) fn compile_from_multi_pat(patterns: &[(GlobalSymbol, PatternAst)]) -> Self {
         let mut compiler = Compiler::new();
         for (var, pattern) in patterns {
             compiler.compile(Some(*var), pattern);
