@@ -1,7 +1,7 @@
 use crate::{egraph::*, *};
 
 use pattern::apply_pat;
-use std::fmt::{self, Debug, Display, Formatter};
+use std::fmt::{self, Debug, Formatter};
 use std::sync::Arc;
 
 /// A rewrite that searches for the lefthand side and applies the righthand side.

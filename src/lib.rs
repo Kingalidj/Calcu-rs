@@ -23,7 +23,7 @@ pub use crate::{
     rules::*,
 };
 
-use std::cell::{Ref, RefCell};
+
 
 pub fn mod_main() {
     env_logger::builder()
@@ -32,9 +32,10 @@ pub fn mod_main() {
         .init();
 
     let c = ExprContext::new();
-    let e1 = expr!(c: (x^2 + x*y + y*x + y^2)^2);
+    let e1 = expr!(c: a + a);
     let e1 = e1.apply_rules(ExprFold, &scalar_rules());
     let fmt = c.fmt_id(e1.id());
     println!("{}", fmt);
+    println!("{}", e1);
     c.to_dot_to_png("expr_context.png").unwrap()
 }

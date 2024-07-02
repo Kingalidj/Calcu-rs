@@ -1014,7 +1014,7 @@ where
     fn node_total_cost(&mut self, node: &Node) -> Option<CF::Cost> {
         let eg = &self.egraph;
         let has_cost = |id| self.costs.contains_key(&eg.canon_id(id));
-        if node.check_all(has_cost) {
+        if node.all(has_cost) {
             let costs = &self.costs;
             let cost_f = |id| costs[&eg.canon_id(id)].0.clone();
             Some(self.cost_function.cost(node, cost_f))

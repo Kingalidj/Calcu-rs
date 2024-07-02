@@ -3,7 +3,6 @@ use std::{
     fmt::{self, Debug, Display, Formatter},
     hash::{BuildHasherDefault, Hash, Hasher},
     iter::FromIterator,
-    num::NonZeroU32,
 };
 
 use symbol_table as st;
@@ -11,7 +10,7 @@ use symbol_table as st;
 pub(crate) use hashmap::*;
 pub(crate) type BuildHasher = fxhash::FxBuildHasher;
 pub(crate) use paste::paste;
-pub(crate) use log::{trace, info, warn, error, debug};
+pub(crate) use log::{info, debug};
 
 #[cfg(feature = "deterministic")]
 mod hashmap {

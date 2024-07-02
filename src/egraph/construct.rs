@@ -81,7 +81,7 @@ pub trait Construct: Debug + Clone + Eq + Ord + Hash {
 
     /// Returns true if this enode has no operands.
     fn is_leaf(&self) -> bool {
-        self.check_all(|_| false)
+        self.all(|_| false)
     }
 
     /// Runs a given function to replace the operands.
@@ -108,13 +108,13 @@ pub trait Construct: Debug + Clone + Eq + Ord + Hash {
 
     /// Returns true if the predicate is true on all operands.
     /// Does not short circuit.
-    fn check_all<F: FnMut(ID) -> bool>(&self, mut f: F) -> bool {
+    fn all<F: FnMut(ID) -> bool>(&self, mut f: F) -> bool {
         self.fold(true, |acc, id| acc && f(id))
     }
 
     /// Returns true if the predicate is true on any operand.
     /// Does not short circuit.
-    fn is_any<F: FnMut(ID) -> bool>(&self, mut f: F) -> bool {
+    fn any<F: FnMut(ID) -> bool>(&self, mut f: F) -> bool {
         self.fold(false, |acc, id| acc || f(id))
     }
 
@@ -239,7 +239,7 @@ impl<L: Construct> RecExpr<L> {
     /// The enode's children `Id`s must refer to elements already in this list.
     pub(crate) fn add(&mut self, node: L) -> ID {
         debug_assert!(
-            node.check_all(|id| id.val() < self.nodes.len()),
+            node.all(|id| id.val() < self.nodes.len()),
             "node {:?} has children not in this expr: {:?}",
             node,
             self

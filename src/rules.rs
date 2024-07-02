@@ -1,9 +1,10 @@
 use crate::*;
-use calcu_rs::egraph::{merge_option, Analysis, DidMerge, EGraph, Subst};
+use crate::egraph::{merge_option, Analysis, DidMerge, EGraph, Subst, Construct, CostFunction};
 use std::{
     fmt::{Display, Formatter},
     ops,
 };
+use calcu_rs::egraph::RecExpr;
 
 
 trait RuleCondition<A: Analysis>: Fn(&mut EGraph<A>, ID, &Subst) -> bool {}
@@ -327,23 +328,41 @@ impl Analysis for ExprFold {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ExprCost;
 
-impl egraph::CostFunction for ExprCost {
+impl ExprCost {
+
+    #[inline]
+    fn sum_cost(lhs: <Self as CostFunction>::Cost, rhs: <Self as CostFunction>::Cost) -> <Self as CostFunction>::Cost {
+        lhs.saturating_add(rhs)
+    }
+
+    fn base_cost(n: &Node) -> <Self as CostFunction>::Cost {
+        match n {
+            Node::Undef => 0,
+            Node::Var(_) | Node::Rational(_) => 1,
+            Node::Pow(_) => 2,
+            Node::Mul(_) => 3,
+            Node::Add(_) => 4,
+        }
+    }
+
+    //fn node_cost(n: &Node, reps: &mut HashMap<&Node, u32>) -> Self::Cost {
+    //    let rep = *reps.entry(n).or_insert(1);
+    //    Self::sum_cost(Self::base_cost(n), rep as Self::Cost)
+    //}
+}
+
+impl CostFunction for ExprCost {
     type Cost = usize;
 
     fn cost<C>(&mut self, enode: &Node, mut costs: C) -> Self::Cost
     where
         C: FnMut(ID) -> Self::Cost,
     {
-        let op_cost = match enode {
-            Node::Undef => 0,
-            Node::Rational(_) | Node::Var(_) | Node::Pow(_) => 1,
-            Node::Mul(_) => 2,
-            Node::Add(_) => 4,
-        };
-        egraph::Construct::fold(enode, op_cost, |sum, i| sum.saturating_add(costs(i)))
+        let op_cost = Self::base_cost(enode);
+        enode.fold(op_cost, |sum, i| Self::sum_cost(sum, costs(i)))
     }
 }
 
@@ -361,12 +380,12 @@ mod test_rules {
 
     macro_rules! r {
         ($lhs: expr, $rhs: expr) => {{
-            let start = Instant::now();
+            //let start = Instant::now();
             let lhs = $lhs;
             let rhs = $rhs;
             let res = lhs.apply_rules(ExprFold, &scalar_rules());
             cmp!(res, rhs);
-            println!("test: {} took {}", stringify!($lhs), start.elapsed().as_millis());
+            //println!("test: {} took {}", stringify!($lhs), start.elapsed().as_millis());
         }};
     }
 

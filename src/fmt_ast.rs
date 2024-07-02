@@ -347,9 +347,6 @@ impl<'a> crate::Pow for FmtAst<'a> {
     type Output = FmtAst<'a>;
 
     fn pow(self, rhs: Self) -> Self::Output {
-        use FmtAst as E;
-        match (self, rhs) {
-            (lhs, rhs) => E::Pow(Pow(lhs.into(), rhs.into())),
-        }
+        e!(Pow(self, rhs))
     }
 }

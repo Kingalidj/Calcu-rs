@@ -50,7 +50,7 @@ fn for_each_matching_node<A: Analysis>(
             .try_for_each(f)
     } else {
         // use binary search
-        debug_assert!(node.check_all(|id| id == ID::new(0)));
+        debug_assert!(node.all(|id| id == ID::new(0)));
         // check if nodes are sorted
         debug_assert!(eclass.nodes.windows(2).all(|w| w[0] < w[1]));
 

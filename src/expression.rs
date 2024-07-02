@@ -294,7 +294,7 @@ impl Ord for Expr<'_> {
 }
 impl PartialOrd for Expr<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.root.partial_cmp(&other.root)
+        Some(self.cmp(other))
     }
 }
 
@@ -353,7 +353,7 @@ impl<'a> Expr<'a> {
         A: Analysis,
     {
         let start = Instant::now();
-        let mut runner = egraph::Runner::<A, ()>::new(analysis)
+        let runner = egraph::Runner::<A, ()>::new(analysis)
             .with_explanations_enabled()
             .with_time_limit(Duration::from_millis(500))
             .with_expr(&self)
@@ -369,7 +369,7 @@ impl<'a> Expr<'a> {
                 .unwrap();
         }
 
-        let extractor = egraph::Extractor::new(&runner.egraph, ExprCost);
+        let extractor = egraph::Extractor::new(&runner.egraph, ExprCost::default());
         let (_, be) = extractor.find_best2(runner.roots[0], self.cntxt);
 
         //let one = self.cntxt.make_expr(Node::ZERO);
