@@ -168,8 +168,8 @@ impl ExprContext {
         self.symbols.get(s)
     }
 
-    pub fn is_rational(&self, id: ID, r: &Rational) -> bool {
-        if let Node::Rational(rational) = &*self.get_node(id) {
+    pub fn is_rational(&self, n: &Node, r: &Rational) -> bool {
+        if let Node::Rational(rational) = &n {
             rational == r
         } else {
             false
@@ -177,8 +177,8 @@ impl ExprContext {
     }
 
     /// Check if we have the ast: Add([LHS, MUL([-1, RHS])])
-    pub fn is_sub(&self, id: ID) -> Option<(ID, ID)> {
-        let (lhs, mul) = if let Node::Add([lhs, rhs]) = &*self.get_node(id) {
+    pub fn is_sub(&self, n: &Node) -> Option<(ID, ID)> {
+        let (lhs, mul) = if let Node::Add([lhs, rhs]) = n {
             (*lhs, *rhs)
         } else {
             return None;
@@ -190,11 +190,11 @@ impl ExprContext {
             return None;
         };
 
-        if self.is_rational(min_one, &Rational::MINUS_ONE) {
+        if self.is_rational(&self.get_node(min_one), &Rational::MINUS_ONE) {
             return Some((lhs, rhs));
         }
         std::mem::swap(&mut min_one, &mut rhs);
-        if self.is_rational(min_one, &Rational::MINUS_ONE) {
+        if self.is_rational(&self.get_node(min_one), &Rational::MINUS_ONE) {
             return Some((lhs, rhs));
         }
 
@@ -202,8 +202,8 @@ impl ExprContext {
     }
 
     /// Check if we have the ast: MUL([LHS, DIV([-1, RHS])])
-    pub fn is_div(&self, id: ID) -> Option<(ID, ID)> {
-        let (lhs, mul) = if let Node::Add([lhs, rhs]) = &*self.get_node(id) {
+    pub fn is_div(&self, n: &Node) -> Option<(ID, ID)> {
+        let (lhs, mul) = if let Node::Mul([lhs, rhs]) = n {
             (*lhs, *rhs)
         } else {
             return None;
@@ -215,7 +215,7 @@ impl ExprContext {
             return None;
         };
 
-        if self.is_rational(min_one, &Rational::MINUS_ONE) {
+        if self.is_rational(&self.get_node(min_one), &Rational::MINUS_ONE) {
             Some((lhs, rhs))
         } else {
             None
@@ -230,8 +230,22 @@ impl ExprContext {
             Node::Rational(_) => E::Atom(f::Atom::Rational(self.get_rational(id))),
             Node::Var(v) => E::Atom(f::Atom::Var(self.var_str(v))),
             Node::Undef => E::Atom(f::Atom::Undefined),
-            Node::Add([lhs, rhs]) => self.fmt_id(*lhs) + self.fmt_id(*rhs),
-            Node::Mul([lhs, rhs]) => self.fmt_id(*lhs) * self.fmt_id(*rhs),
+            //n @ Node::Add([lhs, rhs]) if let Some((l, r)) = self.is_sub(n) => self.fmt_id(*lhs) - self.fmt_id(*rhs),
+            //n @ Node::Mul([lhs, rhs]) if self.is_div(n) => self.fmt_id(*lhs) / self.fmt_id(*rhs),
+            n @ Node::Add([lhs, rhs]) => {
+                if let Some((lhs, rhs)) = self.is_sub(n) {
+                    self.fmt_id(lhs) - self.fmt_id(rhs)
+                } else {
+                    self.fmt_id(*lhs) + self.fmt_id(*rhs)
+                }
+            }
+            n @ Node::Mul([lhs, rhs]) => {
+                if let Some((lhs, rhs)) = self.is_div(n) {
+                    self.fmt_id(lhs) / self.fmt_id(rhs)
+                } else {
+                    self.fmt_id(*lhs) * self.fmt_id(*rhs)
+                }
+            }
             Node::Pow([lhs, rhs]) => self.fmt_id(*lhs).pow(self.fmt_id(*rhs)),
         }
     }
@@ -350,7 +364,7 @@ impl<'a> Expr<'a> {
 
     pub fn apply_rules<A>(self, analysis: A, rules: &[Rewrite<A>]) -> Expr<'a>
     where
-        A: Analysis,
+        A: Analysis + Debug,
     {
         let start = Instant::now();
         let runner = egraph::Runner::<A, ()>::new(analysis)
@@ -369,8 +383,9 @@ impl<'a> Expr<'a> {
                 .unwrap();
         }
 
-        let extractor = egraph::Extractor::new(&runner.egraph, ExprCost::default());
-        let (_, be) = extractor.find_best2(runner.roots[0], self.cntxt);
+        let extractor = egraph::Extractor::new(&runner.egraph, ExprCost);
+        let (cost, be) = extractor.find_best2(runner.roots[0], self.cntxt);
+        //extractor.dbg_node_cost(runner.roots[0]);
 
         //let one = self.cntxt.make_expr(Node::ZERO);
         //println!("explanation: {}", runner.explain_existance(&one).get_flat_string());
@@ -417,6 +432,10 @@ impl<'a> Expr<'a> {
         }
 
         nodes
+    }
+
+    pub fn fmt_ast(&self) -> fmt_ast::FmtAst {
+        self.cntxt.fmt_id(self.id)
     }
 }
 

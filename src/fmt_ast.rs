@@ -1,8 +1,9 @@
 use calcu_rs::Rational;
+use paste::paste;
 use std::{
     cell::Ref,
     collections::VecDeque,
-    fmt::{self, Display, Formatter},
+    fmt::{self, Display},
     ops,
 };
 
@@ -64,116 +65,156 @@ pub struct Sum<'a>(VecDeque<FmtAst<'a>>);
 #[derive(Debug)]
 pub struct Prod<'a>(VecDeque<FmtAst<'a>>);
 
-/// Allows for custom formatting by implementing a format function for every [FmtAst] variant
+/// Allows for custom formatting of [FmtAst]
 ///
-pub trait ExprFormatter {
+pub trait ExprFormatter: Sized {
     type Result;
-    fn fmt_atom(&mut self, atom: &Atom) -> Self::Result;
-    /// helper function, since parenthesis placement is decided by the [ExprFormatter], not [FmtAst]
-    fn fmt_paren(&mut self, e: &FmtAst, cond: impl Fn(&FmtAst) -> bool) -> Self::Result;
-    fn fmt_sum(&mut self, s: &Sum) -> Self::Result;
-    fn fmt_sub(&mut self, s: &Sub) -> Self::Result;
-    fn fmt_prod(&mut self, p: &Prod) -> Self::Result;
-    fn fmt_frac(&mut self, frac: &Frac) -> Self::Result;
-    fn fmt_pow(&mut self, pow: &Pow) -> Self::Result;
-    fn fmt_var_prod(&mut self, v: &VarProd) -> Self::Result;
-    /// calls self.fmt_xxx(fa) on each variant by default
-    fn fmt_expr(&mut self, fa: &FmtAst) -> Self::Result {
-        match fa {
-            FmtAst::Sub(e) => self.fmt_sub(e),
-            FmtAst::Atom(a) => self.fmt_atom(a),
-            FmtAst::Frac(f) => self.fmt_frac(f),
-            FmtAst::Pow(p) => self.fmt_pow(p),
-            FmtAst::Sum(s) => self.fmt_sum(s),
-            FmtAst::Prod(p) => self.fmt_prod(p),
-            FmtAst::VarProd(vp) => self.fmt_var_prod(vp),
+    // helper function, because the formatter decides where to put parenthesis
+    fn fmt_paren(&mut self, e: &impl FormatWith<Self>) -> Self::Result;
+}
+
+/// implemented by the structs that can be formatted by [ExprFormatter]
+///
+pub trait FormatWith<EF: ExprFormatter>: FmtPrecedence {
+    fn fmt_with(&self, f: &mut EF) -> EF::Result;
+    fn fmt_paren(&self, f: &mut EF) -> EF::Result
+    where
+        Self: Sized,
+    {
+        f.fmt_paren(self)
+    }
+
+    fn fmt_paren_prec(e: &impl FormatWith<EF>, f: &mut EF) -> EF::Result
+    where
+        Self: Sized,
+    {
+        if e.prec_of_val() < Self::prec_of() {
+            e.fmt_paren(f)
+        } else {
+            e.fmt_with(f)
         }
     }
 }
 
-/// an [ExprFormatter] that is used in [Display::fmt]
-///
-pub struct ExprDisplay<'a, 'b> {
-    f: &'a mut Formatter<'b>,
+impl<T> FmtPrecedence for Box<T>
+where
+    T: FmtPrecedence,
+{
+    fn prec_of() -> u32 {
+        T::prec_of()
+    }
+    fn prec_of_val(&self) -> u32 {
+        self.as_ref().prec_of_val()
+    }
+}
+impl<T, EF> FormatWith<EF> for Box<T>
+where
+    T: FormatWith<EF>,
+    EF: ExprFormatter,
+{
+    fn fmt_with(&self, f: &mut EF) -> EF::Result {
+        self.as_ref().fmt_with(f)
+    }
 }
 
-impl<'a, 'b> ExprFormatter for ExprDisplay<'a, 'b> {
+impl<'a> ExprFormatter for fmt::Formatter<'a> {
     type Result = fmt::Result;
 
-    fn fmt_atom(&mut self, atom: &Atom) -> Self::Result {
-        match atom {
-            Atom::Rational(r) => write!(self.f, "{r}"),
-            Atom::Var(v) => write!(self.f, "{}", v),
-            Atom::Undefined => write!(self.f, "undef"),
+    fn fmt_paren(&mut self, e: &impl FormatWith<Self>) -> Self::Result {
+        write!(self, "(")?;
+        e.fmt_with(self)?;
+        write!(self, ")")
+    }
+}
+
+impl FormatWith<fmt::Formatter<'_>> for Atom<'_> {
+    fn fmt_with(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Atom::Rational(r) => write!(f, "{r}"),
+            Atom::Var(v) => write!(f, "{}", v),
+            Atom::Undefined => write!(f, "undef"),
         }
     }
+}
 
-    fn fmt_paren(&mut self, e: &FmtAst, cond: impl Fn(&FmtAst) -> bool) -> Self::Result {
-        let use_paren = cond(e);
-        if use_paren {
-            write!(self.f, "(")?;
-        }
-        self.fmt_expr(e)?;
-        if use_paren {
-            write!(self.f, ")")?;
-        }
-        Ok(())
+impl FormatWith<fmt::Formatter<'_>> for Sub<'_> {
+    fn fmt_with(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "-")?;
+        Self::fmt_paren_prec(&self.0, f)
     }
-
-    fn fmt_sum(&mut self, rs: &Sum) -> Self::Result {
-        if rs.0.is_empty() {
+}
+impl FormatWith<fmt::Formatter<'_>> for Sum<'_> {
+    fn fmt_with(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.0.is_empty() {
             return Ok(());
         }
 
-        let mut iter = rs.0.iter();
-        self.fmt_expr(iter.next().unwrap())?;
+        let mut iter = self.0.iter();
+        iter.next().unwrap().fmt_with(f)?;
         iter.try_for_each(|e| {
-            write!(self.f, " + ")?;
-            self.fmt_expr(e)
+            if let FmtAst::Sub(e) = e {
+                write!(f, " - ")?;
+                e.0.fmt_with(f)
+            } else {
+                write!(f, " + ")?;
+                e.fmt_with(f)
+            }
         })
     }
-
-    fn fmt_sub(&mut self, sub: &Sub) -> Self::Result {
-        write!(self.f, "-")?;
-        self.fmt_expr(&sub.0)
-    }
-
-    fn fmt_prod(&mut self, rs: &Prod) -> Self::Result {
-        if rs.0.is_empty() {
+}
+impl FormatWith<fmt::Formatter<'_>> for Prod<'_> {
+    fn fmt_with(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.0.is_empty() {
             return Ok(());
         }
 
-        let mut iter = rs.0.iter();
-        self.fmt_expr(iter.next().unwrap())?;
+        let mut iter = self.0.iter();
+        Self::fmt_paren_prec(iter.next().unwrap(), f)?;
         iter.try_for_each(|e| {
-            write!(self.f, " * ")?;
-            self.fmt_expr(e)
+            write!(f, " * ")?;
+            Self::fmt_paren_prec(e, f)
         })
     }
-
-    fn fmt_frac(&mut self, frac: &Frac) -> Self::Result {
-        self.fmt_paren(&frac.0, |e| e.prec_of_val() < Frac::prec_of())?;
-        write!(self.f, "/")?;
-        self.fmt_paren(&frac.1, |e| e.prec_of_val() < Frac::prec_of())
+}
+impl FormatWith<fmt::Formatter<'_>> for Frac<'_> {
+    fn fmt_with(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        Self::fmt_paren_prec(&self.0, f)?;
+        write!(f, "/")?;
+        Self::fmt_paren_prec(&self.1, f)
     }
-
-    fn fmt_pow(&mut self, pow: &Pow) -> Self::Result {
-        self.fmt_paren(&pow.0, |e| e.prec_of_val() < Pow::prec_of())?;
-        write!(self.f, "^")?;
-        self.fmt_paren(&pow.1, |e| e.prec_of_val() < Pow::prec_of())
+}
+impl FormatWith<fmt::Formatter<'_>> for Pow<'_> {
+    fn fmt_with(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        Self::fmt_paren_prec(&self.0, f)?;
+        write!(f, "^")?;
+        Self::fmt_paren_prec(&self.1, f)
     }
-
-    fn fmt_var_prod(&mut self, vp: &VarProd) -> Self::Result {
-        if let Some(c) = &vp.0 {
-            write!(self.f, "{}", c)?;
+}
+impl FormatWith<fmt::Formatter<'_>> for VarProd<'_> {
+    fn fmt_with(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(c) = &self.0 {
+            write!(f, "{}", c)?;
         }
-        vp.1.iter().try_for_each(|v| write!(self.f, "{v}"))
+        self.1.iter().try_for_each(|v| write!(f, "{v}"))
+    }
+}
+impl FormatWith<fmt::Formatter<'_>> for FmtAst<'_> {
+    fn fmt_with(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            FmtAst::Sub(n) => n.fmt_with(f),
+            FmtAst::Atom(n) => n.fmt_with(f),
+            FmtAst::Frac(n) => n.fmt_with(f),
+            FmtAst::Pow(n) => n.fmt_with(f),
+            FmtAst::Sum(n) => n.fmt_with(f),
+            FmtAst::Prod(n) => n.fmt_with(f),
+            FmtAst::VarProd(n) => n.fmt_with(f),
+        }
     }
 }
 
 impl Display for FmtAst<'_> {
-    fn fmt(&self, fmt: &mut Formatter<'_>) -> fmt::Result {
-        ExprDisplay { f: fmt }.fmt_expr(self)
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.fmt_with(f)
     }
 }
 
@@ -206,18 +247,17 @@ macro_rules! impl_precedence {
         }
     };
 }
-impl_precedence!(Sum<'_>; 1);
-impl_precedence!(Prod<'_>; 2);
-impl_precedence!(Frac<'_>; 2);
-impl_precedence!(Pow<'_>; 3);
-// ...
-impl_precedence!(Sub<'_>; u32::MAX - 2);
-impl_precedence!(VarProd<'_>; u32::MAX - 1);
-impl_precedence!(Atom<'_>; u32::MAX);
+impl_precedence!(Sum<'_>;     1);
+impl_precedence!(Prod<'_>;    2);
+impl_precedence!(Sub<'_>;     2);
+impl_precedence!(Frac<'_>;    2);
+impl_precedence!(VarProd<'_>; 2);
+impl_precedence!(Pow<'_>;     3);
+impl_precedence!(Atom<'_>;    4);
 
 impl FmtPrecedence for FmtAst<'_> {
     fn prec_of() -> u32 {
-        0
+        panic!("FmtAst precedence is defined when created")
     }
     fn prec_of_val(&self) -> u32 {
         use FmtAst as E;
@@ -285,6 +325,22 @@ impl<'a> ops::Mul for FmtAst<'a> {
             (E::Atom(Atom::Var(v1)), E::Atom(Atom::Var(v2))) => {
                 e!(VarProd(None, [v1, v2]))
             }
+            (e, E::Atom(Atom::Rational(r))) | (E::Atom(Atom::Rational(r)), e)
+                if &*r == &Rational::MINUS_ONE =>
+            {
+                e!(Sub(e))
+            }
+
+            (E::Sub(sub), rhs) => {
+                let mut lhs = sub.0;
+                *lhs = *lhs * rhs;
+                e!(Sub(lhs))
+            }
+            (lhs, E::Sub(sub)) => {
+                let mut rhs = sub.0;
+                *rhs = lhs * *rhs;
+                e!(Sub(rhs))
+            }
             // r * v or v * r
             (E::Atom(Atom::Rational(r)), E::Atom(Atom::Var(v)))
             | (E::Atom(Atom::Var(v)), E::Atom(Atom::Rational(r))) => {
@@ -299,7 +355,9 @@ impl<'a> ops::Mul for FmtAst<'a> {
                 E::VarProd(vp)
             }
             (E::Atom(Atom::Rational(r)), E::VarProd(mut vp))
-            | (E::VarProd(mut vp), E::Atom(Atom::Rational(r))) if vp.0.is_none() => {
+            | (E::VarProd(mut vp), E::Atom(Atom::Rational(r)))
+                if vp.0.is_none() =>
+            {
                 vp.0 = Some(r);
                 E::VarProd(vp)
             }

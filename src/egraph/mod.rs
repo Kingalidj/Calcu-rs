@@ -16,7 +16,7 @@ mod pattern;
 mod rewrite;
 mod run;
 
-pub(crate) use {crate::*, egraph::EClassUnion, explain::Explain};
+pub(crate) use {crate::*, egraph::EClassUnion, explain::Explain, rewrite::ConditionalApplier};
 
 pub use {
     calcu_rs::utils::*,
@@ -28,8 +28,3 @@ pub use {
     rewrite::{Applier, Condition, Rewrite, Searcher, Subst},
     run::*,
 };
-
-#[cfg(test)]
-fn init_logger() {
-    let _ = env_logger::builder().is_test(true).try_init();
-}

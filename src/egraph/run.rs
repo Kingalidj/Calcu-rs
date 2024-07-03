@@ -863,23 +863,23 @@ pub trait CostFunction {
     /// any of the child costs of the given enode.
     fn cost<C>(&mut self, enode: &Node, costs: C) -> Self::Cost
     where
-        C: FnMut(ID) -> Self::Cost;
+        C: FnMut(ID) -> (Self::Cost, Node);
 
-    /// Calculates the total cost of a [`RecExpr`].
-    ///
-    /// As provided, this just recursively calls `cost` all the way
-    /// down the [`RecExpr`].
-    ///
-    fn cost_rec(&mut self, expr: &RecExpr<Node>) -> Self::Cost {
-        let nodes = expr.as_ref();
-        let mut costs = hashmap_with_capacity::<ID, Self::Cost>(nodes.len());
-        for (i, node) in nodes.iter().enumerate() {
-            let cost = self.cost(node, |i| costs[&i].clone());
-            costs.insert(ID::new(i), cost);
-        }
-        let last_id = ID::new(expr.as_ref().len() - 1);
-        costs[&last_id].clone()
-    }
+    // Calculates the total cost of a [`RecExpr`].
+    //
+    // As provided, this just recursively calls `cost` all the way
+    // down the [`RecExpr`].
+    //
+    //fn cost_rec(&mut self, expr: &RecExpr<Node>) -> Self::Cost {
+    //    let nodes = expr.as_ref();
+    //    let mut costs = hashmap_with_capacity::<ID, Self::Cost>(nodes.len());
+    //    for (i, node) in nodes.iter().enumerate() {
+    //        let cost = self.cost(node, |i| costs[&i].clone());
+    //        costs.insert(ID::new(i), cost);
+    //    }
+    //    let last_id = ID::new(expr.as_ref().len() - 1);
+    //    costs[&last_id].clone()
+    //}
 }
 
 /// A simple [`CostFunction`] that counts total AST size.
@@ -889,9 +889,9 @@ impl CostFunction for AstSize {
     type Cost = usize;
     fn cost<C>(&mut self, enode: &Node, mut costs: C) -> Self::Cost
     where
-        C: FnMut(ID) -> Self::Cost,
+        C: FnMut(ID) -> (Self::Cost, Node),
     {
-        enode.fold(1, |sum, id| sum.saturating_add(costs(id)))
+        enode.fold(1, |sum, id| sum.saturating_add(costs(id).0))
     }
 }
 
@@ -902,9 +902,9 @@ impl CostFunction for AstDepth {
     type Cost = usize;
     fn cost<C>(&mut self, enode: &Node, mut costs: C) -> Self::Cost
     where
-        C: FnMut(ID) -> Self::Cost,
+        C: FnMut(ID) -> (Self::Cost, Node),
     {
-        1 + enode.fold(0, |max, id| max.max(costs(id)))
+        1 + enode.fold(0, |max, id| max.max(costs(id).0))
     }
 }
 
@@ -990,6 +990,12 @@ where
         Expr::from_id(root_id, cntxt)
     }
 
+    pub(crate) fn dbg_node_cost(&self, eclass: ID) {
+        let (cost, node) = self.costs[&self.egraph.canon_id(eclass)].clone();
+        println!("({eclass}) {:?}: {:?}", node, cost);
+        node.operands().iter().for_each(|i| self.dbg_node_cost(*i));
+    }
+
     pub fn find_best2<'b>(&self, eclass: ID, cntxt: &'b ExprContext) -> (CF::Cost, Expr<'b>) {
         let (cost, root) = self.costs[&self.egraph.canon_id(eclass)].clone();
 
@@ -1016,7 +1022,7 @@ where
         let has_cost = |id| self.costs.contains_key(&eg.canon_id(id));
         if node.all(has_cost) {
             let costs = &self.costs;
-            let cost_f = |id| costs[&eg.canon_id(id)].0.clone();
+            let cost_f = |id| costs[&eg.canon_id(id)].clone();
             Some(self.cost_function.cost(node, cost_f))
         } else {
             None

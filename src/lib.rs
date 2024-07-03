@@ -23,19 +23,24 @@ pub use crate::{
     rules::*,
 };
 
-
+#[cfg(test)]
+fn init_logger() {
+    let _ = env_logger::builder()
+        .is_test(true)
+        .filter_level(log::LevelFilter::Warn)
+        .try_init();
+}
 
 pub fn mod_main() {
     env_logger::builder()
-        .filter_level(log::LevelFilter::Warn)
+        .filter_level(log::LevelFilter::Info)
         .format_timestamp(None)
         .init();
 
     let c = ExprContext::new();
-    let e1 = expr!(c: a + a);
-    let e1 = e1.apply_rules(ExprFold, &scalar_rules());
-    let fmt = c.fmt_id(e1.id());
-    println!("{}", fmt);
-    println!("{}", e1);
+    let e1 = expr!(c: a^b);
+    //let e1 = e1.apply_rules(ExprFold, &scalar_rules());
+    println!("{:?}", e1.fmt_ast());
+    println!("{}", e1.fmt_ast());
     c.to_dot_to_png("expr_context.png").unwrap()
 }

@@ -1,28 +1,57 @@
+use crate::egraph::{merge_option, Analysis, Construct, CostFunction, DidMerge, EGraph, Subst};
 use crate::*;
-use crate::egraph::{merge_option, Analysis, DidMerge, EGraph, Subst, Construct, CostFunction};
+use calcu_rs::egraph::RecExpr;
 use std::{
     fmt::{Display, Formatter},
     ops,
 };
-use calcu_rs::egraph::RecExpr;
-
 
 trait RuleCondition<A: Analysis>: Fn(&mut EGraph<A>, ID, &Subst) -> bool {}
 impl<A: Analysis, F: Fn(&mut EGraph<A>, ID, &Subst) -> bool> RuleCondition<A> for F {}
 
 fn check_node<A: Analysis>(var: &str, cond: impl Fn(&Node) -> bool) -> impl RuleCondition<A> {
     let var = GlobalSymbol::from(var);
-    move |eg: &mut EGraph<A>, _, subst: &Subst| {
-        eg[subst[var]].nodes.iter().any(&cond)
+    move |eg: &mut EGraph<A>, _, subst: &Subst| eg[subst[var]].nodes.iter().any(&cond)
+}
+
+#[inline]
+fn not_undef(var: &str) -> impl RuleCondition<ExprFold> {
+    let var = GlobalSymbol::from(var);
+    move |eg: &mut EGraph<ExprFold>, _, subst: &Subst| {
+        matches!(eg[subst[var]].data, Some(FoldData::Undef))
+    }
+}
+
+#[inline]
+fn not_trivial(var: &str) -> impl RuleCondition<ExprFold> {
+    let var = GlobalSymbol::from(var);
+    move |eg: &mut EGraph<ExprFold>, _, subst: &Subst| {
+        if let Some(fd) = &eg[subst[var]].data {
+            matches!(fd, FoldData::Undef)
+                || matches!(
+                    fd,
+                    FoldData::Monomial(Monomial {
+                        coeff: Rational::ZERO,
+                        ..
+                    })
+                )
+        } else {
+            false
+        }
     }
 }
 
 define_rules!(scalar_rules:
+    additive identity:              ?a + 0           -> ?a,
     commutative add:                ?a + ?b          -> ?b + ?a,
     associative add:                ?a + (?b + ?c)   -> (?a + ?b) + ?c,
+    additive inverse:               ?a + -1 * ?a     -> 0 if not_undef("?a"),
 
+    multiplicative identity:        ?a * 1           -> ?a,
+    multiplicative absorber:        ?a * 0           -> 0 if not_undef("?a"),
     commutative mul:                ?a * ?b          -> ?b * ?a,
     associative mul:                ?a * (?b * ?c)   -> (?a * ?b) * ?c,
+    multiplicative inverse:         ?a * ?a^-1       -> 1 if not_trivial("?a"),
 
     distributivity:                 ?a * (?b + ?c)  <-> ?a * ?b + ?a * ?c,
 
@@ -163,7 +192,7 @@ impl Pow<&Self> for Monomial {
 
         if const_base && self.coeff.is_one() {
             // 1^f(x) = 1
-            return Some(FoldData::Monomial(self))
+            return Some(FoldData::Monomial(self));
         } else if !const_exp {
             // c^f(x) not storable in [FoldData] (for now)
             return None;
@@ -174,7 +203,7 @@ impl Pow<&Self> for Monomial {
 
         if ec == &Rational::ZERO {
             // f(x)^0 -> 1
-            return Some(FoldData::Monomial(Monomial::from(Rational::ONE)))
+            return Some(FoldData::Monomial(Monomial::from(Rational::ONE)));
         } else if ec == &Rational::ONE {
             // f(x)^1 -> f(x)
             return Some(FoldData::Monomial(self));
@@ -273,7 +302,10 @@ impl Analysis for ExprFold {
     fn make(eg: &mut EGraph<Self>, node: &Node) -> Self::Data {
         let x = |i: &ID| eg[*i].data.as_ref();
 
-        let binop = |op_symbol: &'static str, lhs: &ID, rhs: &ID, op_fn: fn(&FoldData, &FoldData) -> Self::Data| {
+        let binop = |op_symbol: &'static str,
+                     lhs: &ID,
+                     rhs: &ID,
+                     op_fn: fn(&FoldData, &FoldData) -> Self::Data| {
             let lhs = x(lhs)?;
             let rhs = x(rhs)?;
             let res = op_fn(lhs, rhs);
@@ -328,24 +360,16 @@ impl Analysis for ExprFold {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug)]
 pub struct ExprCost;
 
 impl ExprCost {
-
     #[inline]
-    fn sum_cost(lhs: <Self as CostFunction>::Cost, rhs: <Self as CostFunction>::Cost) -> <Self as CostFunction>::Cost {
+    fn sum_cost(
+        lhs: <Self as CostFunction>::Cost,
+        rhs: <Self as CostFunction>::Cost,
+    ) -> <Self as CostFunction>::Cost {
         lhs.saturating_add(rhs)
-    }
-
-    fn base_cost(n: &Node) -> <Self as CostFunction>::Cost {
-        match n {
-            Node::Undef => 0,
-            Node::Var(_) | Node::Rational(_) => 1,
-            Node::Pow(_) => 2,
-            Node::Mul(_) => 3,
-            Node::Add(_) => 4,
-        }
     }
 
     //fn node_cost(n: &Node, reps: &mut HashMap<&Node, u32>) -> Self::Cost {
@@ -359,10 +383,18 @@ impl CostFunction for ExprCost {
 
     fn cost<C>(&mut self, enode: &Node, mut costs: C) -> Self::Cost
     where
-        C: FnMut(ID) -> Self::Cost,
+        C: FnMut(ID) -> (Self::Cost, Node),
     {
-        let op_cost = Self::base_cost(enode);
-        enode.fold(op_cost, |sum, i| Self::sum_cost(sum, costs(i)))
+        let op_cost = match enode {
+            Node::Undef => 0,
+            // a, 1
+            Node::Var(_) | Node::Rational(_) => 1,
+            // a + b, b * a
+            Node::Pow(_) => 2,
+            Node::Mul(_) => 3,
+            Node::Add(_) => 4,
+        };
+        enode.fold(op_cost, |sum, i| Self::sum_cost(sum, costs(i).0))
     }
 }
 
@@ -370,22 +402,19 @@ impl CostFunction for ExprCost {
 mod test_rules {
     use super::*;
 
-    macro_rules! cmp {
-        ($lhs:expr, $rhs:expr) => {{
-            let lhs = $lhs;
-            let rhs = $rhs;
-            assert!(lhs == rhs, "{} != {}", lhs, rhs);
-        }};
-    }
-
     macro_rules! r {
         ($lhs: expr, $rhs: expr) => {{
-            //let start = Instant::now();
+            let start = Instant::now();
             let lhs = $lhs;
             let rhs = $rhs;
-            let res = lhs.apply_rules(ExprFold, &scalar_rules());
-            cmp!(res, rhs);
-            //println!("test: {} took {}", stringify!($lhs), start.elapsed().as_millis());
+            let res = lhs.clone().apply_rules(ExprFold, &scalar_rules());
+            assert_eq!(res, rhs);
+            println!(
+                "{:6.2} ms: {} -> {}",
+                start.elapsed().as_secs_f64() * 1000f64,
+                lhs.fmt_ast(),
+                res.fmt_ast(),
+            );
         }};
     }
 
@@ -397,6 +426,7 @@ mod test_rules {
 
     #[test]
     fn test_scalar_rules() {
+        init_logger();
         let c = ExprContext::new();
         r!(e!(c: a + 0), e!(c: a));
         r!(e!(c: 0 + a), e!(c: a));
@@ -439,5 +469,6 @@ mod test_rules {
 
         r!(e!(c: a - b), e!(c: a + (-1 * b)));
         r!(e!(c: a / b), e!(c: a * b ^ -1));
+        r!(e!(c: -a -b), e!(c: -(a + b)));
     }
 }
