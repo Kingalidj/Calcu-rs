@@ -250,6 +250,7 @@ impl ExprContext {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn to_dot_to_png(&self, name: &str) -> io::Result<()> {
         let enodes: Vec<_> = self
             .nodes
@@ -374,14 +375,14 @@ impl<'a> Expr<'a> {
             .run(rules);
         info!("apply_rules time: {} ms", start.elapsed().as_millis());
 
-        #[cfg(not(test))]
-        if runner.egraph.total_number_of_nodes() <= 200 {
-            runner
-                .egraph
-                .dot(&self.cntxt.symbols)
-                .to_png("egraph.png")
-                .unwrap();
-        }
+        //#[cfg(not(test))]
+        //if runner.egraph.total_number_of_nodes() <= 200 {
+        //    runner
+        //        .egraph
+        //        .dot(&self.cntxt.symbols)
+        //        .to_png("egraph.png")
+        //        .unwrap();
+        //}
 
         let extractor = egraph::Extractor::new(&runner.egraph, rules::ExprCost);
         let (cost, be) = extractor.find_best2(runner.roots[0], self.cntxt);

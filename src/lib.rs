@@ -45,5 +45,6 @@ pub fn mod_main() {
     //let e1 = e1.apply_rules(ExprFold, &scalar_rules());
     println!("{:?}", e1.fmt_ast());
     println!("{}", e1.fmt_ast());
+    #[cfg(not(target_arch = "wasm32"))]
     c.to_dot_to_png("expr_context.png").unwrap()
 }

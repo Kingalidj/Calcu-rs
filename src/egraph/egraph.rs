@@ -508,7 +508,8 @@ impl<A: Analysis> EGraph<A> {
 
     /// Creates a [Dot] to visualize this egraph
     ///
-    pub fn dot<'a>(&'a self, symbols: &'a SymbolTable) -> egraph::Dot<A> {
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn dot<'a>(&'a self, symbols: &'a SymbolTable) -> Dot<A> {
         Dot {
             egraph: self,
             symbols,

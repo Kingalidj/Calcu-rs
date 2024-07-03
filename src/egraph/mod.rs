@@ -7,6 +7,7 @@ This code is a modified fork of the work by [Willsey et al.] <a href="#ref1">[1]
 */
 
 mod construct;
+#[cfg(not(target_arch = "wasm32"))]
 mod dot;
 mod egraph;
 mod explain;
@@ -18,10 +19,12 @@ mod run;
 
 pub(crate) use {crate::*, egraph::EClassUnion, explain::Explain, rewrite::ConditionalApplier};
 
+#[cfg(not(target_arch = "wasm32"))]
+pub use dot::Dot;
+
 pub use {
     calcu_rs::utils::*,
     construct::*,
-    dot::Dot,
     egraph::{EClass, EGraph},
     explain::{Explanation, Justification, UnionEqualities},
     pattern::{ENodeOrVar, Pattern, PatternAst, SearchMatches},
