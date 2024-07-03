@@ -200,7 +200,7 @@ impl RewriteRule {
                 };
 
             debug = quote!(
-                info!("  {}: {} => {}{}", #name, __searcher, __applier, #cond_str);
+                debug!("  {}: {} => {}{}", #name, __searcher, __applier, #cond_str);
                 )
         }
 

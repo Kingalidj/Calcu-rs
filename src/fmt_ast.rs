@@ -253,7 +253,19 @@ impl_precedence!(Sub<'_>;     2);
 impl_precedence!(Frac<'_>;    2);
 impl_precedence!(VarProd<'_>; 2);
 impl_precedence!(Pow<'_>;     3);
-impl_precedence!(Atom<'_>;    4);
+//impl_precedence!(Atom<'_>;    4);
+
+impl FmtPrecedence for Atom<'_> {
+    fn prec_of() -> u32 {
+        4
+    }
+    fn prec_of_val(&self) -> u32 {
+        match self {
+            Atom::Rational(r) if !r.is_int() => Frac::prec_of(),
+            _ => 4
+        }
+    }
+}
 
 impl FmtPrecedence for FmtAst<'_> {
     fn prec_of() -> u32 {

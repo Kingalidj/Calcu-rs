@@ -12,22 +12,24 @@ mod utils;
 ///
 mod fmt_ast;
 
-pub use calcurs_macros::{define_rules, expr, pat};
+pub(crate) use calcurs_macros::{define_rules, pat};
 
 #[allow(unused_imports)]
 pub(crate) use crate::utils::*;
 
+pub use calcurs_macros::expr;
 pub use crate::{
     expression::{Expr, ExprContext, Node, ID},
     rational::Rational,
-    rules::*,
+    utils::{Symbol, SymbolTable, GlobalSymbol},
+    fmt_ast::{FmtAst, ExprFormatter, FormatWith},
 };
 
 #[cfg(test)]
 fn init_logger() {
     let _ = env_logger::builder()
         .is_test(true)
-        .filter_level(log::LevelFilter::Warn)
+        .format_timestamp(None)
         .try_init();
 }
 
@@ -38,7 +40,7 @@ pub fn mod_main() {
         .init();
 
     let c = ExprContext::new();
-    let e1 = expr!(c: a^b);
+    let e1 = expr!(c: 3^(4 + 1)/3);
     //let e1 = e1.apply_rules(ExprFold, &scalar_rules());
     println!("{:?}", e1.fmt_ast());
     println!("{}", e1.fmt_ast());

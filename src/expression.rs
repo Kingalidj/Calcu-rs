@@ -383,7 +383,7 @@ impl<'a> Expr<'a> {
                 .unwrap();
         }
 
-        let extractor = egraph::Extractor::new(&runner.egraph, ExprCost);
+        let extractor = egraph::Extractor::new(&runner.egraph, rules::ExprCost);
         let (cost, be) = extractor.find_best2(runner.roots[0], self.cntxt);
         //extractor.dbg_node_cost(runner.roots[0]);
 
