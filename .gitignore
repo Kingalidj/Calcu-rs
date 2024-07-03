@@ -1,4 +1,6 @@
 .idea
+egraph.png
+expr_context.png
 # Created by https://www.toptal.com/developers/gitignore/api/intellij,rust,visualstudiocode,vim
 # Edit at https://www.toptal.com/developers/gitignore?templates=intellij,rust,visualstudiocode,vim
 
