@@ -23,6 +23,7 @@ pub use crate::{
     rational::Rational,
     utils::{Symbol, SymbolTable, GlobalSymbol},
     fmt_ast::{FmtAst, ExprFormatter, FormatWith},
+    rules::scalar_rules,
 };
 
 #[cfg(test)]
