@@ -5,6 +5,7 @@ use std::{
     fmt::{Display, Formatter},
     ops,
 };
+use malachite::num::arithmetic::traits::{CeilingLogBase, FloorLogBase2};
 
 trait RuleCondition<A: Analysis>: Fn(&mut EGraph<A>, ID, &Subst) -> bool {}
 impl<A: Analysis, F: Fn(&mut EGraph<A>, ID, &Subst) -> bool> RuleCondition<A> for F {}
@@ -361,40 +362,52 @@ impl Analysis for ExprFold {
 }
 
 #[derive(Debug)]
-pub struct ExprCost;
-
-impl ExprCost {
-    #[inline]
-    fn sum_cost(
-        lhs: <Self as CostFunction>::Cost,
-        rhs: <Self as CostFunction>::Cost,
-    ) -> <Self as CostFunction>::Cost {
-        lhs.saturating_add(rhs)
-    }
-
-    //fn node_cost(n: &Node, reps: &mut HashMap<&Node, u32>) -> Self::Cost {
-    //    let rep = *reps.entry(n).or_insert(1);
-    //    Self::sum_cost(Self::base_cost(n), rep as Self::Cost)
-    //}
+pub struct ExprCost<'a> {
+    pub egraph: &'a EGraph<ExprFold>,
 }
 
-impl CostFunction for ExprCost {
-    type Cost = usize;
+impl CostFunction for ExprCost<'_> {
+    type Cost = u64;
 
     fn cost<C>(&mut self, enode: &Node, mut costs: C) -> Self::Cost
     where
         C: FnMut(ID) -> (Self::Cost, Node),
     {
-        let op_cost = match enode {
-            Node::Undef => 0,
-            // a, 1
+        let base_cost = match enode {
+            Node::Undef => 1,
             Node::Var(_) | Node::Rational(_) => 1,
-            // a + b, b * a
-            Node::Pow(_) => 2,
-            Node::Mul(_) => 3,
-            Node::Add(_) => 4,
+
+            Node::Add([lhs, rhs]) => {
+                let lhs = costs(*lhs).1;
+                let rhs = costs(*rhs).1;
+                if lhs == rhs {
+                    4
+                } else {
+                    2
+                }
+            },
+            Node::Mul([lhs, rhs]) => {
+                let lhs = costs(*lhs).1;
+                let rhs = costs(*rhs).1;
+                if lhs == rhs {
+                    6
+                } else {
+                    3
+                }
+            },
+            Node::Pow([lhs, rhs]) => {
+                //let lhs = costs(*lhs).1;
+                let rhs = costs(*rhs).1;
+                if let Node::Rational(_) = rhs {
+                    2
+                } else if let Node::Pow(_) = rhs {
+                    8
+                } else {
+                    4
+                }
+            },
         };
-        enode.fold(op_cost, |sum, i| Self::sum_cost(sum, costs(i).0))
+        enode.fold(base_cost, |sum, i| sum.saturating_add(costs(i).0))
     }
 }
 
@@ -402,13 +415,19 @@ impl CostFunction for ExprCost {
 mod test_rules {
     use super::*;
 
+    macro_rules! cmp {
+        ($lhs: expr, $rhs: expr) => {{
+            assert_eq!($lhs, $rhs, "{} != {}", $lhs.fmt_ast(), $rhs.fmt_ast());
+        }}
+    }
+
     macro_rules! r {
         ($lhs: expr, $rhs: expr) => {{
             let start = Instant::now();
             let lhs = $lhs;
             let rhs = $rhs;
             let res = lhs.clone().apply_rules(ExprFold, &scalar_rules());
-            assert_eq!(res, rhs);
+            cmp!(res, rhs);
             println!(
                 "{:6.2} ms: {} -> {}",
                 start.elapsed().as_secs_f64() * 1000f64,
@@ -427,7 +446,7 @@ mod test_rules {
     #[test]
     fn test_scalar_rules() {
         init_logger();
-        let c = ExprContext::new();
+        let mut c = ExprContext::new();
         r!(e!(c: a + 0), e!(c: a));
         r!(e!(c: 0 + a), e!(c: a));
         r!(e!(c: 1 + 2), e!(c: 3));

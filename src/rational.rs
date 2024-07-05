@@ -24,6 +24,14 @@ impl Rational {
         Rational(mal::Rational::const_from_signed(n))
     }
 
+    pub fn numer(&self) -> &mal::Natural {
+        self.0.numerator_ref()
+    }
+
+    pub fn denom(&self) -> &mal::Natural {
+        self.0.numerator_ref()
+    }
+
     #[inline(always)]
     pub fn is_zero(&self) -> bool {
         matches!(self.0.sign(), Ordering::Equal)
@@ -139,9 +147,6 @@ impl Rational {
         }
     }
 }
-
-const NAT_ZERO: mal::Natural = mal::Natural::const_from(0);
-const NAT_ONE: mal::Natural = mal::Natural::const_from(1);
 
 impl ops::Add for Rational {
     type Output = Self;

@@ -1,11 +1,12 @@
 use calcu_rs::Rational;
-use paste::paste;
 use std::{
     cell::Ref,
     collections::VecDeque,
     fmt::{self, Display},
     ops,
+    collections::{BinaryHeap}
 };
+use std::cmp::Ordering;
 
 // TODO: Sorting for Sum, Prod, VarProd
 
@@ -17,6 +18,7 @@ use std::{
 #[derive(Debug)]
 pub enum FmtAst<'a> {
     Sub(Sub<'a>),
+    Coeff(Coeff<'a>),
     Atom(Atom<'a>),
     Frac(Frac<'a>),
     Pow(Pow<'a>),
@@ -25,19 +27,26 @@ pub enum FmtAst<'a> {
     VarProd(VarProd<'a>),
 }
 
-macro_rules! e {
-    ($ty:ident($e:expr)) => {
-        FmtAst::$ty($ty($e.into()).into())
-    };
-    ($ty:ident($e1:expr, $e2:expr)) => {
-        FmtAst::$ty($ty($e1.into(), $e2.into()))
-    };
+pub type Var<'a> = &'a str;
+
+/// Holds references to primitive [crate::Node]
+///
+#[derive(Debug)]
+pub enum Atom<'a> {
+    Rational(Ref<'a, Rational>),
+    Var(Var<'a>),
+    Undefined,
 }
 
 /// - [FmtAst]
 ///
 #[derive(Debug)]
-pub struct Sub<'a>(Box<FmtAst<'a>>);
+pub struct Sub<'a>(Box<FmtAst<'a>>, Box<FmtAst<'a>>);
+
+/// [Rational] * [FmtAst], e.g 3(a + b), -b^2
+///
+#[derive(Debug)]
+pub struct Coeff<'a>(Ref<'a, Rational>, Box<FmtAst<'a>>);
 
 /// [FmtAst] / [FmtAst], e.g a/3
 ///
@@ -53,7 +62,7 @@ pub struct Pow<'a>(Box<FmtAst<'a>>, Box<FmtAst<'a>>);
 ///
 /// n * a * b * c, e.g 3 * a * b * c -> 3abc
 #[derive(Debug)]
-pub struct VarProd<'a>(Option<Ref<'a, Rational>>, VecDeque<Var<'a>>);
+pub struct VarProd<'a>(VecDeque<Var<'a>>);
 
 /// Sum([FmtAst]), e.g: 1 + a + 2b
 ///
@@ -96,6 +105,15 @@ pub trait FormatWith<EF: ExprFormatter>: FmtPrecedence {
     }
 }
 
+macro_rules! e {
+    ($ty:ident($e:expr)) => {
+        FmtAst::$ty($ty($e.into()).into())
+    };
+    ($ty:ident($e1:expr, $e2:expr)) => {
+        FmtAst::$ty($ty($e1.into(), $e2.into()))
+    };
+}
+
 impl<T> FmtPrecedence for Box<T>
 where
     T: FmtPrecedence,
@@ -136,11 +154,22 @@ impl FormatWith<fmt::Formatter<'_>> for Atom<'_> {
         }
     }
 }
-
 impl FormatWith<fmt::Formatter<'_>> for Sub<'_> {
     fn fmt_with(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "-")?;
-        Self::fmt_paren_prec(&self.0, f)
+        Self::fmt_paren_prec(&self.0, f)?;
+        write!(f, " - ")?;
+        Self::fmt_paren_prec(&self.1, f)
+    }
+}
+impl FormatWith<fmt::Formatter<'_>> for Coeff<'_> {
+    fn fmt_with(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if &*self.0 == &Rational::ONE {
+        } else if &*self.0 == &Rational::MINUS_ONE {
+            write!(f, "-")?;
+        } else {
+            write!(f, "{}", self.0)?;
+        }
+        Self::fmt_paren_prec(&self.1, f)
     }
 }
 impl FormatWith<fmt::Formatter<'_>> for Sum<'_> {
@@ -192,16 +221,17 @@ impl FormatWith<fmt::Formatter<'_>> for Pow<'_> {
 }
 impl FormatWith<fmt::Formatter<'_>> for VarProd<'_> {
     fn fmt_with(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(c) = &self.0 {
-            write!(f, "{}", c)?;
-        }
-        self.1.iter().try_for_each(|v| write!(f, "{v}"))
+        //if let Some(c) = &self.0 {
+        //    write!(f, "{}", c)?;
+        //}
+        self.0.iter().try_for_each(|v| write!(f, "{v}"))
     }
 }
 impl FormatWith<fmt::Formatter<'_>> for FmtAst<'_> {
     fn fmt_with(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             FmtAst::Sub(n) => n.fmt_with(f),
+            FmtAst::Coeff(n) => n.fmt_with(f),
             FmtAst::Atom(n) => n.fmt_with(f),
             FmtAst::Frac(n) => n.fmt_with(f),
             FmtAst::Pow(n) => n.fmt_with(f),
@@ -216,17 +246,6 @@ impl Display for FmtAst<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.fmt_with(f)
     }
-}
-
-pub type Var<'a> = &'a str;
-
-/// Holds references to primitive [crate::Node]
-///
-#[derive(Debug)]
-pub enum Atom<'a> {
-    Rational(Ref<'a, Rational>),
-    Var(Var<'a>),
-    Undefined,
 }
 
 /// for deciding if [FmtAst] in binary operations are wrapped with parenthesis or not
@@ -248,12 +267,12 @@ macro_rules! impl_precedence {
     };
 }
 impl_precedence!(Sum<'_>;     1);
+impl_precedence!(Sub<'_>;     1);
 impl_precedence!(Prod<'_>;    2);
-impl_precedence!(Sub<'_>;     2);
+impl_precedence!(Coeff<'_>;   2);
 impl_precedence!(Frac<'_>;    2);
 impl_precedence!(VarProd<'_>; 2);
 impl_precedence!(Pow<'_>;     3);
-//impl_precedence!(Atom<'_>;    4);
 
 impl FmtPrecedence for Atom<'_> {
     fn prec_of() -> u32 {
@@ -262,7 +281,7 @@ impl FmtPrecedence for Atom<'_> {
     fn prec_of_val(&self) -> u32 {
         match self {
             Atom::Rational(r) if !r.is_int() => Frac::prec_of(),
-            _ => 4
+            _ => 4,
         }
     }
 }
@@ -272,15 +291,16 @@ impl FmtPrecedence for FmtAst<'_> {
         panic!("FmtAst precedence is defined when created")
     }
     fn prec_of_val(&self) -> u32 {
-        use FmtAst as E;
+        use FmtAst as FA;
         match self {
-            E::Sub(x) => x.prec_of_val(),
-            E::Atom(x) => x.prec_of_val(),
-            E::Frac(x) => x.prec_of_val(),
-            E::Pow(x) => x.prec_of_val(),
-            E::Sum(x) => x.prec_of_val(),
-            E::Prod(x) => x.prec_of_val(),
-            E::VarProd(x) => x.prec_of_val(),
+            FA::Sub(x) => x.prec_of_val(),
+            FA::Coeff(x) => x.prec_of_val(),
+            FA::Atom(x) => x.prec_of_val(),
+            FA::Frac(x) => x.prec_of_val(),
+            FA::Pow(x) => x.prec_of_val(),
+            FA::Sum(x) => x.prec_of_val(),
+            FA::Prod(x) => x.prec_of_val(),
+            FA::VarProd(x) => x.prec_of_val(),
         }
     }
 }
@@ -289,19 +309,19 @@ impl<'a> ops::Add for FmtAst<'a> {
     type Output = FmtAst<'a>;
 
     fn add(self, rhs: Self) -> Self::Output {
-        use FmtAst as E;
+        use FmtAst as FA;
         match (self, rhs) {
-            (E::Sum(mut lhs), E::Sum(rhs)) => {
+            (FA::Sum(mut lhs), FA::Sum(rhs)) => {
                 lhs.0.extend(rhs.0);
-                E::Sum(lhs)
+                FA::Sum(lhs)
             }
-            (lhs, E::Sum(mut rhs)) => {
+            (lhs, FA::Sum(mut rhs)) => {
                 rhs.0.push_front(lhs);
-                E::Sum(rhs)
+                FA::Sum(rhs)
             }
-            (E::Sum(mut lhs), rhs) => {
+            (FA::Sum(mut lhs), rhs) => {
                 lhs.0.push_back(rhs);
-                E::Sum(lhs)
+                FA::Sum(lhs)
             }
             (lhs, rhs) => e!(Sum([lhs, rhs])),
         }
@@ -312,18 +332,7 @@ impl<'a> ops::Sub for FmtAst<'a> {
     type Output = FmtAst<'a>;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        use FmtAst as E;
-        match (self, rhs) {
-            (E::Sum(mut lhs), rhs) => {
-                lhs.0.push_back(e!(Sub(rhs)));
-                E::Sum(lhs)
-            }
-            (lhs, E::Sum(mut rhs)) => {
-                rhs.0.push_front(e!(Sub(lhs)));
-                E::Sum(rhs)
-            }
-            (lhs, rhs) => e!(Sum([lhs, e!(Sub(rhs))])),
-        }
+        e!(Sub(self, rhs))
     }
 }
 
@@ -331,65 +340,62 @@ impl<'a> ops::Mul for FmtAst<'a> {
     type Output = FmtAst<'a>;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        use FmtAst as E;
+        use FmtAst as FA;
         match (self, rhs) {
-            // v1 * v2
-            (E::Atom(Atom::Var(v1)), E::Atom(Atom::Var(v2))) => {
-                e!(VarProd(None, [v1, v2]))
-            }
-            (e, E::Atom(Atom::Rational(r))) | (E::Atom(Atom::Rational(r)), e)
-                if &*r == &Rational::MINUS_ONE =>
-            {
-                e!(Sub(e))
-            }
-
-            (E::Sub(sub), rhs) => {
-                let mut lhs = sub.0;
+            // var1 * var2
+            (FA::Atom(Atom::Var(v1)), FA::Atom(Atom::Var(v2))) => e!(VarProd([v1, v2])),
+            // coeff(c, e1) * e2 -> coeff(c, e1 * e2)
+            (FA::Coeff(Coeff(coeff, expr)), rhs) => {
+                let mut lhs = expr;
                 *lhs = *lhs * rhs;
-                e!(Sub(lhs))
+                e!(Coeff(coeff, lhs))
             }
-            (lhs, E::Sub(sub)) => {
-                let mut rhs = sub.0;
+            // e1 * coeff(c, e2) -> coeff(c, e1 * e2)
+            (lhs, FA::Coeff(Coeff(coeff, expr))) => {
+                let mut rhs = expr;
                 *rhs = lhs * *rhs;
-                e!(Sub(rhs))
+                e!(Coeff(coeff, rhs))
             }
-            // r * v or v * r
-            (E::Atom(Atom::Rational(r)), E::Atom(Atom::Var(v)))
-            | (E::Atom(Atom::Var(v)), E::Atom(Atom::Rational(r))) => {
-                e!(VarProd(r, [v]))
+            // v1 * v2 * ... * w
+            (FA::VarProd(mut vp), FA::Atom(Atom::Var(v))) => {
+                vp.0.push_back(v);
+                FA::VarProd(vp)
             }
-            (E::VarProd(mut vp), E::Atom(Atom::Var(v))) => {
-                vp.1.push_back(v);
-                E::VarProd(vp)
+            // w * v1 * v2 * ...
+            (FA::Atom(Atom::Var(v)), FA::VarProd(mut vp)) => {
+                vp.0.push_front(v);
+                FA::VarProd(vp)
             }
-            (E::Atom(Atom::Var(v)), E::VarProd(mut vp)) => {
-                vp.1.push_front(v);
-                E::VarProd(vp)
-            }
-            (E::Atom(Atom::Rational(r)), E::VarProd(mut vp))
-            | (E::VarProd(mut vp), E::Atom(Atom::Rational(r)))
-                if vp.0.is_none() =>
-            {
-                vp.0 = Some(r);
-                E::VarProd(vp)
-            }
-            (E::Frac(Frac(n, d)), rhs) => {
-                e!(Frac(*d * rhs, n))
-            }
-            (lhs, E::Frac(Frac(n, d))) => {
-                e!(Frac(lhs * *d, n))
-            }
-            (E::Prod(mut lhs), E::Prod(rhs)) => {
+            // a/b * c -> (a * c) / b
+            (FA::Frac(Frac(n, d)), rhs) => e!(Frac(*d * rhs, n)),
+            // a * b/c -> (a * b) / c
+            (lhs, FA::Frac(Frac(n, d))) => e!(Frac(lhs * *d, n)),
+            (FA::Prod(mut lhs), FA::Prod(rhs)) => {
                 lhs.0.extend(rhs.0);
-                E::Prod(lhs)
+                FA::Prod(lhs)
             }
-            (E::Prod(mut lhs), rhs) => {
+            // e1 * e2 * ... * f
+            (FA::Prod(mut lhs), rhs) => {
                 lhs.0.push_back(rhs);
-                E::Prod(lhs)
+                FA::Prod(lhs)
             }
-            (lhs, E::Prod(mut rhs)) => {
+            // f * e1 * e2 * ...
+            (lhs, FA::Prod(mut rhs)) => {
                 rhs.0.push_front(lhs);
-                E::Prod(rhs)
+                FA::Prod(rhs)
+            }
+            // r * e -> Coeff(r, e)
+            (FA::Atom(Atom::Rational(r)), e)
+            | (e, FA::Atom(Atom::Rational(r))) => {
+                match &e {
+                    FA::Atom(_)
+                    | FA::Frac(_)
+                    | FA::Pow(_)
+                    | FA::Sum(_)
+                    | FA::Prod(_)
+                    | FA::VarProd(_) => e!(Coeff(r, e)),
+                    _ => e!(Prod([FA::Atom(Atom::Rational(r)), e]))
+                }
             }
             (lhs, rhs) => e!(Prod([lhs, rhs])),
         }
@@ -400,15 +406,11 @@ impl<'a> ops::Div for FmtAst<'a> {
     type Output = FmtAst<'a>;
 
     fn div(self, rhs: Self) -> Self::Output {
-        use FmtAst as E;
+        use FmtAst as FA;
         match (self, rhs) {
-            (E::Frac(Frac(n, d)), rhs) => {
-                e!(Frac(n, *d * rhs))
-            }
-            (rhs, E::Frac(Frac(n, d))) => rhs * e!(Frac(d, n)),
-            (lhs, rhs) => {
-                e!(Frac(lhs, rhs))
-            }
+            (FA::Frac(Frac(n, d)), rhs) => e!(Frac(n, *d * rhs)),
+            (rhs, FA::Frac(Frac(n, d))) => rhs * e!(Frac(d, n)),
+            (lhs, rhs) => e!(Frac(lhs, rhs)),
         }
     }
 }
@@ -420,3 +422,12 @@ impl<'a> crate::Pow for FmtAst<'a> {
         e!(Pow(self, rhs))
     }
 }
+
+pub enum SumElementSign {
+    Plus,
+    Minus,
+}
+
+
+pub struct Sum2(BinaryHeap<SumElementSign>);
+
