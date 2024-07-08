@@ -107,7 +107,7 @@ impl Construct for ENodeOrVar {
 
     fn operands(&self) -> &[ID] {
         match self {
-            ENodeOrVar::ENode(n) => n.oprnd_ids(),
+            ENodeOrVar::ENode(n) => n.ids(),
             ENodeOrVar::Var(_) => &[],
         }
     }

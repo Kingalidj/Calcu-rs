@@ -4,6 +4,7 @@ extern crate self as calcu_rs;
 mod egraph;
 
 mod expression;
+mod polynomial;
 mod rational;
 mod rules;
 mod utils;
@@ -41,9 +42,17 @@ pub fn mod_main() {
         .init();
 
     let mut c = ExprContext::new();
-    let e1 = expr!(c: ((1/(y+7) - (1 / y)))/(1/y) );
-    //let e1 = e1.apply_rules(ExprFold, &scalar_rules());
+    //let e1 = expr!(c: ((1/(y+7) - (1 / y)))/(1/y) );
+    let e1 = expr!(c: (x^2 - 1) * (x + 1));
+    let e1 = e1.apply_rules(ExprFold, &scalar_rules());
     println!("{}", e1.fmt_ast());
+
+    /*
+
+    let e1 = c.num(1);
+    let e2 = c.var("x");
+
+     */
 
     #[cfg(not(target_arch = "wasm32"))]
     c.to_dot_to_png("expr_context.png").unwrap()

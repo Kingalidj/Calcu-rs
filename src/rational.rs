@@ -10,7 +10,7 @@ use std::cmp::Ordering;
 use std::fmt::Formatter;
 use std::{fmt, ops};
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Rational(pub(crate) mal::Rational);
 
 impl Rational {

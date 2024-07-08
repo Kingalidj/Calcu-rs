@@ -67,7 +67,7 @@ fn u32_to_base52(mut num: u32) -> String {
     result.chars().rev().collect::<String>()
 }
 
-#[cfg(not(debug_assertions))]
+#[cfg(not(any(debug_assertions, test)))]
 mod symbol {
     use calcu_rs::utils::u32_to_base52;
     use std::{
@@ -107,6 +107,10 @@ mod symbol {
             Self(st::SymbolTable::new())
         }
 
+        pub(crate) const fn is_global() -> bool {
+            false
+        }
+
         pub fn insert(&self, s: impl AsRef<str>) -> Symbol {
             Symbol(self.0.intern(s.as_ref()))
         }
@@ -115,9 +119,9 @@ mod symbol {
         }
     }
 }
-/// Global symbols allocation are leaked, only use them for variables when debugging
+/// Global symbols allocation are leaked, only use them for variables when debugging and testing
 ///
-#[cfg(debug_assertions)]
+#[cfg(any(debug_assertions, test))]
 mod symbol {
     use std::{
         fmt::{Display, Formatter},
@@ -152,6 +156,10 @@ mod symbol {
     impl SymbolTable {
         pub fn new() -> Self {
             Self
+        }
+
+        pub(crate) const fn is_global() -> bool {
+            true
         }
 
         pub fn insert(&self, s: impl AsRef<str>) -> Symbol {

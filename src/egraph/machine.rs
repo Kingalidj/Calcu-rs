@@ -102,7 +102,6 @@ impl Machine {
         yield_fn: &mut impl FnMut(&Self, &Subst) -> Result,
     ) -> Result {
         let mut instructions = instructions.iter();
-        // todo: for_each?
         while let Some(instruction) = instructions.next() {
             match instruction {
                 // for each matching node in eclass at register i:
@@ -225,7 +224,7 @@ impl Compiler {
             match node {
                 ENodeOrVar::ENode(n) => {
                     size = 1;
-                    for &child in n.oprnd_ids() {
+                    for &child in n.ids() {
                         // add free vars of the children
                         free.extend(&self.free_vars[child.val()]);
                         size += self.subtree_size[child.val()];
@@ -334,7 +333,7 @@ impl Compiler {
                     out,
                 });
 
-                for (i, &child) in node.oprnd_ids().iter().enumerate() {
+                for (i, &child) in node.ids().iter().enumerate() {
                     self.add_todo(pattern, child, Reg(out.0 + i as u32));
                 }
             }

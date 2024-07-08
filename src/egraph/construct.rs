@@ -22,11 +22,11 @@ impl Construct for Node {
     }
 
     fn operands(&self) -> &[ID] {
-        self.oprnd_ids()
+        self.ids()
     }
 
     fn operands_mut(&mut self) -> &mut [ID] {
-        self.oprnd_ids_mut()
+        self.ids_mut()
     }
 }
 

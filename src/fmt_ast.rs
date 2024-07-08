@@ -374,6 +374,11 @@ impl<'a> ops::Mul for FmtAst<'a> {
                 lhs.0.extend(rhs.0);
                 FA::Prod(lhs)
             }
+            // r * e -> Coeff(r, e)
+            (FA::Atom(Atom::Rational(r)), e)
+            | (e, FA::Atom(Atom::Rational(r))) => {
+                e!(Coeff(r, e))
+            }
             // e1 * e2 * ... * f
             (FA::Prod(mut lhs), rhs) => {
                 lhs.0.push_back(rhs);
@@ -383,19 +388,6 @@ impl<'a> ops::Mul for FmtAst<'a> {
             (lhs, FA::Prod(mut rhs)) => {
                 rhs.0.push_front(lhs);
                 FA::Prod(rhs)
-            }
-            // r * e -> Coeff(r, e)
-            (FA::Atom(Atom::Rational(r)), e)
-            | (e, FA::Atom(Atom::Rational(r))) => {
-                match &e {
-                    FA::Atom(_)
-                    | FA::Frac(_)
-                    | FA::Pow(_)
-                    | FA::Sum(_)
-                    | FA::Prod(_)
-                    | FA::VarProd(_) => e!(Coeff(r, e)),
-                    _ => e!(Prod([FA::Atom(Atom::Rational(r)), e]))
-                }
             }
             (lhs, rhs) => e!(Prod([lhs, rhs])),
         }

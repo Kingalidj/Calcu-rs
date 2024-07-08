@@ -1,11 +1,15 @@
-use crate::egraph::{merge_option, Analysis, Construct, CostFunction, DidMerge, EGraph, Subst};
+use crate::egraph::{merge_option, Analysis, Construct, CostFunction, DidMerge, EGraph, Subst, ENodeOrVar, Pattern, PatternAst};
 use crate::*;
 use calcu_rs::egraph::RecExpr;
 use std::{
     fmt::{Display, Formatter},
     ops,
+    cmp::Ordering,
+    collections::BTreeMap
 };
-use malachite::num::arithmetic::traits::{CeilingLogBase, FloorLogBase2};
+use bitflags::bitflags;
+use indexmap::Equivalent;
+use malachite::num::arithmetic::traits::{CeilingLogBase, FloorLogBase, FloorLogBase2, Sign};
 
 trait RuleCondition<A: Analysis>: Fn(&mut EGraph<A>, ID, &Subst) -> bool {}
 impl<A: Analysis, F: Fn(&mut EGraph<A>, ID, &Subst) -> bool> RuleCondition<A> for F {}
@@ -24,21 +28,134 @@ fn not_undef(var: &str) -> impl RuleCondition<ExprFold> {
 }
 
 #[inline]
-fn not_trivial(var: &str) -> impl RuleCondition<ExprFold> {
-    let var = GlobalSymbol::from(var);
+fn not_trivial<const N: usize>(vars: [&'static str; N]) -> impl RuleCondition<ExprFold> {
     move |eg: &mut EGraph<ExprFold>, _, subst: &Subst| {
-        if let Some(fd) = &eg[subst[var]].data {
-            matches!(fd, FoldData::Undef)
-                || matches!(
-                    fd,
-                    FoldData::Monomial(Monomial {
-                        coeff: Rational::ZERO,
-                        ..
-                    })
-                )
-        } else {
-            false
+        for var in vars {
+            let var = GlobalSymbol::new(var);
+            if let Some(fd) = &eg[subst[var]].data {
+                match fd {
+                    FoldData::Undef => return false,
+                    FoldData::Monomial(m) => if m.coeff.is_zero() { return false },
+                }
+            }
         }
+        true
+    }
+}
+#[inline]
+fn not_const<const N: usize>(vars: [&'static str; N]) -> impl RuleCondition<ExprFold> {
+    move |eg: &mut EGraph<ExprFold>, _, subst: &Subst| {
+        for var in vars {
+            let var = GlobalSymbol::from(var);
+            if let Some(fd) = &eg[subst[var]].data {
+                match fd {
+                    FoldData::Undef => return false,
+                    FoldData::Monomial(m) => if m.is_const() { return false },
+                }
+            }
+        }
+        true
+    }
+}
+
+macro_rules! bit {
+    ($x:literal) => { 1 << $x };
+    ($x:ident) => { Cond::$x.bits() }
+}
+
+bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    struct Cond: u32 {
+        const Not           = bit!(1);
+
+        const Const         = bit!(2);
+        const Undef         = bit!(3) | bit!(Const);
+        const Zero          = bit!(4) | bit!(Const);
+        const One           = bit!(5) | bit!(Const);
+
+        const NonConst      = bit!(Not)| bit!(Const);
+        const NonTrivial    = bit!(Not) | bit!(Zero) | bit!(Undef);
+    }
+}
+impl Cond {
+    pub const fn is(&self, cond: Cond) -> bool {
+        let b = cond.bits();
+        (self.bits() & b) == b
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct VarCond {
+    var: &'static str,
+    cond: Cond,
+}
+
+impl From<(&'static str, Cond)> for VarCond {
+    fn from(value: (&'static str, Cond)) -> Self {
+        VarCond { var: value.0, cond: value.1 }
+    }
+}
+
+fn check_fold_data(c: Cond, fd: &FoldData) -> bool {
+    use FoldData as F;
+    let mut b = !c.is(Cond::Not);
+    let op = |b1, b2| {
+        if c.is(Cond::Not) {
+            b1 || b2
+        } else {
+            b1 && b2
+        }
+    };
+    if c.is(Cond::Const) {
+        b = op(b, match fd {
+            F::Undef => true,
+            F::Monomial(m) => m.is_const(),
+        })
+    };
+    if c.is(Cond::Undef) {
+        b = op(b, match fd {
+            F::Undef => true,
+            _ => false,
+        })
+    };
+    if c.is(Cond::Zero) {
+        b = op(b, match fd {
+            F::Monomial(m) if m.is_const() && m.coeff.is_zero() => true,
+            _ => false,
+        })
+    };
+    if c.is(Cond::One) {
+        b = op(b, match fd {
+            F::Monomial(m) if m.is_const() && m.coeff.is_one() => true,
+            _ => false,
+        })
+    };
+    if c.is(Cond::Not) {
+        b = !b;
+    }
+    b
+}
+
+fn check<const N: usize>(conds: [VarCond; N]) -> impl RuleCondition<ExprFold> {
+    move |eg: &mut EGraph<ExprFold>, _, subst: &Subst| {
+        for vc in conds {
+            let var = GlobalSymbol::from(vc.var);
+            if let Some(fd) = &eg[subst[var]].data {
+                if !check_fold_data(vc.cond, fd) {
+                    return false
+                }
+            }
+        }
+        true
+    }
+}
+
+macro_rules! cond {
+    (vc: $v: ident: $c:ident) => {
+        VarCond::from((concat!("?", stringify!($v)), Cond::$c))
+    };
+    ($v0:ident: $c0:ident $(, $v:ident: $c:ident)*) => {
+        check([cond!(vc: $v0: $c0) $(,cond!(vc: $v: $c))*])
     }
 }
 
@@ -46,20 +163,23 @@ define_rules!(scalar_rules:
     additive identity:              ?a + 0           -> ?a,
     commutative add:                ?a + ?b          -> ?b + ?a,
     associative add:                ?a + (?b + ?c)   -> (?a + ?b) + ?c,
-    additive inverse:               ?a + -1 * ?a     -> 0 if not_undef("?a"),
+    additive inverse:               ?a + -1 * ?a     -> 0,
 
     multiplicative identity:        ?a * 1           -> ?a,
-    multiplicative absorber:        ?a * 0           -> 0 if not_undef("?a"),
+    multiplicative absorber:        ?a * 0           -> 0,
     commutative mul:                ?a * ?b          -> ?b * ?a,
-    associative mul:                ?a * (?b * ?c)   -> (?a * ?b) * ?c,
-    multiplicative inverse:         ?a * ?a^-1       -> 1 if not_trivial("?a"),
+    associative mul:                ?a * (?b * ?c)   -> (?a * ?b) * ?c if not_const(["?a", "?b", "?c"]),
+    multiplicative inverse:         ?a * ?a^-1       -> 1 if not_const(["?a"]),
 
-    distributivity:                 ?a * (?b + ?c)  <-> ?a * ?b + ?a * ?c,
+    distributivity:                 ?a * (?b + ?c)  <-> ?a * ?b + ?a * ?c if not_const(["?a", "?b", "?c"]),
+    distributivity 2:               ?a + ?b * ?c     -> ?c * (?a * ?c^-1 + ?b) if not_trivial(["?a", "?b", "?c"]),
 
+    power identity:                 ?a^1             -> ?a,
     product of powers:              ?a^?b * ?a^?c   <-> ?a^(?b + ?c),
     power of product:               (?a * ?b)^?c    <-> ?a^?c * ?b^?c,
     power of power:                 (?a^?b)^?c      <-> ?a^(?b*?c),
     binomial theorem n=2:           (?a + ?b)^2     <-> ?a^2 + 2*?a*?b + ?b^2,
+    //binomial theorem n=2 2:         ?a^2 - ?b^2      -> (?a - ?b) * (?a + ?b),
 );
 
 #[derive(Debug)]
@@ -70,6 +190,21 @@ pub enum FoldData {
     Undef,
     Monomial(Monomial),
 }
+
+pub enum FoldData2 {
+    Unknown,
+
+    Undef,
+    Rational(Rational),
+    Var(Symbol),
+    //Polynomial(Polynomial),
+
+    // a + a
+    ECoeff(ID, Rational),
+    // a * a
+    EPow(ID, Rational),
+}
+
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PowProd {
@@ -310,9 +445,6 @@ impl Analysis for ExprFold {
             let lhs = x(lhs)?;
             let rhs = x(rhs)?;
             let res = op_fn(lhs, rhs);
-            if op_symbol != "^" {
-                return res;
-            }
             if let Some(res) = &res {
                 debug!("Analysis::make: [{lhs}] {op_symbol} [{rhs}] => {res}");
             } else {
@@ -366,6 +498,26 @@ pub struct ExprCost<'a> {
     pub egraph: &'a EGraph<ExprFold>,
 }
 
+fn is_sub(n: &Node, mut costs: impl FnMut(ID) -> (Node, u64)) -> Option<(ID, ID)> {
+    let (lhs, rhs) = if let Node::Add([lhs, rhs]) = n {
+        (lhs, rhs)
+    } else {
+        return None;
+    };
+
+    let (min_one, rhs) = if let Node::Mul([min_one, rhs]) = costs(*rhs).0 {
+        (min_one, rhs)
+    } else {
+        return None;
+    };
+
+    if let Node::Rational(Rational::MINUS_ONE) = costs(min_one).0 {
+        Some((*lhs, rhs))
+    } else {
+        None
+    }
+}
+
 impl CostFunction for ExprCost<'_> {
     type Cost = u64;
 
@@ -373,41 +525,40 @@ impl CostFunction for ExprCost<'_> {
     where
         C: FnMut(ID) -> (Self::Cost, Node),
     {
-        let base_cost = match enode {
-            Node::Undef => 1,
-            Node::Var(_) | Node::Rational(_) => 1,
+        use Node as N;
+        match enode {
+            N::Undef | N::Var(_) | N::Rational(_) => 1,
 
-            Node::Add([lhs, rhs]) => {
-                let lhs = costs(*lhs).1;
-                let rhs = costs(*rhs).1;
-                if lhs == rhs {
-                    4
-                } else {
-                    2
+            N::Add([lhs, rhs]) => {
+                let (lc, l) = costs(*lhs);
+                let (rc, r) = costs(*rhs);
+                match (l, r) {
+                    (N::Rational(Rational::ZERO), _) | (_, N::Rational(Rational::ZERO)) => lc + rc + 3,
+                    (l, r) if l == r => (lc + rc + 1) * 2,
+                    _ => lc + rc + 1,
                 }
             },
-            Node::Mul([lhs, rhs]) => {
-                let lhs = costs(*lhs).1;
-                let rhs = costs(*rhs).1;
-                if lhs == rhs {
-                    6
-                } else {
-                    3
+            N::Mul([lhs, rhs]) => {
+                let (lc, l) = costs(*lhs);
+                let (rc, r) = costs(*rhs);
+                match (l, r) {
+                    (N::Rational(Rational::ONE), _) | (_, N::Rational(Rational::ONE)) => lc + rc + 3,
+                    (N::Rational(Rational::MINUS_ONE), _)
+                    | (_, N::Rational(Rational::MINUS_ONE)) => lc + rc + 2, // cost(a + -1*b) = cost(a + b) + 1
+                    (l, r) if l == r => (lc + rc + 2) * 2,
+                    _ => lc + rc + 2,
                 }
             },
-            Node::Pow([lhs, rhs]) => {
-                //let lhs = costs(*lhs).1;
-                let rhs = costs(*rhs).1;
-                if let Node::Rational(_) = rhs {
-                    2
-                } else if let Node::Pow(_) = rhs {
-                    8
-                } else {
-                    4
+            N::Pow([lhs, rhs]) => {
+                let (lc, l) = costs(*lhs);
+                let (rc, r) = costs(*rhs);
+                match (l, r) {
+                    (_, N::Rational(_)) => lc + rc + 1, // == cost(a * b) - 1
+                    (_, N::Mul(_)) => lc + rc,
+                    _ => lc + rc + 3
                 }
             },
-        };
-        enode.fold(base_cost, |sum, i| sum.saturating_add(costs(i).0))
+        }
     }
 }
 
@@ -476,6 +627,7 @@ mod test_rules {
         r!(e!(c: x * x), e!(c: x ^ 2));
 
         r!(e!(c: 0 ^ 0), e!(c: undef));
+        r!(e!(c: undef * 0), e!(c: undef));
         r!(e!(c: 0 ^ 1), e!(c: 0));
         r!(e!(c: 0 ^ 314), e!(c: 0));
         r!(e!(c: 1 ^ 0), e!(c: 1));
@@ -489,5 +641,7 @@ mod test_rules {
         r!(e!(c: a - b), e!(c: a + (-1 * b)));
         r!(e!(c: a / b), e!(c: a * b ^ -1));
         r!(e!(c: -a -b), e!(c: -(a + b)));
+        r!(e!(c: a^b^c), e!(c: a^(b*c)));
+        r!(e!(c: ((1/(y+7) - (1 / y)))/(1/y)), e!(c: -7/(y+7)));
     }
 }

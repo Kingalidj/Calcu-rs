@@ -189,7 +189,7 @@ impl<A: Analysis> EGraph<A> {
             let mut did_something = false;
 
             for (enode, id) in &enodes {
-                let valid = enode.oprnd_ids().iter().all(|c| ids.contains_key(c));
+                let valid = enode.ids().iter().all(|c| ids.contains_key(c));
                 if !valid {
                     continue;
                 }
@@ -258,8 +258,8 @@ impl<A: Analysis> EGraph<A> {
         for node1 in &self.classes[&class1].nodes {
             for node2 in &other.classes[&class2].nodes {
                 if node1.matches(node2) {
-                    let children1 = node1.oprnd_ids();
-                    let children2 = node2.oprnd_ids();
+                    let children1 = node1.ids();
+                    let children2 = node2.ids();
                     let mut new_node = node1.clone();
                     let children = new_node.operands_mut();
                     for (i, (child1, child2)) in children1.iter().zip(children2.iter()).enumerate()

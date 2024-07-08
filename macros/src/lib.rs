@@ -416,58 +416,33 @@ fn to_pat_stream(e: &Expr) -> parse::Result<TokenStream> {
 }
 
 fn to_expr_stream(e: &Expr, cntxt: &Ident) -> parse::Result<TokenStream> {
-    let n = gen_expr_stream(e, cntxt)?;
-    Ok(quote!({
-        let root_id = #n;
-        #cntxt.make_expr_id(root_id)
-    }))
+    gen_expr_stream(e, cntxt)
 }
 
-fn gen_expr_stream(e: &Expr, cntxt: &Ident) -> parse::Result<TokenStream> {
-    let node =
-        match e {
-            Expr::Num(n) => quote!(Node::Rational(Rational::from(#n))),
-            Expr::Symbol(s) => quote!(#cntxt.var(#s)),
-            Expr::Undef => quote!(Node::Undef),
-            Expr::Binary(op, lhs, rhs) => {
-                let lhs = gen_expr_stream(lhs, cntxt)?;
-                let rhs = gen_expr_stream(rhs, cntxt)?;
-                let op = op_to_expr_stream(*op, cntxt);
-                quote!{{
-                    let lhs = #lhs;
-                    let rhs = #rhs;
-                    #op
-                }}
-            },
-            Expr::PlaceHolder(var) => {
-                return Err(parse::Error::new(Span::call_site(), "placeholder not allowed in expressions, only in patterns"));
-            },
-            _ => todo!()
-        };
-
-    Ok(quote! {{
-        let n = #node;
-        #cntxt.insert(n)
-    }})
-}
-
-fn op_to_expr_stream(op: OpKind, cntxt: &Ident) -> TokenStream {
-    match op {
-        OpKind::Add => quote!(Node::Add([lhs, rhs])),
-        OpKind::Mul => quote!(Node::Mul([lhs, rhs])),
-        OpKind::Pow => quote!(Node::Pow([lhs, rhs])),
-
-        OpKind::Sub => quote! {{
-            let minus_one = #cntxt.insert(Node::Rational(Rational::from(-1)));
-            let minus_rhs = #cntxt.insert(Node::Mul([minus_one, rhs]));
-            Node::Add([lhs, minus_rhs])
-        }},
-        OpKind::Div => quote! {{
-            let minus_one = #cntxt.insert(Node::Rational(Rational::from(-1)));
-            let inv_rhs = #cntxt.insert(Node::Pow([rhs, minus_one]));
-            Node::Mul([lhs, inv_rhs])
-        }},
-    }
+fn gen_expr_stream(e: &Expr, c: &Ident) -> parse::Result<TokenStream> {
+    use Expr as E;
+    use OpKind as OK;
+    Ok(match e {
+        E::Num(n) => quote!(#c.rational(Rational::from(#n))),
+        E::Symbol(s) => quote!(#c.var(#s)),
+        E::Undef => quote!(#c.undef()),
+        E::Binary(op, lhs, rhs) => {
+            let lhs = gen_expr_stream(lhs, c)?;
+            let rhs = gen_expr_stream(rhs, c)?;
+            let op = match op {
+                OK::Add => quote!(add),
+                OK::Sub => quote!(sub),
+                OK::Mul => quote!(mul),
+                OK::Div => quote!(div),
+                OK::Pow => quote!(pow),
+            };
+            quote! { #c.#op(#lhs, #rhs)}
+        },
+        E::PlaceHolder(_) => {
+            return Err(parse::Error::new(Span::call_site(), "placeholder not allowed in expressions, only in patterns"));
+        },
+        _ => todo!()
+    })
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -1285,9 +1285,9 @@ impl<'x> ExplainNodes<'x> {
                 let mut subproofs = vec![];
 
                 for (left_child, right_child) in current_node
-                    .oprnd_ids()
+                    .ids()
                     .iter()
-                    .zip(next_node.oprnd_ids().iter())
+                    .zip(next_node.ids().iter())
                 {
                     subproofs.push(self.explain_enodes(
                         *left_child,
@@ -1419,9 +1419,9 @@ impl<'x> ExplainNodes<'x> {
         let next_node = self.node(next).clone();
         let mut cost: ProofCost = BigUint::zero();
         for (left_child, right_child) in current_node
-            .oprnd_ids()
+            .ids()
             .iter()
-            .zip(next_node.oprnd_ids().iter())
+            .zip(next_node.ids().iter())
         {
             cost += self.distance_between(*left_child, *right_child, distance_memo);
         }
@@ -1698,9 +1698,9 @@ impl<'x> ExplainNodes<'x> {
                     let current_node = self.node(current).clone();
                     let next_node = self.node(next).clone();
                     for (left_child, right_child) in current_node
-                        .oprnd_ids()
+                        .ids()
                         .iter()
-                        .zip(next_node.oprnd_ids().iter())
+                        .zip(next_node.ids().iter())
                     {
                         todo_congruence.push_back((*left_child, *right_child));
                     }
@@ -1762,9 +1762,9 @@ impl<'x> ExplainNodes<'x> {
             for other in others {
                 for (left, right) in self
                     .node(*start)
-                    .oprnd_ids()
+                    .ids()
                     .iter()
-                    .zip(self.node(*other).oprnd_ids().iter())
+                    .zip(self.node(*other).ids().iter())
                 {
                     if left != right {
                         if common_ancestor_queries.get(start).is_none() {
