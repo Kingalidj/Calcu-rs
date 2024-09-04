@@ -1,4 +1,10 @@
-use fmt::{Debug, Display};
+use std::{
+    cmp::Ordering,
+    fmt::{self, Debug, Display, Formatter},
+    ops,
+};
+
+use ref_cast::RefCast;
 use malachite::{
     self as mal,
     num::{
@@ -6,9 +12,178 @@ use malachite::{
         conversion::traits::IsInteger,
     },
 };
-use std::cmp::Ordering;
-use std::fmt::Formatter;
-use std::{fmt, ops};
+
+#[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, RefCast)]
+#[repr(transparent)]
+pub struct UInt(mal::Natural);
+
+impl UInt {
+    pub const ZERO: UInt = UInt(mal::Natural::const_from(0));
+    pub const ONE: UInt = UInt(mal::Natural::const_from(1));
+    pub const TWO: UInt = UInt(mal::Natural::const_from(2));
+
+    pub fn binomial_coeff(n: &UInt, k: &UInt) -> UInt {
+        Self(mal::num::arithmetic::traits::BinomialCoefficient::binomial_coefficient(&n.0, &k.0))
+    }
+
+    pub fn range_inclusive(start: Self, stop: Self) -> num::iter::RangeInclusive<UInt> {
+        num::iter::range_inclusive(start, stop)
+    }
+
+    pub fn is_one(&self) -> bool {
+        self == &UInt::ONE
+    }
+
+    pub fn is_zero(&self) -> bool {
+        self == &UInt::ZERO
+    }
+}
+
+impl fmt::Debug for UInt {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+impl fmt::Display for UInt {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl num::One for UInt {
+    fn one() -> Self {
+        UInt::ONE
+    }
+}
+
+impl num::ToPrimitive for UInt {
+    fn to_i64(&self) -> Option<i64> {
+        i64::try_from(&self.0).ok()
+    }
+
+    fn to_u64(&self) -> Option<u64> {
+        u64::try_from(&self.0).ok()
+    }
+
+    fn to_u128(&self) -> Option<u128> {
+        u128::try_from(&self.0).ok()
+    }
+
+    fn to_i128(&self) -> Option<i128> {
+        i128::try_from(&self.0).ok()
+    }
+}
+
+impl TryFrom<Rational> for UInt {
+    type Error = ();
+    fn try_from(value: Rational) -> Result<Self, Self::Error> {
+        if value.is_int() {
+            Ok(value.numer().clone())
+        } else {
+            Err(())
+        }
+    }
+}
+impl From<UInt> for Rational {
+    fn from(value: UInt) -> Self {
+        Rational::from(value.0)
+    }
+}
+impl From<u64> for UInt {
+    fn from(value: u64) -> Self {
+        Self(mal::Natural::from(value))
+    }
+}
+
+impl ops::Add for UInt {
+    type Output = UInt;
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+impl ops::AddAssign for UInt {
+    fn add_assign(&mut self, rhs: Self) {
+        self.0 = self.0.clone() + rhs.0;
+    }
+}
+impl ops::AddAssign<&UInt> for UInt {
+    fn add_assign(&mut self, rhs: &Self) {
+        self.0 = self.0.clone() + &rhs.0;
+    }
+}
+impl ops::Add<&UInt> for UInt {
+    type Output = UInt;
+    fn add(self, rhs: &Self) -> Self::Output {
+        Self(self.0 + &rhs.0)
+    }
+}
+impl ops::Sub for UInt {
+    type Output = UInt;
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self(self.0 - rhs.0)
+    }
+}
+impl ops::SubAssign for UInt {
+    fn sub_assign(&mut self, rhs: Self) {
+        self.0 = self.0.clone() - rhs.0;
+    }
+}
+impl ops::SubAssign<&UInt> for UInt {
+    fn sub_assign(&mut self, rhs: &Self) {
+        self.0 = self.0.clone() - &rhs.0;
+    }
+}
+impl ops::Sub<&UInt> for UInt {
+    type Output = UInt;
+    fn sub(self, rhs: &Self) -> Self::Output {
+        Self(self.0 - &rhs.0)
+    }
+}
+impl ops::Mul for UInt {
+    type Output = UInt;
+    fn mul(self, rhs: Self) -> Self::Output {
+        Self(self.0 * rhs.0)
+    }
+}
+impl ops::MulAssign for UInt {
+    fn mul_assign(&mut self, rhs: Self) {
+        self.0 = self.0.clone() * rhs.0;
+    }
+}
+impl ops::MulAssign<&UInt> for UInt {
+    fn mul_assign(&mut self, rhs: &Self) {
+        self.0 = self.0.clone() * &rhs.0;
+    }
+}
+impl ops::Mul<&UInt> for UInt {
+    type Output = UInt;
+    fn mul(self, rhs: &Self) -> Self::Output {
+        Self(self.0 * &rhs.0)
+    }
+}
+impl ops::Div for UInt {
+    type Output = UInt;
+    fn div(self, rhs: Self) -> Self::Output {
+        Self(self.0 / rhs.0)
+    }
+}
+impl ops::Div<&UInt> for UInt {
+    type Output = UInt;
+    fn div(self, rhs: &Self) -> Self::Output {
+        Self(self.0 / &rhs.0)
+    }
+}
+impl ops::DivAssign for UInt {
+    fn div_assign(&mut self, rhs: Self) {
+        self.0 = self.0.clone() / rhs.0;
+    }
+}
+impl ops::DivAssign<&UInt> for UInt {
+    fn div_assign(&mut self, rhs: &Self) {
+        self.0 = self.0.clone() / &rhs.0;
+    }
+}
+
 
 #[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Rational(pub(crate) mal::Rational);
@@ -24,12 +199,12 @@ impl Rational {
         Rational(mal::Rational::const_from_signed(n))
     }
 
-    pub fn numer(&self) -> &mal::Natural {
-        self.0.numerator_ref()
+    pub fn numer(&self) -> &UInt {
+        UInt::ref_cast(self.0.numerator_ref())
     }
 
-    pub fn denom(&self) -> &mal::Natural {
-        self.0.numerator_ref()
+    pub fn denom(&self) -> &UInt {
+        UInt::ref_cast(self.0.numerator_ref())
     }
 
     #[inline(always)]
@@ -51,16 +226,6 @@ impl Rational {
     #[inline(always)]
     pub fn is_int(&self) -> bool {
         self.0.is_integer()
-    }
-
-    #[inline(always)]
-    pub fn try_into_int(&self) -> Option<i64> {
-        if self.is_int() {
-            let n = self.0.numerator_ref().clone();
-            i64::try_from(&n).ok()
-        } else {
-            None
-        }
     }
 
     /// none if [self] is zero
@@ -259,6 +424,11 @@ impl ops::Div<&Rational> for Rational {
     }
 }
 
+impl From<u128> for Rational {
+    fn from(value: u128) -> Self {
+        Self(mal::Rational::from(value))
+    }
+}
 impl From<i64> for Rational {
     fn from(value: i64) -> Self {
         Self(mal::Rational::from(value))
@@ -266,6 +436,11 @@ impl From<i64> for Rational {
 }
 impl From<i32> for Rational {
     fn from(value: i32) -> Self {
+        Self(mal::Rational::from(value))
+    }
+}
+impl From<mal::Natural> for Rational {
+    fn from(value: mal::Natural) -> Self {
         Self(mal::Rational::from(value))
     }
 }

@@ -1,314 +1,569 @@
-use std::{
-    collections::BTreeMap,
-    ops
+use crate::{
+    expr::{Atom, Expr, Prod, Sum},
+    rational::{Rational, UInt},
+    utils::HashMap,
 };
-use std::fmt::{Debug};
-use crate::*;
 
-type Exponent = Rational;
-type Coefficient = Rational;
+type GVar = Expr;
+type Coeff = Expr;
+type Degree = UInt;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum GME {
-    Var(Symbol),
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
+pub struct VarSet {
+    vars: Vec<GVar>,
 }
 
-/*
-#[derive(Clone, PartialOrd, Ord)]
-pub struct PowerProd {
-    /// [Symbol]^[Rational] (assumption: symbol is non zero)
-    pub(crate) prod: BTreeMap<Symbol, Rational>,
+impl VarSet {
+    pub fn new<'a, I: IntoIterator<Item = &'a GVar>>(vars: I) -> Self {
+        let vars = vars.into_iter().cloned().collect();
+        Self { vars }
+    }
+
+    pub fn has(&self, v: &GVar) -> bool {
+        self.vars.contains(v)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &GVar> {
+        self.vars.iter()
+    }
 }
-impl Debug for PowerProd {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if self.prod.is_empty() {
-            return write!(f, "1");
+
+impl<I: IntoIterator<Item = GVar>> From<I> for VarSet {
+    fn from(value: I) -> Self {
+        let vars = value.into_iter().collect();
+        Self { vars }
+    }
+}
+impl From<GVar> for VarSet {
+    fn from(value: GVar) -> Self {
+        let vars = vec![value];
+        Self { vars }
+    }
+}
+
+/// represents the variable part of a term in a polynomial
+///
+/// e.g: x^3y^2 in a*b*x^3y^2
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
+pub struct VarPow {
+    var_deg: Vec<(GVar, Degree)>,
+}
+
+impl PartialOrd for VarPow {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for VarPow {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.total_deg().cmp(&other.total_deg())
+    }
+}
+
+impl VarPow {
+    pub fn degree_of(&self, v: &GVar) -> Option<&Degree> {
+        self.find(v)
+    }
+
+    pub fn is_const(&self) -> bool {
+        self.var_deg.is_empty()
+    }
+
+    pub fn total_deg(&self) -> Degree {
+        self.var_deg
+            .iter()
+            .map(|(_, d)| d)
+            .fold(UInt::ZERO, |sum, d| sum + d)
+    }
+
+    fn find(&self, v: &GVar) -> Option<&Degree> {
+        self.var_deg
+            .iter()
+            .find_map(|(var, d)| if var == v { Some(d) } else { None })
+    }
+
+    fn find_mut(&mut self, v: &GVar) -> Option<&mut Degree> {
+        self.var_deg
+            .iter_mut()
+            .find_map(|(var, d)| if var == v { Some(d) } else { None })
+    }
+
+    fn to_expr(self) -> Expr {
+        self.var_deg
+            .into_iter()
+            .map(|(v, d)| Expr::pow(v, Expr::from(d)))
+            .fold(Expr::one(), |prod, var| prod * var)
+    }
+
+    fn mul(&mut self, v: GVar, d: Degree) {
+        if let Some(degree) = self.find_mut(&v) {
+            *degree += d;
+        } else {
+            self.var_deg.push((v, d))
         }
-        self.prod.iter().try_for_each(|(s, r)| {
-            write!(f, "{s}^{r}")
-        })
     }
-}
-impl<const N: usize> From<[(Symbol, Rational); N]> for PowerProd {
-    fn from(arr: [(Symbol, Rational); N]) -> Self {
-        Self { prod: arr.into() }
-    }
-}
-impl From<Symbol> for PowerProd {
-    fn from(sym: Symbol) -> Self {
-        PowerProd::from([(sym, Rational::ONE)])
-    }
-}
-impl Eq for PowerProd {}
-impl PartialEq for PowerProd {
-    fn eq(&self, other: &Self) -> bool {
-        self.vars().eq(other.vars())
-    }
-}
-impl PowerProd {
-    fn mul_var(&mut self, var: Symbol, exp: Rational) {
-        if exp.is_zero() {
-            return;
+
+    fn merge(&mut self, mut other: Self) {
+        if self.var_deg.len() < other.var_deg.len() {
+            std::mem::swap(&mut self.var_deg, &mut other.var_deg);
         }
-        self.prod
-            .entry(var)
-            .and_modify(|e| *e += exp.clone())
-            .or_insert(exp);
-    }
-
-    fn vars(&self) -> impl Iterator<Item = (&Symbol, &Rational)> {
-        self.prod.iter().filter(|(_, r)| !r.is_zero())
+        other.var_deg.into_iter().for_each(|(v, d)| self.mul(v, d));
     }
 }
-impl ops::Mul for PowerProd {
-    type Output = PowerProd;
 
-    fn mul(mut self, mut rhs: Self) -> Self::Output {
-        if self.prod.len() < rhs.prod.len() {
-            std::mem::swap(&mut self, &mut rhs);
+impl<I: IntoIterator<Item = (GVar, Degree)>> From<I> for VarPow {
+    fn from(value: I) -> Self {
+        let mut res = VarPow::default();
+        value.into_iter().for_each(|(v, d)| res.mul(v, d));
+        res
+    }
+}
+
+/// general polynomial expression (GPE), store elements of a sum as a coeff and var pair.
+///
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
+pub struct GPE {
+    terms: Vec<(Coeff, VarPow)>,
+}
+
+impl GPE {
+    pub fn find_mut(&mut self, vp: &VarPow) -> Option<&mut Coeff> {
+        self.terms
+            .iter_mut()
+            .find_map(|(c, vp2)| if vp2 == vp { Some(c) } else { None })
+    }
+
+    pub fn sort_by_degree(&mut self) {
+        self.terms.sort_unstable_by(|(_, vp1,), (_, vp2)| vp1.cmp(vp2).reverse())
+    }
+
+    pub fn add(&mut self, c: Coeff, vp: VarPow) {
+        if let Some(coeff) = self.find_mut(&vp) {
+            *coeff += c;
+        } else {
+            self.terms.push((c, vp));
         }
-        rhs.prod.into_iter().for_each(|(v, e)| {
-            self.mul_var(v, e);
-        });
-        self
     }
-}
-impl ops::Add for PowerProd {
-    type Output = Polynomial;
 
-    fn add(self, rhs: Self) -> Self::Output {
-        Polynomial::from(self) + Polynomial::from(rhs)
+    pub fn to_expr(mut self) -> Expr {
+        self.sort_by_degree();
+        self.terms.into_iter().map(|(c, vp)| c * vp.to_expr()).fold(Expr::zero(), |sum, term| sum + term)
     }
 }
-impl ops::Add<Rational> for PowerProd {
-    type Output = Polynomial;
 
-    fn add(self, rhs: Rational) -> Self::Output {
-        let mut p = Polynomial::from(self);
-        p.coeff = rhs;
-        p
-    }
+/// View the expression as a monomial in one or multiple generalized variables
+///
+pub struct MonomialView<'a> {
+    monom: &'a Expr,
+    vars: &'a VarSet, //&'a HashSet<&'a GVar>,
 }
-impl ops::Sub for PowerProd {
-    type Output = Polynomial;
 
-    fn sub(self, rhs: Self) -> Self::Output {
-        Polynomial::from(self) - Polynomial::from(rhs)
+impl<'a> MonomialView<'a> {
+    pub fn new(monom: &'a Expr, vars: &'a VarSet) -> Self {
+        Self { monom, vars }
     }
-}
-impl ops::Mul<Rational> for PowerProd {
-    type Output = Polynomial;
 
-    fn mul(self, rhs: Rational) -> Self::Output {
-        Polynomial::new(Rational::ONE, [(self, rhs)])
-    }
-}
-impl Pow<Rational> for PowerProd {
-    type Output = Self;
-
-    fn pow(mut self, rhs: Rational) -> Self::Output {
-        self.prod.iter_mut().for_each(|(v, r)| {
-            *r *= rhs.clone();
-        });
-        self
-    }
-}
-#[derive(Default, Clone, PartialOrd, Ord)]
-pub struct Polynomial {
-    coeff: Rational,
-    /// [Rational] * [PowerProd]
-    sum: BTreeMap<PowerProd, Rational>,
-}
-impl Debug for Polynomial {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.coeff)?;
-        if self.sum.is_empty() {
-            return Ok(());
+    pub fn check(&self) -> bool {
+        use Atom as A;
+        if self.vars.has(self.monom) {
+            return true;
         }
-        self.sum.iter().try_for_each(|(m, c)| {
-            write!(f, " + {c}{:?}", m)
-        })
-    }
-}
-impl Eq for Polynomial {}
-impl PartialEq for Polynomial {
-    fn eq(&self, other: &Self) -> bool {
-        self.coeff == other.coeff && self.monoms().eq(other.monoms())
-    }
-}
-impl From<Rational> for Polynomial {
-    fn from(coeff: Rational) -> Self {
-        Self { coeff, sum: Default::default() }
-    }
-}
-impl From<PowerProd> for Polynomial {
-    fn from(m: PowerProd) -> Self {
-        Self { coeff: Rational::ZERO, sum: [(m, Rational::ONE)].into() }
-    }
-}
-impl Polynomial {
-    pub fn new<const N: usize>(coeff: Rational, sum: [(PowerProd, Rational); N]) -> Self {
-        Self { coeff, sum: sum.into() }
-    }
 
-    pub fn monoms(&self) -> impl Iterator<Item = (&PowerProd, &Rational)> {
-        self.sum.iter().filter(|(_, r)| !r.is_zero())
-    }
-    pub fn into_monoms(self) -> impl Iterator<Item = (PowerProd, Rational)> {
-        self.sum.into_iter().filter(|(_, r)| !r.is_zero())
-    }
-
-    pub fn add_monom(&mut self, m: PowerProd, coeff: Rational) {
-        if coeff.is_zero() {
-            return
-        }
-        self.sum.entry(m)
-            .and_modify(|c| *c += coeff.clone())
-            .or_insert(coeff);
-    }
-    pub fn sub_monom(&mut self, m: PowerProd, coeff: Rational) {
-        self.add_monom(m, coeff * Rational::MINUS_ONE)
-    }
-}
-impl ops::Add for Polynomial {
-    type Output = Polynomial;
-
-    fn add(mut self, rhs: Self) -> Self::Output {
-        self += rhs;
-        self
-    }
-}
-impl ops::AddAssign for Polynomial {
-    fn add_assign(&mut self, rhs: Self) {
-        self.coeff += rhs.coeff;
-        rhs.sum.into_iter().for_each(|(m, c)| {
-            self.add_monom(m, c)
-        });
-    }
-}
-impl ops::Add<Rational> for Polynomial {
-    type Output = Polynomial;
-
-    fn add(mut self, rhs: Rational) -> Self::Output {
-        self.coeff += rhs;
-        self
-    }
-}
-impl ops::Add<PowerProd> for Polynomial {
-    type Output = Polynomial;
-
-    fn add(mut self, rhs: PowerProd) -> Self::Output {
-        self.sum.entry(rhs).and_modify(|e| *e += Rational::ONE)
-            .or_insert(Rational::ONE);
-        self
-    }
-}
-impl ops::Sub for Polynomial {
-    type Output = Polynomial;
-
-    fn sub(mut self, rhs: Self) -> Self::Output {
-        self.coeff -= rhs.coeff;
-        rhs.sum.into_iter().for_each(|(m, c)| {
-            self.sub_monom(m, c)
-        });
-        self
-    }
-}
-impl ops::Mul<Rational> for Polynomial {
-    type Output = Polynomial;
-
-    fn mul(mut self, rhs: Rational) -> Self::Output {
-        self *= rhs;
-        self
-    }
-}
-impl ops::MulAssign<Rational> for Polynomial {
-    fn mul_assign(&mut self, rhs: Rational) {
-        self.coeff *= rhs.clone();
-        self.sum.iter_mut().for_each(|(_, r)| {
-            *r *= rhs.clone()
-        });
-    }
-}
-impl ops::Mul<PowerProd> for Polynomial {
-    type Output = Polynomial;
-
-    fn mul(mut self, rhs: PowerProd) -> Self::Output {
-        self *= rhs;
-        self
-    }
-}
-impl ops::MulAssign<PowerProd> for Polynomial {
-    fn mul_assign(&mut self, rhs: PowerProd) {
-        let mut c = Rational::ZERO;
-        std::mem::swap(&mut c, &mut self.coeff);
-        self.sum = self.sum.clone().into_iter().filter(|(_, r)| !r.is_zero()).map(|(v, r)| {
-            (v * rhs.clone(), r)
-        }).collect();
-        self.add_monom(rhs, c);
-    }
-}
-
-impl ops::Mul for Polynomial {
-    type Output = Polynomial;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        let mut result = Polynomial::from(self.coeff.clone() * rhs.coeff.clone());
-
-        for (m1, c1) in self.sum.into_iter() {
-            for (m2, c2) in rhs.sum.iter() {
-                result.add_monom(m1.clone() * m2.clone(), c1.clone() * c2.clone());
+        match self.monom.get() {
+            A::Undef => return false,
+            A::Rational(_) | A::Var(_) | A::Sum(_) => (),
+            A::Prod(Prod { args }) => {
+                for a in args {
+                    if !a.as_monomial(self.vars).check() {
+                        return false;
+                    }
+                }
+                return true;
             }
-            result.add_monom(m1, c1 * rhs.coeff.clone());
+            A::Pow(pow) => match (pow.base(), pow.exponent().get()) {
+                (base, A::Rational(r))
+                    if self.vars.has(base) && r.is_int() && r >= &Rational::ONE =>
+                {
+                    return true;
+                }
+                _ => (),
+            },
+        }
+        self.monom.free_of_set(self.vars.iter())
+    }
+
+    pub fn degree(&self) -> Option<Degree> {
+        self.coeff().map(|(_, d)| d.total_deg())
+    }
+
+    pub fn coeff(&self) -> Option<(Coeff, VarPow)> {
+        use Atom as A;
+        if self.monom.is_undef() {
+            return None;
+        }
+        if self.vars.has(self.monom) {
+            let v = self.monom;
+            return Some((Expr::one(), [(v.clone(), UInt::ONE)].into()));
         }
 
-        for (m2, c2) in rhs.sum.into_iter() {
-            result.add_monom(m2, c2 * self.coeff.clone());
+        match self.monom.get() {
+            A::Prod(Prod { args }) => {
+                let mut coeff = Expr::one();
+                let mut degree = VarPow::default();
+                for a in args {
+                    let (c, d) = a.as_monomial(self.vars).coeff()?;
+                    coeff *= c;
+                    degree.merge(d)
+                }
+                return Some((coeff, degree));
+            }
+            A::Pow(pow) => {
+                if let A::Rational(r) = pow.exponent().get() {
+                    if self.vars.has(pow.base()) && r.is_int() && r >= &Rational::ONE {
+                        let v = pow.base();
+                        return Some((Expr::one(), [(v.clone(), r.numer().clone())].into()));
+                    }
+                }
+            }
+            _ => (),
         }
 
-        result
+        if self.monom.free_of_set(self.vars.iter()) {
+            Some((self.monom.clone(), Default::default()))
+        } else {
+            None
+        }
+    }
+
+    pub fn degree_of(&self, v: &Expr) -> Option<Degree> {
+        self.coeff()
+            .and_then(|(_, degs)| degs.degree_of(v).cloned())
+    }
+}
+
+/// View the expression as a polynomial in one or multiple generalized variables
+///
+pub struct PolynomialView<'a> {
+    poly: &'a Expr,
+    vars: &'a VarSet,
+}
+
+impl<'a> PolynomialView<'a> {
+    pub fn new(poly: &'a Expr, vars: &'a VarSet) -> Self {
+        Self { poly, vars }
+    }
+
+    pub fn check(&self) -> bool {
+        use Atom as A;
+        if let A::Sum(Sum { args }) = self.poly.get() {
+            if self.vars.has(self.poly) {
+                return true;
+            }
+
+            for a in args {
+                if !a.as_monomial(self.vars).check() {
+                    return false;
+                }
+            }
+            true
+        } else {
+            self.poly.as_monomial(self.vars).check()
+        }
+    }
+
+    pub fn degree(&self) -> Option<UInt> {
+        self.coeffs()
+            .into_iter()
+            .map(|(d, _)| d.total_deg())
+            .reduce(|max, d| std::cmp::max(max, d))
+    }
+
+    pub fn degree_of(&self, v: &GVar) -> Option<UInt> {
+        self.coeffs()
+            .into_iter()
+            .filter_map(|(d, _)| d.degree_of(v).cloned())
+            .reduce(|max, d| std::cmp::max(max, d))
+    }
+
+    pub fn coeffs_of_deg(&self, v: &GVar, deg: &Degree) -> Option<Coeff> {
+        self.coeffs_of(v).remove(deg)
+    }
+
+    pub fn coeffs_of(&self, v: &GVar) -> HashMap<Degree, Coeff> {
+        let coeff = self.coeffs().into_iter().filter_map(|(d, c)| {
+            if let Some(d) = d.degree_of(v) {
+                Some((d.clone(), c))
+            } else if d.is_const() {
+                Some((UInt::ZERO, c))
+            } else {
+                None
+            }
+        });
+
+        let mut res = HashMap::default();
+
+        for (d, c) in coeff {
+            res.entry(d).and_modify(|coeff| *coeff += &c).or_insert(c);
+        }
+
+        res
+    }
+
+    pub fn coeffs(&self) -> HashMap<VarPow, Coeff> {
+        use Atom as A;
+        let mut coeffs = HashMap::default();
+        if self.poly.is_undef() {
+            return coeffs;
+        }
+
+        if let A::Sum(Sum { args }) = self.poly.get() {
+            if self.vars.has(self.poly) {
+                let v = self.poly;
+                coeffs.insert([(v.clone(), UInt::ZERO)].into(), Expr::one());
+                return coeffs;
+            }
+
+            for a in args {
+                match a.as_monomial(self.vars).coeff() {
+                    Some((c, d)) => {
+                        coeffs
+                            .entry(d)
+                            .and_modify(|coeff| *coeff += &c)
+                            .or_insert(c);
+                    }
+                    None => return Default::default(),
+                }
+            }
+            //coeffs.iter_mut().for_each(|(_, c)| *c = c.reduce());
+            coeffs
+        } else {
+            if let Some((c, d)) = self.poly.as_monomial(self.vars).coeff() {
+                coeffs.insert(d, c);
+            }
+            coeffs
+        }
+    }
+
+    pub fn leading_coeff_of(&self, v: &GVar) -> Option<Coeff> {
+        self.coeffs_of(v)
+            .into_iter()
+            .max_by(|a, b| a.0.cmp(&b.0))
+            .map(|(_, coeff)| coeff)
+    }
+
+    pub fn collect_terms(&self) -> Option<Expr> {
+        use Atom as A;
+        let sum = if let A::Sum(sum) = self.poly.get() {
+            sum
+        } else {
+            // self.poly != A::Sum(_)
+            if self.poly.as_monomial(self.vars).check() {
+                return None;
+            } else {
+                return Some(self.poly.clone());
+            }
+        };
+
+        if self.vars.has(self.poly) {
+            return Some(self.poly.clone());
+        }
+
+        let mut res = GPE::default();
+        for a in &sum.args {
+            let (mc, mv) = a.as_monomial(self.vars).coeff()?;
+            res.add(mc, mv);
+        }
+        Some(res.to_expr())
+
+        //let mut n = 0;
+        //let mut t: Vec<(Expr, VarPow)> = vec![(Expr::zero(), Default::default()); sum.args.len()];
+        //for a in &sum.args {
+        //    let f = a.as_monomial(self.vars).coeff()?;
+        //    let mut j = 0;
+        //    let mut combined = false;
+        //    while !combined && j < n {
+        //        if f.1 == t[j].1 {
+        //            t[j] = (f.0.clone() + &t[j].0, f.1.clone());
+        //            combined = true;
+        //        }
+        //        j += 1;
+        //    }
+        //    if !combined {
+        //        t[n + 1] = f;
+        //        n += 1;
+        //    }
+        //}
+
+        //let mut v = Expr::zero();
+        //for (coeff, var) in t {
+        //    v += coeff * var.to_expr();
+        //}
+        //Some(v)
     }
 }
 
 #[cfg(test)]
-mod polynomial_test {
+mod monomial_uv {
+    use calcurs_macros::expr as e;
+
+    use super::*;
+
+    #[test]
+    fn check() {
+        let x = &VarSet::from(e!(x));
+        let xy = &VarSet::from([e!(x), e!(y)]);
+        assert!(e!(x).as_monomial(x).check());
+        assert!(e!(x ^ 1).as_monomial(x).check());
+        assert!(e!(x * y).as_monomial(x).check());
+        assert!(e!(2 * x).as_monomial(x).check());
+        assert!(e!(x * (1 + 2)).as_monomial(x).check());
+        assert!(e!(2 * x ^ 3).as_monomial(x).check());
+        assert!(!e!(x + 1).as_monomial(x).check());
+        assert!(!e!((x + 1) * (x + 3)).as_monomial(x).check());
+        assert!(!e!(x * (x + 3)).as_monomial(x).check());
+        assert!(e!(a * x ^ 2 * y ^ 2).as_monomial(xy).check());
+        assert!(!e!(a * (x ^ 2 + y ^ 2)).as_monomial(xy).check());
+    }
+
+    #[test]
+    fn degree() {
+        let x = &VarSet::from([e!(x)]);
+        assert_eq!(e!(x ^ 3).as_monomial(x).degree(), Some(3.into()));
+        assert_eq!(e!(x ^ 3 * x ^ 4).as_monomial(x).degree(), Some(7.into()));
+        assert_eq!(
+            e!(3 * w * x ^ 2 * y ^ 3 * z ^ 4)
+                .as_monomial(&[e!(x), e!(z)].into())
+                .degree(),
+            Some(6.into())
+        )
+    }
+
+    #[test]
+    fn coeff() {
+        let x = &VarSet::from([e!(x)]);
+        assert_eq!(
+            e!(a ^ 2 * x * b * x ^ 2).as_monomial(x).coeff(),
+            Some((e!(a ^ 2 * b), [(e!(x), 3.into())].into()))
+        );
+        assert_eq!(
+            e!(a ^ 2 * x ^ 2 * x ^ 4).as_monomial(x).degree(),
+            Some(6.into())
+        )
+    }
+}
+
+#[cfg(test)]
+mod polynomial_uv {
+    use calcurs_macros::expr as e;
+
     use super::*;
 
     macro_rules! p {
-        ($n:literal) => {
-            Rational::from($n)
+        ($expr:expr, $vars:expr) => {
+            $expr.as_polynomial(&$vars.into())
         };
-        ($($x:ident^$n:literal)*) => {
-            PowerProd::from([$((symbol(stringify!($x)), Rational::from($n)), )*])
-        }
-    }
-
-    fn symbol(s: &'static str) -> Symbol {
-        assert!(SymbolTable::is_global());
-        SymbolTable::new().insert(s)
-    }
-
-    use Polynomial as P;
-    use Rational as R;
-
-    #[test]
-    fn polynomial() {
-        assert_eq!(p!(x^2) + p!(x^1), P::new(R::ZERO, [(p!(x^2), R::ONE), (p!(x^1), R::ONE)]));
-        assert_eq!(p!(x^2) + p!(x^2), P::new(R::ZERO, [(p!(x^2), R::TWO)]));
-        assert_eq!(p!(x^2) - p!(x^2), P::from(R::ZERO));
-        assert_eq!((p!(x^2) + p!(4) + p!(y^2)) * p!(2), P::new(R::from(8), [(p!(x^2), R::TWO), (p!(y^2), Rational::TWO)]));
-        // (x^2 + 2) * (y^2 + 1) -> x^2y^2 + x^2 + 2y^2 + 2
-        assert_eq!((p!(x^2) + R::TWO) * p!(y^2), Polynomial::new(R::ZERO, [(p!(x^2 y^2), R::ONE), (p!(y^2), R::TWO)]));
-        assert_eq!((p!(x^2) + R::TWO) * (p!(y^2) + R::ONE), Polynomial::new(R::TWO, [(p!(x^2 y^2), R::ONE), (p!(x^2), R::ONE), (p!(y^2), R::TWO)]))
     }
 
     #[test]
-    fn power_prod() {
-        assert_eq!(p!(x^2) * p!(x^3), p!(x^5));
-        assert_eq!(p!(x^2) * p!(x^-2), p!(x^0));
-        assert_eq!(p!(x^2) * p!(x^-2), p!(y^0));
-        assert_eq!(p!(y^2) * p!(z^-3), p!(y^2 z^-3));
-        assert_eq!(p!(x^2).pow(p!(3)), p!(x^6));
+    fn check() {
+        assert!(p!(e!(3 * x ^ 2 + 4 * x + 5), e!(x)).check());
+        assert!(p!(e!(a * x ^ 2 + b * x + c), e!(x)).check());
+        assert!(!p!(e!(x * (x ^ 2 + 1)), e!(x)).check());
+        assert!(p!(e!(x ^ 2 * (x ^ 4 + 1)), e!(x ^ 2)).check());
+    }
+
+    #[test]
+    fn degree() {
+        assert_eq!(p!(e!(x ^ 3), e!(x)).degree(), Some(3.into()));
+        assert_eq!(
+            p!(e!(3 * x ^ 2 + 4 * x + 5), e!(x)).degree(),
+            Some(2.into())
+        );
+        assert_eq!(p!(e!(2 * x ^ 3), e!(x)).degree(), Some(3.into()));
+        assert_eq!(p!(e!((x + 1) * (x + 3)), e!(x)).degree(), None);
+        assert_eq!(
+            p!(e!((x + 1) * (x + 3)).expand(), e!(x)).degree(),
+            Some(2.into())
+        );
+        assert_eq!(p!(e!(3), e!(x)).degree(), Some(0.into()));
+
+        assert_eq!(p!(e!(x ^ 3), e!(x)).degree(), Some(3.into()));
+        assert_eq!(
+            p!(e!(3 * x ^ 2 + 4 * x + 5), e!(x)).degree(),
+            Some(2.into())
+        );
+        assert_eq!(p!(e!(2 * x ^ 3), e!(x)).degree(), Some(3.into()));
+        assert_eq!(p!(e!((x + 1) * (x + 3)), e!(x)).degree(), None);
+        assert_eq!(
+            p!(e!((x + 1) * (x + 3)).expand(), e!(x)).degree(),
+            Some(2.into())
+        );
+        assert_eq!(p!(e!(3), e!(x)).degree(), Some(0.into()));
+        assert_eq!(
+            p!(e!(3 * w * x ^ 2 * y ^ 3 * z ^ 4), [e!(x), e!(z)]).degree(),
+            Some(6.into())
+        );
+        assert_eq!(
+            p!(e!(a * x ^ 2 + b * x + c), e!(x)).degree(),
+            Some(2.into())
+        );
+        assert_eq!(
+            p!(e!(2 * x ^ 2 * y * z ^ 3 + w * x * z ^ 6), [e!(x), e!(z)]).degree(),
+            Some(7.into())
+        );
+    }
+
+    #[test]
+    fn coeffs() {
+        assert_eq!(
+            p!(e!(a * x ^ 2 + b * x + c), e!(x)).coeffs_of(&e!(x)),
+            [(2.into(), e!(a)), (1.into(), e!(b)), (0.into(), e!(c))]
+                .into_iter()
+                .collect()
+        );
+        assert_eq!(
+            p!(e!(3 * x * y ^ 2 + 5 * x ^ 2 * y + 7 * x + 9), e!(x)).coeffs_of(&e!(x)),
+            [
+                (0.into(), Expr::from(9)),
+                (1.into(), e!(7 + 3 * y ^ 2)),
+                (2.into(), e!(5 * y))
+            ]
+            .into_iter()
+            .collect()
+        )
+    }
+
+    #[test]
+    fn leading_coeff() {
+        assert_eq!(
+            p!(
+                e!(3 * x * y ^ 2 + 5 * x ^ 2 * y + 7 * x ^ 2 * y ^ 3 + 9),
+                e!(x)
+            )
+            .leading_coeff_of(&e!(x)),
+            e!(5 * y + 7 * y ^ 3).into()
+        )
+    }
+
+    #[test]
+    fn basic() {
+        let u = e!(a * (x ^ 2 + 1) ^ 2 + (x ^ 2 + 1));
+        let vars = VarSet::from(e!(x ^ 2 + 1));
+        let poly = u.as_polynomial(&vars);
+        assert!(poly.check());
+        assert_eq!(poly.degree(), Some(2.into()));
+        assert_eq!(poly.coeffs_of_deg(&e!(x ^ 2 + 1), &UInt::ONE), None);
+        assert_eq!(
+            poly.coeffs_of_deg(&e!(x ^ 2 + 1), &UInt::ZERO),
+            Some(e!(1 + x ^ 2))
+        );
+    }
+
+    #[test]
+    fn collect_terms() {
+        let expr = e!(2*a*x*y + 3*b*x*y + 4*a*x + 5*b*x);
+        assert_eq!(expr.as_polynomial(&[e!(x), e!(y)].into()).collect_terms().unwrap(), 
+            e!((2*a + 3*b)*x*y + (4*a + 5*b)*x)
+            )
     }
 }
- */

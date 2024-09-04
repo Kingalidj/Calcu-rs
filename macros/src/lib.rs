@@ -3,6 +3,8 @@ use quote::{quote, ToTokens};
 use syn::{parse::{discouraged::Speculative, Parse, ParseStream}, parse, punctuated as punc, Token};
 use std::fmt::Write;
 
+mod rubi;
+
 #[derive(PartialEq, Eq, Clone, Copy, Hash, PartialOrd, Ord)]
 enum OpKind {
     Add, Sub,
@@ -415,20 +417,20 @@ fn to_pat_stream(e: &Expr) -> parse::Result<TokenStream> {
         }))
 }
 
-fn to_expr_stream(e: &Expr, cntxt: &Ident) -> parse::Result<TokenStream> {
-    gen_expr_stream(e, cntxt)
+fn to_expr_stream(e: &Expr) -> parse::Result<TokenStream> {
+    gen_expr_stream(e)
 }
 
-fn gen_expr_stream(e: &Expr, c: &Ident) -> parse::Result<TokenStream> {
+fn gen_expr_stream(e: &Expr) -> parse::Result<TokenStream> {
     use Expr as E;
     use OpKind as OK;
     Ok(match e {
-        E::Num(n) => quote!(#c.rational(Rational::from(#n))),
-        E::Symbol(s) => quote!(#c.var(#s)),
-        E::Undef => quote!(#c.undef()),
+        E::Num(n) => quote!(Expr::rational(#n)),
+        E::Symbol(s) => quote!(Expr::from(#s)),
+        E::Undef => quote!(Expr::undef()),
         E::Binary(op, lhs, rhs) => {
-            let lhs = gen_expr_stream(lhs, c)?;
-            let rhs = gen_expr_stream(rhs, c)?;
+            let lhs = gen_expr_stream(lhs)?;
+            let rhs = gen_expr_stream(rhs)?;
             let op = match op {
                 OK::Add => quote!(add),
                 OK::Sub => quote!(sub),
@@ -436,7 +438,7 @@ fn gen_expr_stream(e: &Expr, c: &Ident) -> parse::Result<TokenStream> {
                 OK::Div => quote!(div),
                 OK::Pow => quote!(pow),
             };
-            quote! { #c.#op(#lhs, #rhs)}
+            quote! { Expr::#op(#lhs, #rhs)}
         },
         E::PlaceHolder(_) => {
             return Err(parse::Error::new(Span::call_site(), "placeholder not allowed in expressions, only in patterns"));
@@ -447,23 +449,23 @@ fn gen_expr_stream(e: &Expr, c: &Ident) -> parse::Result<TokenStream> {
 
 #[derive(Debug, Clone, PartialEq)]
 struct ExprArgs {
-    cntxt: Ident,
+    //cntxt: Ident,
     expr: Expr,
 }
 
 impl Parse for ExprArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let cntxt: Ident = input.parse()?;
-        let _: Token![:] = input.parse()?;
+        //let cntxt: Ident = input.parse()?;
+        //let _: Token![:] = input.parse()?;
         let expr: Expr = input.parse()?;
-        Ok(Self { expr, cntxt })
+        Ok(Self { expr })
     }
 }
 
 #[proc_macro]
 pub fn expr(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let args = syn::parse_macro_input!(input as ExprArgs);
-    let stream = to_expr_stream(&args.expr, &args.cntxt);
+    let stream = to_expr_stream(&args.expr);
     //panic!("{}", stream);
     match stream {
         Ok(s) => s.into(),
@@ -484,4 +486,10 @@ pub fn pat(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 #[proc_macro]
 pub fn define_rules(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     syn::parse_macro_input!(input as RuleSet).quote().into()
+}
+
+#[proc_macro]
+pub fn integration_rules(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    rubi::load_rubi();
+    TokenStream::new().into()
 }
