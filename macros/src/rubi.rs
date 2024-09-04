@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 type F64 = OrderedFloat<f64>;
 
-const INTEGRATION_RULES: &'static str = include_str!("test_rubi.m");
+const INTEGRATION_RULES: &'static str = include_str!("rubi.data");
 
 macro_rules! error {
     ($($tt:tt)*) => {{
