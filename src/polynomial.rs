@@ -1,12 +1,12 @@
 use crate::{
     expr::{Atom, Expr, Prod, Sum},
-    rational::{Rational, UInt},
+    rational::{Rational, Int},
     utils::HashMap,
 };
 
 type GVar = Expr;
 type Coeff = Expr;
-type Degree = UInt;
+type Degree = Int;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub struct VarSet {
@@ -73,7 +73,7 @@ impl VarPow {
         self.var_deg
             .iter()
             .map(|(_, d)| d)
-            .fold(UInt::ZERO, |sum, d| sum + d)
+            .fold(Int::ZERO, |sum, d| sum + d)
     }
 
     fn find(&self, v: &GVar) -> Option<&Degree> {
@@ -101,6 +101,10 @@ impl VarPow {
         } else {
             self.var_deg.push((v, d))
         }
+    }
+
+    fn pow(&mut self, deg: &Degree) {
+        self.var_deg.iter_mut().for_each(|(_, d)| *d *= deg);
     }
 
     fn merge(&mut self, mut other: Self) {
@@ -134,7 +138,7 @@ impl GPE {
     }
 
     pub fn sort_by_degree(&mut self) {
-        self.terms.sort_unstable_by(|(_, vp1,), (_, vp2)| vp1.cmp(vp2).reverse())
+        self.terms.sort_unstable_by(|(_, vp1,), (_, vp2)| vp1.cmp(vp2).reverse());
     }
 
     pub fn add(&mut self, c: Coeff, vp: VarPow) {
@@ -182,6 +186,7 @@ impl<'a> MonomialView<'a> {
             }
             A::Pow(pow) => match (pow.base(), pow.exponent().get()) {
                 (base, A::Rational(r))
+                    // TODO: negative exponent?
                     if self.vars.has(base) && r.is_int() && r >= &Rational::ONE =>
                 {
                     return true;
@@ -203,7 +208,7 @@ impl<'a> MonomialView<'a> {
         }
         if self.vars.has(self.monom) {
             let v = self.monom;
-            return Some((Expr::one(), [(v.clone(), UInt::ONE)].into()));
+            return Some((Expr::one(), [(v.clone(), Int::ONE)].into()));
         }
 
         match self.monom.get() {
@@ -218,12 +223,19 @@ impl<'a> MonomialView<'a> {
                 return Some((coeff, degree));
             }
             A::Pow(pow) => {
-                if let A::Rational(r) = pow.exponent().get() {
-                    if self.vars.has(pow.base()) && r.is_int() && r >= &Rational::ONE {
-                        let v = pow.base();
-                        return Some((Expr::one(), [(v.clone(), r.numer().clone())].into()));
+                match pow.exponent().get() {
+                    // TODO: negative exponent?
+                    A::Rational(r) if r.is_int() && r >= &Rational::ONE => {
+                        let (c, mut d) = pow.base().as_monomial(self.vars).coeff()?;
+                        d.pow(&r.to_int().unwrap());
+                        return Some((Expr::pow(c, pow.exponent()), d))
+                        //if self.vars.has(pow.base()) {
+                        //    let v = pow.base();
+                        //    return Some((Expr::one(), [(v.clone(), r.numer().clone())].into()));
+                        //}
                     }
-                }
+                    _ => (),
+                } 
             }
             _ => (),
         }
@@ -271,14 +283,14 @@ impl<'a> PolynomialView<'a> {
         }
     }
 
-    pub fn degree(&self) -> Option<UInt> {
+    pub fn degree(&self) -> Option<Int> {
         self.coeffs()
             .into_iter()
             .map(|(d, _)| d.total_deg())
             .reduce(|max, d| std::cmp::max(max, d))
     }
 
-    pub fn degree_of(&self, v: &GVar) -> Option<UInt> {
+    pub fn degree_of(&self, v: &GVar) -> Option<Int> {
         self.coeffs()
             .into_iter()
             .filter_map(|(d, _)| d.degree_of(v).cloned())
@@ -294,7 +306,7 @@ impl<'a> PolynomialView<'a> {
             if let Some(d) = d.degree_of(v) {
                 Some((d.clone(), c))
             } else if d.is_const() {
-                Some((UInt::ZERO, c))
+                Some((Int::ZERO, c))
             } else {
                 None
             }
@@ -319,7 +331,7 @@ impl<'a> PolynomialView<'a> {
         if let A::Sum(Sum { args }) = self.poly.get() {
             if self.vars.has(self.poly) {
                 let v = self.poly;
-                coeffs.insert([(v.clone(), UInt::ZERO)].into(), Expr::one());
+                coeffs.insert([(v.clone(), Int::ZERO)].into(), Expr::one());
                 return coeffs;
             }
 
@@ -552,9 +564,9 @@ mod polynomial_uv {
         let poly = u.as_polynomial(&vars);
         assert!(poly.check());
         assert_eq!(poly.degree(), Some(2.into()));
-        assert_eq!(poly.coeffs_of_deg(&e!(x ^ 2 + 1), &UInt::ONE), None);
+        assert_eq!(poly.coeffs_of_deg(&e!(x ^ 2 + 1), &Int::ONE), None);
         assert_eq!(
-            poly.coeffs_of_deg(&e!(x ^ 2 + 1), &UInt::ZERO),
+            poly.coeffs_of_deg(&e!(x ^ 2 + 1), &Int::ZERO),
             Some(e!(1 + x ^ 2))
         );
     }

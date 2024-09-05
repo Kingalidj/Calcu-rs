@@ -3,6 +3,8 @@ use std::fmt;
 pub(crate) type BuildHasher = fxhash::FxBuildHasher;
 pub(crate) type HashMap<K, V, B = BuildHasher> = std::collections::HashMap<K, V, B>;
 pub(crate) type HashSet<K, B = BuildHasher> = std::collections::HashSet<K, B>;
+pub(crate) type Instant = quanta::Instant;
+
 
 macro_rules! function_name {
     ($lvl: literal) => {{

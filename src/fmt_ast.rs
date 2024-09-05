@@ -2,32 +2,32 @@ use crate::{expr::Expr, rational::Rational};
 use std::{
     collections::VecDeque,
     fmt::{self, Display, Write},
-    ops,
+    ops, rc::Rc,
 };
 
-pub type Var<'a> = &'a str;
+pub type Var = Rc<str>;
 
 /// Specifies formatting for the [crate::Expr]
 ///
 /// The basic Operator traits are implemented for constructing the formatted AST \
 /// No calculations are performed, e.g 2 * 3 will be outputted as 2 * 3. \
 /// All Primitives are stored as [Ref]
-#[derive(Debug)]
-pub enum FmtAst<'a> {
+#[derive(Debug, Clone)]
+pub enum FmtAst {
     Rational(Rational),
-    Var(Var<'a>),
+    Var(Var),
     Undef,
 
-    Sub(Sub<'a>),
-    Coeff(Coeff<'a>),
-    Frac(Frac<'a>),
-    Pow(Pow<'a>),
-    Sum(Sum<'a>),
-    Prod(Prod<'a>),
-    SimplProd(SimplProd<'a>),
+    Sub(Sub),
+    Coeff(Coeff),
+    Frac(Frac),
+    Pow(Pow),
+    Sum(Sum),
+    Prod(Prod),
+    SimplProd(SimplProd),
 }
 
-impl FmtAst<'_> {
+impl FmtAst {
     fn is_next_rational(&self) -> bool {
         match self {
             FmtAst::Rational(_) | FmtAst::Coeff(_) => true,
@@ -49,6 +49,28 @@ impl FmtAst<'_> {
             _ => false,
         }
     }
+
+    /// check for 1 / x, if yes, return x
+    ///
+    fn is_one_div(&self) -> Option<&FmtAst> {
+        if let FmtAst::Pow(pow) = self {
+            if pow.1.is_min_one() {
+                return Some(&pow.0);
+            }
+        }
+
+        None
+    }
+
+    fn get_one_div(&self) -> Option<FmtAst> {
+        if let FmtAst::Pow(pow) = self {
+            if pow.1.is_min_one() {
+                return Some(*pow.0.clone());
+            }
+        }
+
+        None
+    }
 }
 
 // Holds references to primitive [crate::Node]
@@ -63,15 +85,15 @@ impl FmtAst<'_> {
 
 /// [FmtAst] - [FmtAst]
 ///
-#[derive(Debug)]
-pub struct Sub<'a>(Box<FmtAst<'a>>, Box<FmtAst<'a>>);
+#[derive(Debug, Clone)]
+pub struct Sub(Box<FmtAst>, Box<FmtAst>);
 
 /// [Rational] * [FmtAst], e.g 3(a + b), -b^2
 ///
-#[derive(Debug)]
-pub struct Coeff<'a>(Box<FmtAst<'a>>, Box<FmtAst<'a>>);
+#[derive(Debug, Clone)]
+pub struct Coeff(Box<FmtAst>, Box<FmtAst>);
 
-impl Coeff<'_> {
+impl Coeff {
     fn check_rational_coeff(&self, f: impl Fn(&Rational) -> bool) -> bool {
         if let FmtAst::Rational(r) = self.0.as_ref() {
             f(r)
@@ -91,29 +113,26 @@ impl Coeff<'_> {
 
 /// [FmtAst] / [FmtAst], e.g a/3
 ///
-#[derive(Debug)]
-pub struct Frac<'a>(Box<FmtAst<'a>>, Box<FmtAst<'a>>);
+#[derive(Debug, Clone)]
+pub struct Frac(Box<FmtAst>, Box<FmtAst>);
 
 /// [FmtAst] ^ [FmtAst]
 ///
-#[derive(Debug)]
-pub struct Pow<'a>(Box<FmtAst<'a>>, Box<FmtAst<'a>>);
+#[derive(Debug, Clone)]
+pub struct Pow(Box<FmtAst>, Box<FmtAst>);
 
-/// [Rational] * Prod([Var]), e.g: Multi-variable polynomial with coefficient
-///
-/// n * a * b * c, e.g 3 * a * b * c -> 3abc
-#[derive(Debug, Default)]
-pub struct SimplProd<'a>(VecDeque<FmtAst<'a>>);
+#[derive(Debug, Default, Clone)]
+pub struct SimplProd(VecDeque<FmtAst>);
 
 /// Sum([FmtAst]), e.g: 1 + a + 2b
 ///
-#[derive(Debug, Default)]
-pub struct Sum<'a>(VecDeque<FmtAst<'a>>);
+#[derive(Debug, Default, Clone)]
+pub struct Sum(VecDeque<FmtAst>);
 
 /// Prod([FmtAst]), e.g: 1 * 2 * 3c
 ///
-#[derive(Debug, Default)]
-pub struct Prod<'a>(VecDeque<FmtAst<'a>>);
+#[derive(Debug, Default, Clone)]
+pub struct Prod(VecDeque<FmtAst>);
 
 /// Allows for custom formatting of [FmtAst]
 ///
@@ -194,14 +213,14 @@ macro_rules! impl_precedence {
         }
     };
 }
-impl_precedence!(Sum<'_>;     1);
-impl_precedence!(Sub<'_>;     1);
-impl_precedence!(Prod<'_>;    2);
-impl_precedence!(Coeff<'_>;   2);
-impl_precedence!(Frac<'_>;    2);
-impl_precedence!(SimplProd<'_>; 2);
-impl_precedence!(Pow<'_>;     3);
-impl_precedence!(Var<'_>;     4);
+impl_precedence!(Sum;     1);
+impl_precedence!(Sub;     1);
+impl_precedence!(Prod;    2);
+impl_precedence!(Coeff;   2);
+impl_precedence!(SimplProd; 2);
+impl_precedence!(Frac;    3);
+impl_precedence!(Pow;     3);
+impl_precedence!(Var;     4);
 
 impl FmtPrecedence for Rational {
     fn prec_of() -> u32 {
@@ -216,7 +235,7 @@ impl FmtPrecedence for Rational {
     }
 }
 
-impl FmtPrecedence for FmtAst<'_> {
+impl FmtPrecedence for FmtAst {
     fn prec_of() -> u32 {
         panic!("FmtAst precedence is defined when created")
     }
@@ -237,14 +256,13 @@ impl FmtPrecedence for FmtAst<'_> {
     }
 }
 
-impl<'a> ops::Add for FmtAst<'a> {
-    type Output = FmtAst<'a>;
+impl ops::Add for FmtAst {
+    type Output = FmtAst;
 
     fn add(self, rhs: Self) -> Self::Output {
         use FmtAst as FA;
         match (self, rhs) {
             (lhs, FA::Rational(Rational::ZERO)) => lhs,
-            (FA::Rational(Rational::ZERO), rhs) => rhs,
 
             (FA::Sum(mut lhs), FA::Sum(rhs)) => {
                 lhs.0.extend(rhs.0);
@@ -263,20 +281,24 @@ impl<'a> ops::Add for FmtAst<'a> {
     }
 }
 
-impl<'a> ops::Sub for FmtAst<'a> {
-    type Output = FmtAst<'a>;
+impl ops::Sub for FmtAst {
+    type Output = FmtAst;
 
     fn sub(self, rhs: Self) -> Self::Output {
         fa!(Sub(self, rhs))
     }
 }
 
-impl<'a> ops::Mul for FmtAst<'a> {
-    type Output = FmtAst<'a>;
+impl ops::Mul for FmtAst {
+    type Output = FmtAst;
 
     fn mul(self, rhs: Self) -> Self::Output {
         use FmtAst as FA;
         match (self, rhs) {
+            (lhs, rhs) if rhs.is_one_div().is_some() => {
+                lhs / rhs.is_one_div().unwrap().clone()
+            }
+
             (lhs, FA::Rational(Rational::ONE)) => lhs,
             (FA::Rational(Rational::ONE), rhs) => rhs,
 
@@ -302,12 +324,6 @@ impl<'a> ops::Mul for FmtAst<'a> {
             (v, e @ FA::Sum(_)) /*if var.len() == 1*/ => {
                 fa!(Coeff(v, e))
             }
-            // e1 * coeff(c, e2) -> coeff(c, e1 * e2)
-            //(lhs, FA::Coeff(Coeff(coeff, expr))) => {
-            //    let mut rhs = expr;
-            //    *rhs = lhs * *rhs;
-            //    e!(Coeff(coeff, rhs))
-            //}
             // v1 * v2 * ... * w
             (FA::SimplProd(mut vp), v @ FA::Var(_)) => {
                 vp.0.push_back(v);
@@ -330,9 +346,6 @@ impl<'a> ops::Mul for FmtAst<'a> {
             (r @ FA::Rational(_), e) | (e, r @ FA::Rational(_)) if !e.is_next_rational() => {
                 fa!(Coeff(r, e))
             }
-            //(v @ FA::Var(_), e @ FA::Sum(_) | e @ FA::Prod(_)) /*if var.len() == 1*/ => {
-            //    e!(Coeff(v, e))
-            //}
             // e1 * e2 * ... * f
             (FA::SimplProd(mut lhs), rhs) => {
                 lhs.0.push_back(rhs);
@@ -348,8 +361,8 @@ impl<'a> ops::Mul for FmtAst<'a> {
     }
 }
 
-impl<'a> ops::Div for FmtAst<'a> {
-    type Output = FmtAst<'a>;
+impl ops::Div for FmtAst {
+    type Output = FmtAst;
 
     fn div(self, rhs: Self) -> Self::Output {
         use FmtAst as FA;
@@ -361,8 +374,8 @@ impl<'a> ops::Div for FmtAst<'a> {
     }
 }
 
-impl<'a> crate::utils::Pow for FmtAst<'a> {
-    type Output = FmtAst<'a>;
+impl crate::utils::Pow for FmtAst {
+    type Output = FmtAst;
 
     fn pow(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
@@ -391,7 +404,7 @@ pub struct UnicodeFmt {
     buf: String,
 }
 
-impl FormatWith<UnicodeFmt> for Var<'_> {
+impl FormatWith<UnicodeFmt> for Var {
     fn fmt_with(&self, f: &mut UnicodeFmt) -> fmt::Result {
         write!(f.buf, "{self}")
     }
@@ -401,14 +414,14 @@ impl FormatWith<UnicodeFmt> for Rational {
         write!(f.buf, "{self}")
     }
 }
-impl FormatWith<UnicodeFmt> for Sub<'_> {
+impl FormatWith<UnicodeFmt> for Sub {
     fn fmt_with(&self, f: &mut UnicodeFmt) -> fmt::Result {
         Self::fmt_paren_prec(&self.0, f)?;
         write!(f.buf, " {} ", unicode::MINUS)?;
         Self::fmt_paren_prec(&self.1, f)
     }
 }
-impl FormatWith<UnicodeFmt> for Coeff<'_> {
+impl FormatWith<UnicodeFmt> for Coeff {
     fn fmt_with(&self, f: &mut UnicodeFmt) -> fmt::Result {
         if self.0.is_one() {
         } else if self.0.is_min_one() {
@@ -419,7 +432,7 @@ impl FormatWith<UnicodeFmt> for Coeff<'_> {
         Self::fmt_paren_prec(&self.1, f)
     }
 }
-impl FormatWith<UnicodeFmt> for Sum<'_> {
+impl FormatWith<UnicodeFmt> for Sum {
     fn fmt_with(&self, f: &mut UnicodeFmt) -> fmt::Result {
         if self.0.is_empty() {
             return Ok(());
@@ -443,7 +456,7 @@ impl FormatWith<UnicodeFmt> for Sum<'_> {
         })
     }
 }
-impl FormatWith<UnicodeFmt> for Prod<'_> {
+impl FormatWith<UnicodeFmt> for Prod {
     fn fmt_with(&self, f: &mut UnicodeFmt) -> fmt::Result {
         if self.0.is_empty() {
             return Ok(());
@@ -457,21 +470,21 @@ impl FormatWith<UnicodeFmt> for Prod<'_> {
         })
     }
 }
-impl FormatWith<UnicodeFmt> for Frac<'_> {
+impl FormatWith<UnicodeFmt> for Frac {
     fn fmt_with(&self, f: &mut UnicodeFmt) -> fmt::Result {
         Self::fmt_paren_prec(&self.0, f)?;
         write!(f.buf, "/")?;
         Self::fmt_paren_prec(&self.1, f)
     }
 }
-impl FormatWith<UnicodeFmt> for Pow<'_> {
+impl FormatWith<UnicodeFmt> for Pow {
     fn fmt_with(&self, f: &mut UnicodeFmt) -> fmt::Result {
         Self::fmt_paren_prec(&self.0, f)?;
         write!(f.buf, "^")?;
         Self::fmt_paren_prec(&self.1, f)
     }
 }
-impl FormatWith<UnicodeFmt> for SimplProd<'_> {
+impl FormatWith<UnicodeFmt> for SimplProd {
     fn fmt_with(&self, f: &mut UnicodeFmt) -> fmt::Result {
         if self.0.is_empty() {
             return Ok(());
@@ -485,7 +498,7 @@ impl FormatWith<UnicodeFmt> for SimplProd<'_> {
         })
     }
 }
-impl FormatWith<UnicodeFmt> for FmtAst<'_> {
+impl FormatWith<UnicodeFmt> for FmtAst {
     fn fmt_with(&self, f: &mut UnicodeFmt) -> fmt::Result {
         match self {
             FmtAst::Sub(n) => n.fmt_with(f),
@@ -513,7 +526,7 @@ impl ExprFormatter for UnicodeFmt {
 }
 
 impl Display for UnicodeFmt {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.buf)
     }
 }
@@ -532,6 +545,8 @@ mod test_unicode_fmt {
             (e!(2 * x^3), "2x^3"),
             (e!(2 * x^(a + b)), "2x^(a + b)"),
             (e!(2 * x^(2*a)), "2x^(2a)"),
+            (e!(a/b), "a/b"),
+            (e!((x + y)/(x * y)), "(x + y)/(x·y)"),
         ];
 
         for (e, res) in fmt_res {

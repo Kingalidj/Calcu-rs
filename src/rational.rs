@@ -4,7 +4,6 @@ use std::{
     ops,
 };
 
-use ref_cast::RefCast;
 use malachite::{
     self as mal,
     num::{
@@ -12,51 +11,52 @@ use malachite::{
         conversion::traits::IsInteger,
     },
 };
+use ref_cast::RefCast;
 
 #[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, RefCast)]
 #[repr(transparent)]
-pub struct UInt(mal::Natural);
+pub struct Int(mal::Integer);
 
-impl UInt {
-    pub const ZERO: UInt = UInt(mal::Natural::const_from(0));
-    pub const ONE: UInt = UInt(mal::Natural::const_from(1));
-    pub const TWO: UInt = UInt(mal::Natural::const_from(2));
+impl Int {
+    pub const ZERO: Int = Int(mal::Integer::const_from_signed(0));
+    pub const ONE: Int = Int(mal::Integer::const_from_signed(1));
+    pub const TWO: Int = Int(mal::Integer::const_from_signed(2));
 
-    pub fn binomial_coeff(n: &UInt, k: &UInt) -> UInt {
+    pub fn binomial_coeff(n: &Int, k: &Int) -> Int {
         Self(mal::num::arithmetic::traits::BinomialCoefficient::binomial_coefficient(&n.0, &k.0))
     }
 
-    pub fn range_inclusive(start: Self, stop: Self) -> num::iter::RangeInclusive<UInt> {
+    pub fn range_inclusive(start: Self, stop: Self) -> num::iter::RangeInclusive<Int> {
         num::iter::range_inclusive(start, stop)
     }
 
     pub fn is_one(&self) -> bool {
-        self == &UInt::ONE
+        self == &Int::ONE
     }
 
     pub fn is_zero(&self) -> bool {
-        self == &UInt::ZERO
+        self == &Int::ZERO
     }
 }
 
-impl fmt::Debug for UInt {
+impl fmt::Debug for Int {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
-impl fmt::Display for UInt {
+impl fmt::Display for Int {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl num::One for UInt {
+impl num::One for Int {
     fn one() -> Self {
-        UInt::ONE
+        Int::ONE
     }
 }
 
-impl num::ToPrimitive for UInt {
+impl num::ToPrimitive for Int {
     fn to_i64(&self) -> Option<i64> {
         i64::try_from(&self.0).ok()
     }
@@ -74,116 +74,114 @@ impl num::ToPrimitive for UInt {
     }
 }
 
-impl TryFrom<Rational> for UInt {
+impl TryFrom<Rational> for Int {
     type Error = ();
     fn try_from(value: Rational) -> Result<Self, Self::Error> {
-        if value.is_int() {
-            Ok(value.numer().clone())
-        } else {
-            Err(())
+        match value.to_int() {
+            Some(int) => Ok(int),
+            None => Err(()),
         }
     }
 }
-impl From<UInt> for Rational {
-    fn from(value: UInt) -> Self {
+impl From<Int> for Rational {
+    fn from(value: Int) -> Self {
         Rational::from(value.0)
     }
 }
-impl From<u64> for UInt {
+impl From<u64> for Int {
     fn from(value: u64) -> Self {
-        Self(mal::Natural::from(value))
+        Self(mal::Integer::from(value))
     }
 }
 
-impl ops::Add for UInt {
-    type Output = UInt;
+impl ops::Add for Int {
+    type Output = Int;
     fn add(self, rhs: Self) -> Self::Output {
         Self(self.0 + rhs.0)
     }
 }
-impl ops::AddAssign for UInt {
+impl ops::AddAssign for Int {
     fn add_assign(&mut self, rhs: Self) {
         self.0 = self.0.clone() + rhs.0;
     }
 }
-impl ops::AddAssign<&UInt> for UInt {
+impl ops::AddAssign<&Int> for Int {
     fn add_assign(&mut self, rhs: &Self) {
         self.0 = self.0.clone() + &rhs.0;
     }
 }
-impl ops::Add<&UInt> for UInt {
-    type Output = UInt;
+impl ops::Add<&Int> for Int {
+    type Output = Int;
     fn add(self, rhs: &Self) -> Self::Output {
         Self(self.0 + &rhs.0)
     }
 }
-impl ops::Sub for UInt {
-    type Output = UInt;
+impl ops::Sub for Int {
+    type Output = Int;
     fn sub(self, rhs: Self) -> Self::Output {
         Self(self.0 - rhs.0)
     }
 }
-impl ops::SubAssign for UInt {
+impl ops::SubAssign for Int {
     fn sub_assign(&mut self, rhs: Self) {
         self.0 = self.0.clone() - rhs.0;
     }
 }
-impl ops::SubAssign<&UInt> for UInt {
+impl ops::SubAssign<&Int> for Int {
     fn sub_assign(&mut self, rhs: &Self) {
         self.0 = self.0.clone() - &rhs.0;
     }
 }
-impl ops::Sub<&UInt> for UInt {
-    type Output = UInt;
+impl ops::Sub<&Int> for Int {
+    type Output = Int;
     fn sub(self, rhs: &Self) -> Self::Output {
         Self(self.0 - &rhs.0)
     }
 }
-impl ops::Mul for UInt {
-    type Output = UInt;
+impl ops::Mul for Int {
+    type Output = Int;
     fn mul(self, rhs: Self) -> Self::Output {
         Self(self.0 * rhs.0)
     }
 }
-impl ops::MulAssign for UInt {
+impl ops::MulAssign for Int {
     fn mul_assign(&mut self, rhs: Self) {
         self.0 = self.0.clone() * rhs.0;
     }
 }
-impl ops::MulAssign<&UInt> for UInt {
+impl ops::MulAssign<&Int> for Int {
     fn mul_assign(&mut self, rhs: &Self) {
         self.0 = self.0.clone() * &rhs.0;
     }
 }
-impl ops::Mul<&UInt> for UInt {
-    type Output = UInt;
+impl ops::Mul<&Int> for Int {
+    type Output = Int;
     fn mul(self, rhs: &Self) -> Self::Output {
         Self(self.0 * &rhs.0)
     }
 }
-impl ops::Div for UInt {
-    type Output = UInt;
+impl ops::Div for Int {
+    type Output = Int;
     fn div(self, rhs: Self) -> Self::Output {
         Self(self.0 / rhs.0)
     }
 }
-impl ops::Div<&UInt> for UInt {
-    type Output = UInt;
+impl ops::Div<&Int> for Int {
+    type Output = Int;
     fn div(self, rhs: &Self) -> Self::Output {
         Self(self.0 / &rhs.0)
     }
 }
-impl ops::DivAssign for UInt {
+impl ops::DivAssign for Int {
     fn div_assign(&mut self, rhs: Self) {
         self.0 = self.0.clone() / rhs.0;
     }
 }
-impl ops::DivAssign<&UInt> for UInt {
+impl ops::DivAssign<&Int> for Int {
     fn div_assign(&mut self, rhs: &Self) {
         self.0 = self.0.clone() / &rhs.0;
     }
 }
-
 
 #[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Rational(pub(crate) mal::Rational);
@@ -199,12 +197,17 @@ impl Rational {
         Rational(mal::Rational::const_from_signed(n))
     }
 
-    pub fn numer(&self) -> &UInt {
-        UInt::ref_cast(self.0.numerator_ref())
+    pub fn numer(&self) -> Int {
+        Int(mal::Integer::from(self.0.numerator_ref().clone()))
+        //UInt::ref_cast(self.0.numerator_ref())
     }
 
-    pub fn denom(&self) -> &UInt {
-        UInt::ref_cast(self.0.numerator_ref())
+    pub fn to_int(&self) -> Option<Int> {
+        Some(Int(mal::Integer::try_from(self.0.clone()).ok()?))
+    }
+
+    pub fn denom(&self) -> Int {
+        Int(mal::Integer::from(self.0.denominator_ref().clone()))
     }
 
     #[inline(always)]
@@ -247,6 +250,14 @@ impl Rational {
 
     pub fn abs(self) -> Self {
         Self(self.0.abs())
+    }
+
+    pub fn div_rem(&self) -> (Self, Self) {
+        let denom = self.denom();
+        let (num, den) = self.0.to_numerator_and_denominator();
+        let (quot, rem) = num.div_rem(den);
+        (Self(mal::Rational::from(quot)), (Self(mal::Rational::from(rem)) / Self::from(denom)).unwrap())
+
     }
 
     /// will calculate [self] to the power of an integer number.
@@ -439,24 +450,24 @@ impl From<i32> for Rational {
         Self(mal::Rational::from(value))
     }
 }
-impl From<mal::Natural> for Rational {
-    fn from(value: mal::Natural) -> Self {
+impl From<mal::Integer> for Rational {
+    fn from(value: mal::Integer) -> Self {
         Self(mal::Rational::from(value))
     }
 }
 impl From<(u64, u64)> for Rational {
     fn from(value: (u64, u64)) -> Self {
-        let n = mal::Natural::from(value.0);
-        let d = mal::Natural::from(value.1);
-        Self(mal::Rational::from_naturals(n, d))
+        let n = mal::Integer::from(value.0);
+        let d = mal::Integer::from(value.1);
+        Self(mal::Rational::from_integers(n, d))
     }
 }
 impl From<(i64, i64)> for Rational {
     fn from(value: (i64, i64)) -> Self {
         let is_neg = (value.0 * value.1) < 0;
-        let n = mal::Natural::from(value.0.unsigned_abs());
-        let d = mal::Natural::from(value.1.unsigned_abs());
-        let mut r = mal::Rational::from_naturals(n, d);
+        let n = mal::Integer::from(value.0.unsigned_abs());
+        let d = mal::Integer::from(value.1.unsigned_abs());
+        let mut r = mal::Rational::from_integers(n, d);
 
         if is_neg {
             r *= Rational::MINUS_ONE.0;
