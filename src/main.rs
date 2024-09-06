@@ -14,7 +14,8 @@ fn main() {
     //println!("{:?}", e!(a / (b*c + b*d)).as_polynomial(&[e!(1/b)].into()).coeffs());
     //println!("{:?}", e!(1/x).as_monomial(&[e!(x)].into()).coeff());
     //println!("{:?}", Rational::from((5u64, 2u64)).div_rem());
-    println!("{:?}", e!((x+1)^(5/2)).expand());
+    //println!("{}", e!((x+1)^(5/2)).expand().reduce());
+    println!("{:?}", Expr::common_factors(&e!(x*x), &e!(x)));
 
     println!("took: {:?}ms", (Instant::now() - start).as_micros());
 }

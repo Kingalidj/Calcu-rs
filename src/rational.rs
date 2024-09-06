@@ -7,7 +7,7 @@ use std::{
 use malachite::{
     self as mal,
     num::{
-        arithmetic::traits::{Abs, DivRem, PowAssign, Sign as MalSign},
+        arithmetic::traits::{Abs, Gcd, DivRem, PowAssign, Sign as MalSign},
         conversion::traits::IsInteger,
     },
 };
@@ -36,6 +36,11 @@ impl Int {
 
     pub fn is_zero(&self) -> bool {
         self == &Int::ZERO
+    }
+
+    pub fn gcd(&self, other: &Self) -> Self {
+        let n = self.0.unsigned_abs_ref().gcd(other.0.unsigned_abs_ref());
+        Self(n.into())
     }
 }
 

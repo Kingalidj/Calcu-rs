@@ -193,6 +193,7 @@ impl<'a> MonomialView<'a> {
                 }
                 _ => (),
             },
+            A::Func(_) => todo!(),
         }
         self.monom.free_of_set(self.vars.iter())
     }

@@ -52,7 +52,7 @@ impl Sum {
                     self.args.push_front(rhs.clone())
                 }
             }
-            A::Var(_) | A::Prod(_) | A::Pow(_) => self.args.push_back(rhs.clone()),
+            A::Func(_) | A::Var(_) | A::Prod(_) | A::Pow(_) => self.args.push_back(rhs.clone()),
         }
     }
 
@@ -72,7 +72,7 @@ impl Sum {
 
         for a in &self.args {
             match a.get() {
-                A::Var(_) | A::Sum(_) | A::Prod(_) | A::Pow(_) => res.add_rhs(a),
+                A::Func(_) | A::Var(_) | A::Sum(_) | A::Prod(_) | A::Pow(_) => res.add_rhs(a),
                 A::Undef => return Expr::undef(),
                 A::Rational(r) => accum += r,
             }
@@ -163,6 +163,7 @@ impl Prod {
                 }
             }
             A::Var(_) | A::Sum(_) | A::Pow(_) => self.args.push_back(rhs.clone()),
+            A::Func(_) => todo!(),
         }
     }
 
@@ -256,6 +257,7 @@ impl Prod {
                 A::Var(_) | A::Sum(_) | A::Prod(_) | A::Pow(_) => res.mul_rhs(a),
                 A::Undef => return Expr::undef(),
                 A::Rational(r) => accum *= r,
+                A::Func(_) => todo!(),
             }
         }
 
@@ -397,6 +399,7 @@ impl Pow {
                     A::Pow(self.clone()).into()
                 }
             }
+            //TODO: rule?
             (A::Pow(pow), _) => {
                 let mut pow = pow.clone();
                 pow.args[1] *= self.exponent();
@@ -463,19 +466,19 @@ impl fmt::Display for Var {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-enum Real {
+pub enum Real {
     Rational(Rational),
     Irrational(Irrational),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-enum Irrational {
+pub enum Irrational {
     E,
     PI,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-enum Func {
+pub enum Func {
     Cos(Expr),
     Sin(Expr),
     /// [Func::Sin] / [Func::Cos]
@@ -488,7 +491,7 @@ enum Func {
     Csc(Expr),
 
     Log {
-        base: Irrational,
+        base: Real,
         arg: Expr,
     },
 
@@ -510,7 +513,7 @@ pub enum Atom {
     Sum(Sum),
     Prod(Prod),
     Pow(Pow),
-    //Func(Func),
+    Func(Func),
 }
 
 impl Atom {
@@ -528,6 +531,7 @@ impl fmt::Debug for Atom {
             Atom::Sum(sum) => write!(f, "{:?}", sum),
             Atom::Prod(prod) => write!(f, "{:?}", prod),
             Atom::Pow(pow) => write!(f, "{:?}", pow),
+            Atom::Func(func) => write!(f, "{:?}", func),
             //Atom::Func(func) => write!(f, "{:?}", func),
         }
     }
@@ -678,7 +682,7 @@ impl Expr {
         use Atom as A;
         match self.get() {
             A::Undef | A::Rational(_) => true,
-            A::Var(_) | A::Sum(_) | A::Prod(_) | A::Pow(_) => false,
+            A::Func(_) | A::Var(_) | A::Sum(_) | A::Prod(_) | A::Pow(_) => false,
         }
     }
 
@@ -727,6 +731,7 @@ impl Expr {
                     todo!()
                 }
             }
+            A::Func(_) => todo!(),
         }
     }
 
@@ -756,6 +761,7 @@ impl Expr {
                 }
                 vars.insert(self.clone());
             }
+            A::Func(_) => todo!(),
         }
     }
 
@@ -806,6 +812,7 @@ impl Expr {
             A::Prod(prod) => prod.distribute(),
             A::Pow(pow) => pow.expand_pow_rec(false),
             A::Undef | A::Rational(_) | A::Var(_) | A::Sum(_) => self.clone(),
+            A::Func(_) => todo!(),
         }
     }
 
@@ -828,6 +835,7 @@ impl Expr {
             A::Sum(sum) => sum.reduce(),
             A::Prod(prod) => prod.reduce(),
             A::Pow(pow) => pow.reduce(),
+            A::Func(_) => todo!(),
         }
     }
 
@@ -847,6 +855,129 @@ impl Expr {
     //pub fn as_polynomial<'a>(&'a self, x: &'a Self) -> PolynomialUV<'a> {
     //    PolynomialUV { poly: self, var: x }
     //}
+
+    pub fn numerator(&self) -> Expr {
+        use Atom as A;
+        match self.get() {
+            A::Undef => self.clone(),
+            A::Rational(r) => r.numer().into(),
+            A::Pow(pow) => match pow.exponent().get() {
+                &A::MINUS_ONE => Expr::one(),
+                _ => self.clone(),
+            },
+            A::Prod(Prod { args }) => args
+                .iter()
+                .map(|a| a.numerator())
+                .fold(Expr::one(), |prod, a| prod * a),
+            _ => self.clone(),
+        }
+    }
+
+    pub fn denominator(&self) -> Expr {
+        use Atom as A;
+        match self.get() {
+            A::Undef => self.clone(),
+            A::Rational(r) => r.denom().into(),
+            A::Pow(pow) => match pow.exponent().get() {
+                &A::MINUS_ONE => pow.base().clone(),
+                _ => Expr::one(),
+            },
+            A::Prod(Prod { args }) => args
+                .iter()
+                .map(|a| a.denominator())
+                .fold(Expr::one(), |prod, a| prod * a),
+            _ => Expr::one(),
+        }
+    }
+
+    pub fn base(&self) -> Expr {
+        match self.get() {
+            Atom::Pow(p) => p.base().clone(),
+            _ => self.clone(),
+        }
+    }
+
+    pub fn exponent(&self) -> Expr {
+        match self.get() {
+            Atom::Pow(p) => p.exponent().clone(),
+            _ => Expr::one(),
+        }
+    }
+
+    fn rationalize_add(lhs: &Self, rhs: &Self) -> Expr {
+        let ln = lhs.numerator();
+        let ld = lhs.denominator();
+        let rn = rhs.numerator();
+        let rd = rhs.denominator();
+        if ld.get() == &Atom::ONE && rd.get() == &Atom::ONE {
+            lhs + rhs
+        } else {
+            let r = Self::rationalize_add(&(ln * &rd), &(rn * &ld)) / (ld * rd);
+            println!("{:?}", r);
+            r
+        }
+    }
+
+    pub fn rationalize(&self) -> Expr {
+        use Atom as A;
+        println!("{:?}", self);
+        match self.get() {
+            A::Prod(_) => {
+                let mut r = self.clone();
+                r.iter_args_mut().for_each(|a| *a = a.rationalize());
+                r
+            }
+            A::Sum(Sum { args }) => args
+                .iter()
+                .map(|a| a.rationalize())
+                .fold(Expr::zero(), |sum, r| Self::rationalize_add(&sum, &r)),
+            A::Pow(pow) => Expr::pow(pow.base().rationalize(), pow.exponent()),
+            _ => self.clone(),
+        }
+    }
+
+    pub fn common_factors(lhs: &Self, rhs: &Self) -> Expr {
+        use Atom as A;
+        match (lhs.get(), rhs.get()) {
+            (A::Rational(r1), A::Rational(r2)) if r1.is_int() && r2.is_int() => {
+                let (i1, i2) = (r1.to_int().unwrap(), r2.to_int().unwrap());
+                i1.gcd(&i2).into()
+            }
+            (A::Prod(Prod { args }), _) => {
+                args.iter().map(|a| Self::common_factors(a, rhs)).fold(Expr::one(), |prod, rhs| prod * rhs)
+            }
+            (_, A::Prod(_)) => Self::common_factors(rhs, lhs),
+            (_, _) => {
+                match (lhs.exponent().get(), rhs.exponent().get()) {
+                    (A::Rational(r1), A::Rational(r2)) if r1.is_pos() && r2.is_pos() && rhs.base() == lhs.base() => {
+                        Power::pow(rhs.base(), &std::cmp::min(r1, r2).clone().into())
+                    }
+                    _ => Expr::one()
+                }
+            },
+        }
+    }
+
+    pub fn factor_out(&self) -> Expr {
+        use Atom as A;
+        match self.get() {
+            A::Prod(Prod { args }) => {
+                args.iter().map(|a| a.factor_out()).fold(Expr::one(), |prod, rhs| prod * rhs)
+            }
+            A::Pow(pow) => {
+                Expr::pow(pow.base().factor_out(), pow.exponent())
+            }
+            A::Sum(Sum { args }) => {
+                let s = args.iter().map(|a| a.factor_out()).fold(Expr::zero(), |sum, rhs| sum + rhs);
+                if let A::Sum(s) = s.get() {
+                    todo!()
+                } else {
+                    s
+                }
+            }
+            _ => todo!()
+        }
+    }
 
     pub fn fmt_ast(&self) -> FmtAst {
         use Atom as A;
@@ -873,6 +1004,7 @@ impl Expr {
                 .reduce(|acc, e| acc * e)
                 .unwrap_or(FmtAst::Prod(Default::default())),
             A::Pow(pow) => pow.base().fmt_ast().pow(pow.exponent().fmt_ast()),
+            A::Func(_) => todo!(),
         }
     }
 
@@ -913,6 +1045,7 @@ impl Expr {
             A::Rational(_) | A::Var(_) | A::Undef => Box::new([].iter()),
             A::Sum(Sum { args }) | A::Prod(Prod { args }) => Box::new(args.iter()),
             A::Pow(Pow { args }) => Box::new(args.iter()),
+            A::Func(func) => todo!(),
         }
     }
 
@@ -922,6 +1055,7 @@ impl Expr {
             A::Rational(_) | A::Var(_) | A::Undef => Box::new([].iter_mut()),
             A::Sum(Sum { args }) | A::Prod(Prod { args }) => Box::new(args.iter_mut()),
             A::Pow(Pow { args }) => Box::new(args.iter_mut()),
+            A::Func(func) => todo!(),
         }
     }
 
@@ -1175,5 +1309,26 @@ mod test {
             e!((x + y) / (x * y)).distribute(),
             e!(x / (x * y) + y / (x * y))
         );
+    }
+
+    #[test]
+    fn num_denom() {
+        let nd = |e: Expr| (e.numerator(), e.denominator());
+        assert_eq!(
+            nd(e!((2 / 3) * (x * (x + 1)) / (x + 2) * y ^ n)),
+            (e!(2 * x * (x + 1) * y ^ n), e!(3 * (x + 2)))
+        );
+    }
+
+    #[test]
+    fn rationalize() {
+        assert_eq!(e!((1 + 1 / x) ^ 2).rationalize(), e!(((x + 1) / x) ^ 2));
+        assert_eq!(e!((1 + 1 / x) ^ (1/2)).rationalize(), e!(((x + 1) / x) ^ (1/2)));
+    }
+
+    #[test]
+    fn common_factors() {
+        assert_eq!(Expr::common_factors(&e!(6*x*y^3), &e!(2*x^2*y*z)), e!(2*x*y));
+        assert_eq!(Expr::common_factors(&e!(a*(x+y)), &e!(x+y)), e!(x+y));
     }
 }

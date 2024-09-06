@@ -219,18 +219,18 @@ impl_precedence!(Prod;    2);
 impl_precedence!(Coeff;   2);
 impl_precedence!(SimplProd; 2);
 impl_precedence!(Frac;    3);
-impl_precedence!(Pow;     3);
-impl_precedence!(Var;     4);
+impl_precedence!(Pow;     4);
+impl_precedence!(Var;     5);
 
 impl FmtPrecedence for Rational {
     fn prec_of() -> u32 {
-        4
+        5
     }
     fn prec_of_val(&self) -> u32 {
         if !self.is_int() {
             Frac::prec_of()
         } else {
-            4
+            5
         }
     }
 }
@@ -251,7 +251,7 @@ impl FmtPrecedence for FmtAst {
             FA::SimplProd(x) => x.prec_of_val(),
             FA::Rational(x) => x.prec_of_val(),
             FA::Var(x) => x.prec_of_val(),
-            FA::Undef => 4,
+            FA::Undef => 5,
         }
     }
 }
@@ -320,9 +320,6 @@ impl ops::Mul for FmtAst {
             // (a + b) * x => (a + b)x
             (e @ FA::Sum(_), v) /*if var.len() == 1*/ => {
                 fa!(Coeff(e, v))
-            }
-            (v, e @ FA::Sum(_)) /*if var.len() == 1*/ => {
-                fa!(Coeff(v, e))
             }
             // v1 * v2 * ... * w
             (FA::SimplProd(mut vp), v @ FA::Var(_)) => {
