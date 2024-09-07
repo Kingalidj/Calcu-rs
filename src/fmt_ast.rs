@@ -1,11 +1,12 @@
-use crate::{expr::Expr, rational::Rational};
+use crate::{expr::{Expr, PTR}, rational::Rational};
+//use num::pow::Pow as Power;
 use std::{
     collections::VecDeque,
     fmt::{self, Display, Write},
-    ops, rc::Rc,
+    ops,
 };
 
-pub type Var = Rc<str>;
+pub type Var = PTR<str>;
 
 /// Specifies formatting for the [crate::Expr]
 ///
@@ -332,9 +333,9 @@ impl ops::Mul for FmtAst {
                 FA::SimplProd(vp)
             }
             // a/b * c -> (a * c) / b
-            (FA::Frac(Frac(n, d)), rhs) => fa!(Frac(*d * rhs, n)),
+            (FA::Frac(Frac(a, b)), c) => fa!(Frac(*a * c, b)),
             // a * b/c -> (a * b) / c
-            (lhs, FA::Frac(Frac(n, d))) => fa!(Frac(lhs * *d, n)),
+            (a, FA::Frac(Frac(b, c))) => fa!(Frac(a * *b, c)),
             (FA::SimplProd(mut lhs), FA::SimplProd(rhs)) => {
                 lhs.0.extend(rhs.0);
                 FA::SimplProd(lhs)
@@ -371,12 +372,11 @@ impl ops::Div for FmtAst {
     }
 }
 
-impl crate::utils::Pow for FmtAst {
-    type Output = FmtAst;
-
-    fn pow(self, rhs: Self) -> Self::Output {
+impl FmtAst {
+    pub fn pow(self, rhs: Self) -> FmtAst {
         match (self, rhs) {
             (base, exp) if exp.is_one() => base,
+            (base, exp) if exp.is_min_one() => fa!(Frac(FmtAst::Rational(Rational::ONE), base)),
             (base, exp) => fa!(Pow(base, exp)),
         }
     }

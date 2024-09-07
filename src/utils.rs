@@ -43,10 +43,10 @@ macro_rules! trace_fn {
 pub(crate) use trace_fn;
 
 
-pub trait Pow<Rhs = Self> {
-    type Output;
-    fn pow(self, rhs: Rhs) -> Self::Output;
-}
+//pub trait Pow<Rhs = Self> {
+//    type Output;
+//    fn pow(self, rhs: Rhs) -> Self::Output;
+//}
 
 pub(crate) fn fmt_iter<E: fmt::Debug, F>(
     symbols: [&str; 3],
