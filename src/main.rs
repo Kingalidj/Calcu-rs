@@ -15,8 +15,12 @@ fn main() {
     //println!("{:?}", e!(1/x).as_monomial(&[e!(x)].into()).coeff());
     //println!("{:?}", Rational::from((5u64, 2u64)).div_rem());
     //println!("{}", e!((x+1)^(5/2)).expand().reduce());
-    let e = e!(a/x + b/x).rationalize().cancel().expand().cancel();
-    println!("{}", e);
+    //let e = e!((x+y)/(x*y)).rationalize();
+    let e = e!(x * ln(x) * sin(x)).derivative(e!(x));
+    println!("{}", e.reduce());
+    println!("{}", e.reduce().rationalize().expand().factor_out());
+    println!("{:?}", e!((x+1)*(x-1)).reduce().expand().rationalize().factor_out().reduce());
+    println!("{}", e!((x+1)*(x-1)).reduce().expand().rationalize().factor_out().reduce());
 
     println!("took: {:?}ms", (Instant::now() - start).as_micros());
 }

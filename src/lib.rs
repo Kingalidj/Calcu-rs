@@ -7,7 +7,7 @@ mod rubi;
 
 pub mod prelude {
     use super::*;
-    pub use expr::{Expr, Pow, Prod, Sum};
+    pub use expr::{Expr, Pow, Prod, Sum, Irrational};
     pub use rational::Rational;
     pub use calcurs_macros::expr;
 }

@@ -175,7 +175,7 @@ impl<'a> MonomialView<'a> {
 
         match self.monom.get() {
             A::Undef => return false,
-            A::Rational(_) | A::Var(_) | A::Sum(_) => (),
+            A::Irrational(_) | A::Rational(_) | A::Var(_) | A::Sum(_) => (),
             A::Prod(Prod { args }) => {
                 for a in args {
                     if !a.as_monomial(self.vars).check() {

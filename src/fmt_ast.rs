@@ -6,7 +6,7 @@ use std::{
     ops,
 };
 
-pub type Var = PTR<str>;
+pub type Var = String;
 
 /// Specifies formatting for the [crate::Expr]
 ///
@@ -16,6 +16,7 @@ pub type Var = PTR<str>;
 #[derive(Debug, Clone)]
 pub enum FmtAst {
     Rational(Rational),
+    Func(Func),
     Var(Var),
     Undef,
 
@@ -135,6 +136,11 @@ pub struct Sum(VecDeque<FmtAst>);
 #[derive(Debug, Default, Clone)]
 pub struct Prod(VecDeque<FmtAst>);
 
+/// Prod([FmtAst]), e.g: 1 * 2 * 3c
+///
+#[derive(Debug, Default, Clone)]
+pub struct Func(pub String, pub VecDeque<FmtAst>);
+
 /// Allows for custom formatting of [FmtAst]
 ///
 pub trait ExprFormatter: Sized {
@@ -222,6 +228,7 @@ impl_precedence!(SimplProd; 2);
 impl_precedence!(Frac;    3);
 impl_precedence!(Pow;     4);
 impl_precedence!(Var;     5);
+impl_precedence!(Func;     5);
 
 impl FmtPrecedence for Rational {
     fn prec_of() -> u32 {
@@ -253,6 +260,7 @@ impl FmtPrecedence for FmtAst {
             FA::Rational(x) => x.prec_of_val(),
             FA::Var(x) => x.prec_of_val(),
             FA::Undef => 5,
+            FA::Func(x) => x.prec_of_val(),
         }
     }
 }
@@ -318,6 +326,16 @@ impl ops::Mul for FmtAst {
                 *lhs = *lhs * rhs;
                 fa!(Coeff(coeff, lhs))
             }
+
+            // a/b * c -> (a * c) / b
+            (FA::Frac(Frac(a, b)), c) => fa!(Frac(*a * c, b)),
+            // a * b/c -> (a * b) / c
+            (a, FA::Frac(Frac(b, c))) => fa!(Frac(a * *b, c)),
+            (FA::SimplProd(mut lhs), FA::SimplProd(rhs)) => {
+                lhs.0.extend(rhs.0);
+                FA::SimplProd(lhs)
+            }
+
             // (a + b) * x => (a + b)x
             (e @ FA::Sum(_), v) /*if var.len() == 1*/ => {
                 fa!(Coeff(e, v))
@@ -331,14 +349,6 @@ impl ops::Mul for FmtAst {
             (v @ FA::Var(_), FA::SimplProd(mut vp)) => {
                 vp.0.push_front(v);
                 FA::SimplProd(vp)
-            }
-            // a/b * c -> (a * c) / b
-            (FA::Frac(Frac(a, b)), c) => fa!(Frac(*a * c, b)),
-            // a * b/c -> (a * b) / c
-            (a, FA::Frac(Frac(b, c))) => fa!(Frac(a * *b, c)),
-            (FA::SimplProd(mut lhs), FA::SimplProd(rhs)) => {
-                lhs.0.extend(rhs.0);
-                FA::SimplProd(lhs)
             }
             // r * e -> Coeff(r, e)
             (r @ FA::Rational(_), e) | (e, r @ FA::Rational(_)) if !e.is_next_rational() => {
@@ -495,6 +505,21 @@ impl FormatWith<UnicodeFmt> for SimplProd {
         })
     }
 }
+
+impl FormatWith<UnicodeFmt> for Func {
+    fn fmt_with(&self, f: &mut UnicodeFmt) -> fmt::Result {
+        write!(f.buf, "{}(", self.0)?;
+        let mut args = self.1.iter();
+        if let Some(arg) = args.next() {
+            arg.fmt_with(f)?;
+        }
+        for arg in args {
+            write!(f.buf, ", ")?;
+            arg.fmt_with(f)?;
+        }
+        write!(f.buf, ")")
+    }
+}
 impl FormatWith<UnicodeFmt> for FmtAst {
     fn fmt_with(&self, f: &mut UnicodeFmt) -> fmt::Result {
         match self {
@@ -507,6 +532,7 @@ impl FormatWith<UnicodeFmt> for FmtAst {
             FmtAst::Sum(n) => n.fmt_with(f),
             FmtAst::Prod(n) => n.fmt_with(f),
             FmtAst::SimplProd(n) => n.fmt_with(f),
+            FmtAst::Func(n) => n.fmt_with(f),
             FmtAst::Undef => write!(f.buf, "undef"),
         }
     }
