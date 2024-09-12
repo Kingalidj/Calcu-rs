@@ -16,11 +16,14 @@ fn main() {
     //println!("{:?}", Rational::from((5u64, 2u64)).div_rem());
     //println!("{}", e!((x+1)^(5/2)).expand().reduce());
     //let e = e!((x+y)/(x*y)).rationalize();
-    let e = e!(x * ln(x) * sin(x)).derivative(e!(x));
-    println!("{}", e.reduce());
-    println!("{}", e.reduce().rationalize().expand().factor_out());
-    println!("{:?}", e!((x+1)*(x-1)).reduce().expand().rationalize().factor_out().reduce());
-    println!("{}", e!((x+1)*(x-1)).reduce().expand().rationalize().factor_out().reduce());
+    //let e = e!(x * ln(x) * sin(x)).derivative(e!(x));
+    //println!("{}", e.reduce());
+    //println!("{}", e.reduce().rationalize().expand().cancel());
+    //println!("{:?}", e!(y + (3 - 4)*x).expand().reduce().fmt_ast());
+    //println!("{}", e!((x+1)*(x-1)).reduce().expand().rationalize().factor_out().reduce());
+
+    let e = e!(x + -1 * y);
+    println!("{}", e.to_string());
 
     println!("took: {:?}ms", (Instant::now() - start).as_micros());
 }
