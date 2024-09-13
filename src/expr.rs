@@ -15,7 +15,7 @@ impl From<Atom> for Expr {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Sum {
     pub(crate) args: VecDeque<Expr>,
 }
@@ -61,7 +61,7 @@ impl Sum {
         }
 
         let mut res = Sum::zero();
-        let mut accum = Rational::ZERO;
+        let mut r_sum = Rational::ZERO;
 
         for a in &self.args {
             match a.get() {
@@ -69,13 +69,12 @@ impl Sum {
                     res.add_rhs(a)
                 }
                 A::Undef => return Expr::undef(),
-                A::Rational(r) => accum += r,
+                A::Rational(r) => r_sum += r,
             }
         }
 
-        //res.args[0] = accum.into();
-        if !accum.is_zero() {
-            res.args.push_front(accum.into());
+        if !r_sum.is_zero() {
+            res.args.push_front(r_sum.into());
         }
         if res.args.len() == 1 {
             return res.args.pop_front().unwrap();
@@ -101,7 +100,7 @@ impl fmt::Debug for Sum {
 }
 
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Prod {
     pub(crate) args: VecDeque<Expr>,
 }
@@ -271,7 +270,7 @@ impl Prod {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Pow {
     /// [base, exponent]
     pub(crate) args: [Expr; 2],
@@ -430,7 +429,7 @@ impl fmt::Debug for Pow {
 //    }
 //}
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Var(pub(crate) PTR<str>);
 impl Var {
     fn len(&self) -> usize {
@@ -452,7 +451,7 @@ impl fmt::Display for Var {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Real {
     Rational(Rational),
     Irrational(Irrational),
@@ -486,7 +485,7 @@ impl From<Real> for Expr {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Irrational {
     E,
     PI,
@@ -513,7 +512,7 @@ impl fmt::Display for Irrational {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Func {
     Sin(Expr),
     Cos(Expr),
@@ -627,7 +626,7 @@ struct Derivative {
     degree: u64,
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Atom {
     Undef,
     Rational(Rational),
@@ -662,7 +661,7 @@ impl fmt::Debug for Atom {
 
 pub(crate) type PTR<T> = Rc<T>;
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Expr(PTR<Atom>);
 
 //static E_ONE: LazyLock<Expr> = LazyLock::new(|| {
@@ -925,6 +924,60 @@ impl Expr {
         }
     }
 
+    pub fn exponent(&self) -> Expr {
+        match self.get_flatten() {
+            Atom::Pow(p) => p.exponent().clone(),
+            _ => Expr::one(),
+        }
+    }
+
+    fn is_const(&self) -> bool {
+        match self.get() {
+            Atom::Rational(_) | Atom::Irrational(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn r#const(&self) -> Option<Expr> {
+        match self.get() {
+            Atom::Var(_) | Atom::Sum(_) | Atom::Pow(_) | Atom::Func(_) => Some(Expr::one()),
+            Atom::Undef | Atom::Rational(_) | Atom::Irrational(_) => None,
+            Atom::Prod(Prod { args }) => {
+                if let Some(a) = args.front() {
+                    if a.is_const() {
+                        return Some(a.clone())
+                    }
+                }
+                Some(Expr::one())
+            },
+        }
+    }
+
+    pub fn term(&self) -> Option<Expr> {
+        match self.get() {
+            Atom::Prod(Prod { args }) => {
+                if let Some(a) = args.front() {
+                    if a.is_const() {
+                        let mut args = args.clone();
+                        args.pop_front();
+                        if args.is_empty() {
+                            return Some(Expr::one());
+                        } else if args.len() == 1 {
+                            return Some(args.pop_back().unwrap());
+                        } else {
+                            return Some(Atom::Prod(Prod { args }).into());
+                        }
+                    }
+                }
+                Some(self.clone())
+
+            },
+            Atom::Var(_) | Atom::Sum(_) | Atom::Pow(_) | Atom::Func(_) => Some(self.clone()),
+            Atom::Undef | Atom::Rational(_) | Atom::Irrational(_) => None,
+        }
+    }
+
+
     pub fn get(&self) -> &Atom {
         self.0.as_ref()
     }
@@ -1167,13 +1220,6 @@ impl Expr {
         PolynomialView::new(self, vars)
     }
 
-
-    pub fn exponent(&self) -> Expr {
-        match self.get_flatten() {
-            Atom::Pow(p) => p.exponent().clone(),
-            _ => Expr::one(),
-        }
-    }
 
     fn rationalize_add(lhs: &Self, rhs: &Self) -> Expr {
         let ln = lhs.numerator();
@@ -1636,5 +1682,14 @@ mod test {
         eq!(d(e!(x * ln(x) * sin(x))), e!(ln(x)*sin(x) + sin(x) + ln(x)*x*cos(x)));
         //eq!(d(e!(x ^ 2)), e!(2 * x));
         //eq!(d(exp(e!(sin(x)))), exp(e!(x)));
+    }
+
+    #[test]
+    fn term_const() {
+        eq!(e!(2*y).term(), Some(e!(y)));
+        eq!(e!(x*y).term(), Some(e!(x * y)));
+        eq!(e!(x).r#const(), Some(e!(1)));
+        eq!(e!(2 * x).r#const(), Some(e!(2)));
+        eq!(e!(y * x).r#const(), Some(e!(1)));
     }
 }

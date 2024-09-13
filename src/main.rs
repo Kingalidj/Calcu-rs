@@ -22,8 +22,8 @@ fn main() {
     //println!("{:?}", e!(y + (3 - 4)*x).expand().reduce().fmt_ast());
     //println!("{}", e!((x+1)*(x-1)).reduce().expand().rationalize().factor_out().reduce());
 
-    let e = e!(x + -1 * y);
-    println!("{}", e.to_string());
+    //let e = e!(x + -1 * y);
+    println!("{:?}", e!(2 * y).term());
 
     println!("took: {:?}ms", (Instant::now() - start).as_micros());
 }

@@ -229,13 +229,13 @@ impl FmtAtom {
     }
 
     pub fn fmt_pow(b: &FmtAtom, e: &FmtAtom, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if pow_prec() >= b.prec() {
+        if pow_prec() < b.prec() {
             write!(f, "{b}")
         } else {
-            write!(f, "{b}")
+            write!(f, "({b})")
         }?;
         write!(f, "^")?;
-        if pow_prec() <= e.prec() {
+        if pow_prec() < e.prec() {
             write!(f, "{e}")
         } else {
             write!(f, "({e})")
@@ -298,6 +298,7 @@ mod test_unicode_fmt {
             (e!(1/x), "1/x"),
             (e!(y * 1/x), "y/x"),
             (e!(3 * 1/x), "3/x"),
+            (e!((1 + x)^2), "(1 + x)^2"),
         ];
 
         for (e, res) in fmt_res {
