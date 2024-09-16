@@ -23,7 +23,9 @@ fn main() {
     //println!("{}", e!((x+1)*(x-1)).reduce().expand().rationalize().factor_out().reduce());
 
     //let e = e!(x + -1 * y);
-    println!("{:?}", e!(2 * y).term());
+    let e = e!((2 * (2*x)) * y);
+    println!("{:?}", e);
+    println!("{:?}", e.reduce());
 
     println!("took: {:?}ms", (Instant::now() - start).as_micros());
 }

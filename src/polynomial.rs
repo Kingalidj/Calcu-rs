@@ -538,7 +538,7 @@ mod polynomial_uv {
             p!(e!(3 * x * y ^ 2 + 5 * x ^ 2 * y + 7 * x + 9), e!(x)).coeffs_of(&e!(x)),
             [
                 (0.into(), Expr::from(9)),
-                (1.into(), e!(7 + 3 * y ^ 2)),
+                (1.into(), e!(3 * y ^ 2 + 7)),
                 (2.into(), e!(5 * y))
             ]
             .into_iter()
@@ -568,7 +568,7 @@ mod polynomial_uv {
         assert_eq!(poly.coeffs_of_deg(&e!(x ^ 2 + 1), &Int::ONE), None);
         assert_eq!(
             poly.coeffs_of_deg(&e!(x ^ 2 + 1), &Int::ZERO),
-            Some(e!(1 + x ^ 2))
+            Some(e!(x^2 + 1))
         );
     }
 
