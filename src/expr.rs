@@ -103,7 +103,7 @@ impl Sum {
         //    //res.args.push_front(r_sum.into());
         //    if let Some(Atom::Rational(r)) = res.args.first().map(|a| a.get()) {
 
-        //    } else { 
+        //    } else {
         //        res.args.insert(0, r_sum.into())
         //    }
         //}
@@ -157,7 +157,7 @@ struct ReducedProd {
 
 impl From<Expr> for ReducedProd {
     fn from(value: Expr) -> Self {
-        Self { 
+        Self {
             lhs: value,
             rhs: None,
         }
@@ -328,6 +328,20 @@ impl Prod {
             })
     }
 
+    fn flat_merge(lhs: Expr, rhs: Vec<Expr>) -> Vec<Expr> {
+        if let Atom::Prod(prod) = lhs.get() {
+            let mut prod = prod.clone();
+            rhs.into_iter().for_each(|a| {
+                prod.mul_rhs(&a);
+            });
+            vec![Atom::Prod(prod).into()]
+        } else {
+            let mut res = vec![lhs];
+            res.extend(rhs);
+            res
+        }
+    }
+
     fn merge_args(p: &[Expr], q: &[Expr]) -> Vec<Expr> {
         if p.is_empty() {
             q.into_iter().cloned().collect()
@@ -342,30 +356,16 @@ impl Prod {
             if h.is_empty() {
                 Prod::merge_args(p_rest, q_rest)
             } else if h.len() == 1 {
-                let mut res = vec![h[0].clone()];
-                res.extend(Prod::merge_args(p_rest, q_rest));
-                res
+                Prod::flat_merge(h[0].clone(), Prod::merge_args(p_rest, q_rest))
             } else {
-                let lhs = if p1 == &h[0] {
-                    //res.extend(Prod::merge_args(p_rest, q));
+                let rhs = if p1 == &h[0] {
                     Prod::merge_args(p_rest, q)
                 } else {
                     assert!(q1 == &h[0], "{:?} != {:?}", q1, h[0]);
-                    //res.extend(Prod::merge_args(p, q_rest));
                     Prod::merge_args(p, q_rest)
                 };
 
-                if let Atom::Prod(prod) = h[0].get() {
-                    let mut prod = prod.clone();
-                    lhs.into_iter().for_each(|a| {
-                        prod.mul_rhs(&a);
-                    });
-                    vec![Atom::Prod(prod).into()]
-                } else {
-                    let mut res = vec![h[0].clone()];
-                    res.extend(lhs);
-                    res
-                }
+                Prod::flat_merge(h[0].clone(), rhs)
             }
         }
     }
@@ -393,7 +393,7 @@ impl Prod {
                 let mut rhs = rhs.clone();
                 if rhs < lhs {
                     std::mem::swap(&mut lhs, &mut rhs);
-                } 
+                }
 
                 vec![lhs, rhs]
             }
@@ -411,7 +411,6 @@ impl Prod {
 
     fn reduce(&self) -> Expr {
         let mut args = Prod::reduce_rec(&self.args);
-        //let mut args: Vec<_> = args.into_iter().flat_map(|a| if let Atom::Prod(p) = a.get() { p.args.clone() } else { vec![a] }).collect();
         if args.is_empty() {
             return Expr::one();
         } else if args.len() == 1 {
@@ -422,37 +421,6 @@ impl Prod {
             })
             .into()
         }
-        //use Atom as A;
-        //if self.args.is_empty() {
-        //    return Expr::one();
-        //} else if self.args.len() == 1 {
-        //    return self.args.front().unwrap().clone();
-        //}
-        //let mut res = Prod::one();
-        //let mut accum = Rational::ONE;
-
-        //for a in &self.args {
-        //    match a.get() {
-        //        A::Func(_) | A::Irrational(_) | A::Var(_) | A::Sum(_) | A::Prod(_) | A::Pow(_) => {
-        //            res.mul_rhs(a)
-        //        }
-        //        A::Undef => return Expr::undef(),
-        //        &A::ZERO => return Expr::zero(),
-        //        A::Rational(r) => accum *= r,
-        //    }
-        //}
-
-        //if accum.is_zero() {
-        //    return Expr::zero();
-        //}
-        //if !accum.is_one() {
-        //    res.args.push_front(accum.into())
-        //}
-        //if res.args.len() == 1 {
-        //    return res.args.pop_front().unwrap();
-        //}
-
-        //Atom::Prod(res).into()
     }
 }
 
@@ -1144,7 +1112,7 @@ impl Expr {
                 if let Some(a) = prod.args.first() {
                     if a.is_const() {
                         let (_, c) = prod.as_binary_mul();
-                        return Some(c)
+                        return Some(c);
                         //let mut args = args.clone();
                         //args.pop_front();
                         //if args.is_empty() {
@@ -1745,7 +1713,7 @@ mod test {
         );
         eq!(
             e!((x + 1) ^ 2 + (y + 1) ^ 2).expand().reduce(),
-            e!(x^2 + 2*x + 2 + y^2 + 2*y),
+            e!(x ^ 2 + 2 * x + 2 + y ^ 2 + 2 * y),
             //e!(2 + (2 * x) + x ^ 2 + (2 * y) + y ^ 2)
         );
         //eq!(

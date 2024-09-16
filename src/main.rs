@@ -27,5 +27,6 @@ fn main() {
     println!("{:?}", e);
     println!("{:?}", e.reduce());
 
+
     println!("took: {:?}ms", (Instant::now() - start).as_micros());
 }
