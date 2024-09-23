@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, collections::VecDeque, fmt, ops, rc::Rc};
+use std::{borrow::Borrow, collections::VecDeque, fmt, ops, rc::Rc, sync::Arc};
 
 use crate::{
     fmt_ast,
@@ -171,6 +171,14 @@ impl Prod {
         }
     }
 
+    pub fn is_one(&self) -> bool {
+        self.args.is_empty()
+    }
+
+    pub fn is_undef(&self) -> bool {
+        self.args.first().is_some_and(|e| e.is_undef())
+    }
+
     fn first(&self) -> Option<&Atom> {
         self.args.first().map(|a| a.get())
     }
@@ -328,31 +336,35 @@ impl Prod {
             })
     }
 
-    fn flat_merge(lhs: Expr, rhs: Vec<Expr>) -> Vec<Expr> {
+    fn flat_merge(lhs: Expr, mut rhs: Prod) -> Prod {
         if let Atom::Prod(prod) = lhs.get() {
             let mut prod = prod.clone();
-            rhs.into_iter().for_each(|a| {
+            rhs.args.into_iter().for_each(|a| {
                 prod.mul_rhs(&a);
             });
-            vec![Atom::Prod(prod).into()]
+            //vec![Atom::Prod(prod).into()]
+            prod
         } else {
             let mut res = vec![lhs];
-            res.extend(rhs);
-            res
+            res.extend(rhs.args);
+            rhs.args = res;
+            rhs
         }
     }
 
-    fn merge_args(p: &[Expr], q: &[Expr]) -> Vec<Expr> {
+    fn merge_args(p: &[Expr], q: &[Expr]) -> Prod {
         if p.is_empty() {
-            q.into_iter().cloned().collect()
+            //q.into_iter().cloned().collect()
+            Prod { args: q.into_iter().cloned().collect() } 
         } else if q.is_empty() {
-            p.into_iter().cloned().collect()
+            //p.into_iter().cloned().collect()
+            Prod { args: q.into_iter().cloned().collect() } 
         } else {
             let p1 = p.first().unwrap();
             let q1 = q.first().unwrap();
             let p_rest = &p[1..];
             let q_rest = &q[1..];
-            let h = Prod::reduce_rec(&[p1.clone(), q1.clone()]);
+            let h = Prod::reduce_rec(&[p1.clone(), q1.clone()]).args;
             if h.is_empty() {
                 Prod::merge_args(p_rest, q_rest)
             } else if h.len() == 1 {
@@ -370,9 +382,10 @@ impl Prod {
         }
     }
 
-    fn reduce_rec(args: &[Expr]) -> Vec<Expr> {
+    fn reduce_rec(args: &[Expr]) -> Prod {
         if args.len() < 2 {
-            return args.into_iter().cloned().collect();
+            //return args.into_iter().cloned().collect();
+            Prod { args: args.into_iter().cloned().collect() }
         } else if args.len() == 2 {
             let lhs = &args[0];
             let rhs = &args[1];
@@ -384,10 +397,14 @@ impl Prod {
                 Prod::merge_args(&[lhs.clone()], &p.args)
             } else if lhs.is_const() || rhs.is_const() {
                 //return SmallVec::from([Prod::reduce_mul(lhs, rhs)]);
-                vec![Prod::reduce_mul(&lhs, &rhs)]
+                //Prod::reduce_mul(&lhs, &rhs)
+                let mut res = Prod::one();
+                res.mul_rhs(lhs);
+                res.mul_rhs(rhs);
+                res
             } else if lhs.base() == rhs.base() {
                 let e = (lhs.exponent() + rhs.exponent()).reduce();
-                vec![Expr::pow(lhs.base(), e).reduce()]
+                Prod { args: vec![Expr::pow(lhs.base(), e).reduce()] }
             } else {
                 let mut lhs = lhs.clone();
                 let mut rhs = rhs.clone();
@@ -395,32 +412,40 @@ impl Prod {
                     std::mem::swap(&mut lhs, &mut rhs);
                 }
 
-                vec![lhs, rhs]
+                Prod { args: vec![lhs, rhs] }
             }
         } else {
             let lhs = args.first().unwrap();
             let rhs = Prod::reduce_rec(&args[1..]);
 
             if let Atom::Prod(p) = lhs.get() {
-                Prod::merge_args(&p.args, &rhs)
+                Prod::merge_args(&p.args, &rhs.args)
             } else {
-                Prod::merge_args(&[lhs.clone()], &rhs)
+                Prod::merge_args(&[lhs.clone()], &rhs.args)
             }
         }
     }
 
     fn reduce(&self) -> Expr {
-        let mut args = Prod::reduce_rec(&self.args);
-        if args.is_empty() {
-            return Expr::one();
-        } else if args.len() == 1 {
-            return args.pop().unwrap();
+        let prod = Prod::reduce_rec(&self.args);
+        if prod.is_one() {
+            Expr::one()
+        } else if prod.is_undef() {
+            Expr::undef()
         } else {
-            Atom::Prod(Prod {
-                args: args.into_iter().collect(),
-            })
-            .into()
+            Atom::Prod(prod).into()
         }
+        
+        //if args.is_empty() {
+        //    return Expr::one();
+        //} else if args.len() == 1 {
+        //    return args.pop().unwrap();
+        //} else {
+        //    Atom::Prod(Prod {
+        //        args: args.into_iter().collect(),
+        //    })
+        //    .into()
+        //}
     }
 }
 
@@ -813,17 +838,17 @@ impl fmt::Debug for Atom {
     }
 }
 
-pub(crate) type PTR<T> = Rc<T>;
+pub(crate) type PTR<T> = Arc<T>;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Expr(PTR<Atom>);
 
-//static E_ONE: LazyLock<Expr> = LazyLock::new(|| {
-//    Expr::from(Atom::ONE)
-//});
-//static E_ZERO: LazyLock<Expr> = LazyLock::new(|| {
-//    Expr::from(Atom::ZERO)
-//});
+static E_ONE: std::sync::LazyLock<Expr> = std::sync::LazyLock::new(|| {
+    Expr::from(Atom::ONE)
+});
+static E_ZERO: std::sync::LazyLock<Expr> = std::sync::LazyLock::new(|| {
+    Expr::from(Atom::ZERO)
+});
 
 // utility
 impl Expr {
