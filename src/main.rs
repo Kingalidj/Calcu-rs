@@ -23,7 +23,7 @@ fn main() {
     //println!("{}", e!((x+1)*(x-1)).reduce().expand().rationalize().factor_out().reduce());
 
     //let e = e!(x + -1 * y);
-    let e = e!((2 * (2*x)) * y);
+    let e = e!((x+y)^3);
     println!("{:?}", e);
     println!("{:?}", e.reduce());
 

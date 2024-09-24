@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, collections::VecDeque, fmt, ops, rc::Rc, sync::Arc};
+use std::{borrow::Borrow, fmt, ops, sync::Arc};
 
 use crate::{
     fmt_ast,
@@ -24,6 +24,13 @@ impl Sum {
         Self {
             args: Default::default(),
         }
+    }
+
+    fn is_zero(&self) -> bool {
+        self.args.is_empty()
+    }
+    fn is_undef(&self) -> bool {
+        self.args.first().is_some_and(|e| e.is_undef())
     }
 
     fn first(&self) -> Option<&Atom> {
@@ -80,24 +87,146 @@ impl Sum {
         }
     }
 
-    fn reduce(&self) -> Expr {
-        use Atom as A;
-        if self.args.is_empty() {
-            return Expr::zero();
+    fn flat_merge(lhs: Expr, mut rhs: Sum) -> Sum {
+        if let Atom::Sum(sum) = lhs.get() {
+            let mut sum = sum.clone();
+            rhs.args.into_iter().for_each(|a| {
+                sum.add_rhs(&a);
+            });
+            sum
+        } else {
+            let mut res = vec![lhs];
+            res.extend(rhs.args);
+            rhs.args = res;
+            rhs
         }
+    }
 
-        let mut res = Sum::zero();
-        let mut r_sum = Rational::ZERO;
+    fn merge_args(p: &[Expr], q: &[Expr]) -> Sum {
+        let res = if p.is_empty() {
+            //q.into_iter().cloned().collect()
+            Sum { args: q.into_iter().cloned().collect() } 
+        } else if q.is_empty() {
+            //p.into_iter().cloned().collect()
+            Sum { args: p.into_iter().cloned().collect() } 
+        } else {
+            let p1 = p.first().unwrap();
+            let q1 = q.first().unwrap();
+            let p_rest = &p[1..];
+            let q_rest = &q[1..];
+            let h = Sum::reduce_rec(&[p1.clone(), q1.clone()]).args;
+            if h.is_empty() {
+                Sum::merge_args(p_rest, q_rest)
+            } else if h.len() == 1 {
+                Sum::flat_merge(h[0].clone(), Sum::merge_args(p_rest, q_rest))
+            } else {
+                let rhs = if p1 == &h[0] && q1 == &h[1] {
+                    Sum::merge_args(p_rest, q)
+                } else if q1 == &h[0] && p1 == &h[1] {
+                    //assert!(q1 == &h[0], "{:?} != {:?}", q1, h[0]);
+                    Sum::merge_args(p, q_rest)
+                } else {
+                    panic!("Illegal reduction: {q:?} + {p:?} -> h")
+                };
 
-        for a in &self.args {
-            match a.get() {
-                A::Irrational(_) | A::Func(_) | A::Var(_) | A::Sum(_) | A::Prod(_) | A::Pow(_) => {
-                    res.add_rhs(a)
-                }
-                A::Undef => return Expr::undef(),
-                A::Rational(r) => r_sum += r,
+                Sum::flat_merge(h[0].clone(), rhs)
             }
+        };
+        res
+    }
+
+    fn reduce_rec(args: &[Expr]) -> Sum {
+        let res = if args.len() < 2 {
+            //return args.into_iter().cloned().collect();
+            Sum { args: args.into_iter().cloned().collect() }
+        } else if args.len() == 2 {
+            let lhs = &args[0];
+            let rhs = &args[1];
+            if let (Atom::Sum(p1), Atom::Sum(p2)) = (lhs.get(), rhs.get()) {
+                Sum::merge_args(&p1.args, &p2.args)
+            } else if let Atom::Sum(p) = lhs.get() {
+                Sum::merge_args(&p.args, &[rhs.clone()])
+            } else if let Atom::Sum(p) = rhs.get() {
+                Sum::merge_args(&[lhs.clone()], &p.args)
+            } else if lhs.is_const() || rhs.is_const() {
+                //return SmallVec::from([Sum::reduce_mul(lhs, rhs)]);
+                //Sum::reduce_mul(&lhs, &rhs)
+                let mut lhs = lhs;
+                let mut rhs = rhs;
+                if rhs < lhs {
+                    std::mem::swap(&mut lhs, &mut rhs);
+                }
+
+                let mut res = Sum::zero();
+                res.add_rhs(lhs);
+                res.add_rhs(rhs);
+                res
+            //} else if lhs.base() == rhs.base() {
+            //    let e = (lhs.exponent() + rhs.exponent()).reduce();
+            //    Sum { args: vec![Expr::pow(lhs.base(), e).reduce()] }
+            } else {
+                let mut lhs = lhs.clone();
+                let mut rhs = rhs.clone();
+                if rhs < lhs {
+                    std::mem::swap(&mut lhs, &mut rhs);
+                }
+
+                Sum { args: vec![lhs, rhs] }
+            }
+        } else {
+            let lhs = args.first().unwrap();
+            let rhs = Sum::reduce_rec(&args[1..]);
+
+            if let Atom::Sum(p) = lhs.get() {
+                Sum::merge_args(&p.args, &rhs.args)
+            } else {
+                Sum::merge_args(&[lhs.clone()], &rhs.args)
+            }
+        };
+        res
+    }
+
+    fn reduce2(&self) -> Expr {
+        let prod = Sum::reduce_rec(&self.args);
+        if prod.is_zero() {
+            Expr::zero()
+        } else if prod.is_undef() {
+            Expr::undef()
+        } else {
+            Atom::Sum(prod).into()
         }
+        
+        //if args.is_empty() {
+        //    return Expr::one();
+        //} else if args.len() == 1 {
+        //    return args.pop().unwrap();
+        //} else {
+        //    Atom::Prod(Prod {
+        //        args: args.into_iter().collect(),
+        //    })
+        //    .into()
+        //}
+    }
+
+    fn reduce(&self) -> Expr {
+        self.reduce2()
+        //use Atom as A;
+        //if self.args.is_empty() {
+        //    return Expr::zero();
+        //}
+
+        //let mut res = Sum::zero();
+        //let mut r_sum = Rational::ZERO;
+
+        //for a in &self.args {
+        //    match a.get() {
+        //        A::Irrational(_) | A::Func(_) | A::Var(_) | A::Sum(_) | A::Prod(_) | A::Pow(_) => {
+        //            res.add_rhs(a)
+        //        }
+        //        A::Undef => return Expr::undef(),
+        //        A::Rational(r) => r_sum += r,
+        //    }
+        //}
 
         //if !r_sum.is_zero() {
         //    //res.args.push_front(r_sum.into());
@@ -107,12 +236,12 @@ impl Sum {
         //        res.args.insert(0, r_sum.into())
         //    }
         //}
-        res.add_rhs(&A::Rational(r_sum).into());
-        if res.args.len() == 1 {
-            return res.args.pop().unwrap();
-        }
+        //res.add_rhs(&A::Rational(r_sum).into());
+        //if res.args.len() == 1 {
+        //    return res.args.pop().unwrap();
+        //}
 
-        Atom::Sum(res).into()
+        //Atom::Sum(res).into()
     }
 }
 impl fmt::Debug for Sum {
@@ -370,11 +499,14 @@ impl Prod {
             } else if h.len() == 1 {
                 Prod::flat_merge(h[0].clone(), Prod::merge_args(p_rest, q_rest))
             } else {
-                let rhs = if p1 == &h[0] {
+                let rhs = if p1 == &h[0] && q1 == &h[1] {
                     Prod::merge_args(p_rest, q)
-                } else {
-                    assert!(q1 == &h[0], "{:?} != {:?}", q1, h[0]);
+                } else if q1 == &h[0] && p1 == &h[1] {
+                    //println!("h: {h:?}, p1: {p1:?}, q1: {q1:?}");
+                    //assert!(q1 == &h[0], "{:?} != {:?}", q1, h[0]);
                     Prod::merge_args(p, q_rest)
+                } else {
+                    panic!("Illegal reduction: {q:?} * {p:?} -> h")
                 };
 
                 Prod::flat_merge(h[0].clone(), rhs)
@@ -399,8 +531,13 @@ impl Prod {
                 //return SmallVec::from([Prod::reduce_mul(lhs, rhs)]);
                 //Prod::reduce_mul(&lhs, &rhs)
                 let mut res = Prod::one();
-                res.mul_rhs(lhs);
-                res.mul_rhs(rhs);
+                if lhs < rhs {
+                    res.mul_rhs(lhs);
+                    res.mul_rhs(rhs);
+                } else {
+                    res.mul_rhs(rhs);
+                    res.mul_rhs(lhs);
+                }
                 res
             } else if lhs.base() == rhs.base() {
                 let e = (lhs.exponent() + rhs.exponent()).reduce();
@@ -706,11 +843,11 @@ pub enum Func {
     Log(Real, Expr),
 }
 
-macro_rules! func_fn {
+macro_rules! func_atom {
     ($name: ident) => {
         pub fn $name(e: impl Borrow<Expr>) -> Expr {
             paste! {
-            Expr::from(Atom::Func(Func::[<$name:camel>](e.borrow().clone())))
+                Expr::from(Atom::Func(Func::[<$name:camel>](e.borrow().clone())))
             }
         }
     };
@@ -843,12 +980,13 @@ pub(crate) type PTR<T> = Arc<T>;
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Expr(PTR<Atom>);
 
-static E_ONE: std::sync::LazyLock<Expr> = std::sync::LazyLock::new(|| {
-    Expr::from(Atom::ONE)
-});
-static E_ZERO: std::sync::LazyLock<Expr> = std::sync::LazyLock::new(|| {
-    Expr::from(Atom::ZERO)
-});
+//static E_ONE: std::sync::LazyLock<Expr> = std::sync::LazyLock::new(|| {
+//    Expr::from(Atom::ONE)
+//});
+//static E_ZERO: std::sync::LazyLock<Expr> = std::sync::LazyLock::new(|| {
+//    Expr::from(Atom::ZERO)
+//});
+
 
 // utility
 impl Expr {
@@ -928,14 +1066,14 @@ impl Expr {
         Expr::mul(lhs, &inv_rhs)
     }
 
-    func_fn!(cos);
-    func_fn!(sin);
-    func_fn!(tan);
-    func_fn!(sec);
-    func_fn!(arc_sin);
-    func_fn!(arc_cos);
-    func_fn!(arc_tan);
-    func_fn!(exp);
+    func_atom!(cos);
+    func_atom!(sin);
+    func_atom!(tan);
+    func_atom!(sec);
+    func_atom!(arc_sin);
+    func_atom!(arc_cos);
+    func_atom!(arc_tan);
+    func_atom!(exp);
 
     pub fn log(base: impl Into<Real>, e: impl Borrow<Expr>) -> Expr {
         let base = base.into();
@@ -1537,8 +1675,8 @@ impl Expr {
                 let s = args
                     .iter()
                     .map(|a| a.factor_out())
-                    .fold(Expr::zero(), |sum, rhs| sum + rhs)
-                    .reduce();
+                    .fold(Expr::zero(), |sum, rhs| sum + rhs);
+                    //.reduce();
                 if let A::Sum(sum) = s.get() {
                     // sum = a + b
                     let (a, b) = sum.as_binary_sum();
@@ -1738,7 +1876,7 @@ mod test {
         );
         eq!(
             e!((x + 1) ^ 2 + (y + 1) ^ 2).expand().reduce(),
-            e!(x ^ 2 + 2 * x + 2 + y ^ 2 + 2 * y),
+            e!(2 + 2*x + 2*y + x^2 + y^2),
             //e!(2 + (2 * x) + x ^ 2 + (2 * y) + y ^ 2)
         );
         //eq!(
@@ -1750,6 +1888,7 @@ mod test {
     #[test]
     fn reduce() {
         let checks = vec![
+            (e!(2 * x), e!(2 * x)),
             (e!(1 + 2), e!(3)),
             (e!(a + undef), e!(undef)),
             (e!(a + (b + c)), e!(a + (b + c))),
@@ -1830,10 +1969,10 @@ mod test {
     #[test]
     fn factor_out() {
         eq!(
-            e!((x ^ 2 + x * y) ^ 3).factor_out().expand_main_op(),
-            e!(x ^ 3 * (x + y) ^ 3)
+            e!((x^2 + x*y)^3).factor_out().expand_main_op(),
+            e!(x^3 * (x+y)^3)
         );
-        eq!(e!(a * (b + b * x)).factor_out(), e!(a * b * (1 + x)));
+        eq!(e!(a*(b + b*x)).factor_out(), e!(a*b*(1 + x)));
         eq!(
             e!(2 ^ (1 / 2) + 2).factor_out(),
             e!(2 ^ (1 / 2) * (1 + 2 ^ (1 / 2)))
@@ -1858,14 +1997,14 @@ mod test {
         eq!(d(e!(x ^ 2)), e!(2 * x));
         eq!(d(e!(sin(x))), e!(cos(x)));
         eq!(d(e!(exp(x))), e!(exp(x)));
-        eq!(d(e!(x * exp(x))), e!(exp(x) * (1 + x)));
+        eq!(d(e!(x * exp(x))), e!(exp(x) * (x + 1)));
         eq!(d(e!(ln(x))), e!(1 / x));
-        eq!(d(e!(1 / x)), e!(-1 / x ^ 2));
+        eq!(d(e!(1 / x)), e!(-1 / x^2));
         eq!(d(e!(tan(x))), e!(sec(x) ^ 2));
-        eq!(d(e!(arc_tan(x))), e!(1 / (x ^ 2 + 1)));
+        eq!(d(e!(arc_tan(x))), e!(1 / (1 + x^2)));
         eq!(
             d(e!(x * ln(x) * sin(x))),
-            e!(sin(x) * ln(x) + sin(x) + ln(x) * x * cos(x))
+            e!(sin(x) + x*cos(x)*ln(x) + sin(x)*ln(x))
         );
         //eq!(d(e!(x ^ 2)), e!(2 * x));
         //eq!(d(exp(e!(sin(x)))), exp(e!(x)));
