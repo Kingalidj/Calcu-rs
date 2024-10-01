@@ -1,3 +1,4 @@
+use log;
 use std::fmt;
 
 pub(crate) type BuildHasher = fxhash::FxBuildHasher;
@@ -71,3 +72,4 @@ where
     write!(f, "{end}")?;
     Ok(())
 }
+

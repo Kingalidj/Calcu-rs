@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, fmt, ops, sync::Arc};
+use std::{borrow::Borrow, fmt, iter, ops, slice, sync::Arc};
 
 use crate::{
     fmt_ast,
@@ -8,12 +8,6 @@ use crate::{
 };
 
 use paste::paste;
-
-impl From<Atom> for Expr {
-    fn from(value: Atom) -> Self {
-        Expr(value.into())
-    }
-}
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Sum {
@@ -87,19 +81,37 @@ impl Sum {
         }
     }
 
-    fn flat_merge(lhs: Expr, mut rhs: Sum) -> Sum {
-        if let Atom::Sum(sum) = lhs.get() {
-            let mut sum = sum.clone();
-            rhs.args.into_iter().for_each(|a| {
-                sum.add_rhs(&a);
-            });
-            sum
-        } else {
-            let mut res = vec![lhs];
-            res.extend(rhs.args);
-            rhs.args = res;
-            rhs
+    fn flat_merge(lhs: &Expr, mut rhs: Sum) -> Sum {
+        match lhs.get() {
+            Atom::Sum(sum) => {
+                let mut sum = sum.clone();
+                rhs.args.into_iter().for_each(|a| {
+                    sum.add_rhs(&a);
+                });
+                sum
+            }
+            &Atom::ZERO => {
+                rhs
+            }
+            _ => {
+                let mut res = vec![lhs.clone()];
+                res.extend(rhs.args.drain(..));
+                rhs.args = res;
+                rhs
+            }
         }
+        //if let Atom::Sum(sum) = lhs.get() {
+        //    let mut sum = sum.clone();
+        //    rhs.args.into_iter().for_each(|a| {
+        //        sum.add_rhs(&a);
+        //    });
+        //    sum
+        //} else {
+        //    let mut res = vec![lhs];
+        //    res.extend(rhs.args);
+        //    rhs.args = res;
+        //    rhs
+        //}
     }
 
     fn merge_args(p: &[Expr], q: &[Expr]) -> Sum {
@@ -118,7 +130,7 @@ impl Sum {
             if h.is_empty() {
                 Sum::merge_args(p_rest, q_rest)
             } else if h.len() == 1 {
-                Sum::flat_merge(h[0].clone(), Sum::merge_args(p_rest, q_rest))
+                Sum::flat_merge(&h[0], Sum::merge_args(p_rest, q_rest))
             } else {
                 let rhs = if p1 == &h[0] && q1 == &h[1] {
                     Sum::merge_args(p_rest, q)
@@ -129,7 +141,7 @@ impl Sum {
                     panic!("Illegal reduction: {q:?} + {p:?} -> h")
                 };
 
-                Sum::flat_merge(h[0].clone(), rhs)
+                Sum::flat_merge(&h[0], rhs)
             }
         };
         res
@@ -145,9 +157,9 @@ impl Sum {
             if let (Atom::Sum(p1), Atom::Sum(p2)) = (lhs.get(), rhs.get()) {
                 Sum::merge_args(&p1.args, &p2.args)
             } else if let Atom::Sum(p) = lhs.get() {
-                Sum::merge_args(&p.args, &[rhs.clone()])
+                Sum::merge_args(&p.args, slice::from_ref(rhs))
             } else if let Atom::Sum(p) = rhs.get() {
-                Sum::merge_args(&[lhs.clone()], &p.args)
+                Sum::merge_args(slice::from_ref(lhs), &p.args)
             } else if lhs.is_const() || rhs.is_const() {
                 //return SmallVec::from([Sum::reduce_mul(lhs, rhs)]);
                 //Sum::reduce_mul(&lhs, &rhs)
@@ -180,68 +192,23 @@ impl Sum {
             if let Atom::Sum(p) = lhs.get() {
                 Sum::merge_args(&p.args, &rhs.args)
             } else {
-                Sum::merge_args(&[lhs.clone()], &rhs.args)
+                Sum::merge_args(slice::from_ref(lhs), &rhs.args)
             }
         };
         res
     }
 
-    fn reduce2(&self) -> Expr {
-        let prod = Sum::reduce_rec(&self.args);
-        if prod.is_zero() {
-            Expr::zero()
-        } else if prod.is_undef() {
-            Expr::undef()
-        } else {
-            Atom::Sum(prod).into()
-        }
-        
-        //if args.is_empty() {
-        //    return Expr::one();
-        //} else if args.len() == 1 {
-        //    return args.pop().unwrap();
-        //} else {
-        //    Atom::Prod(Prod {
-        //        args: args.into_iter().collect(),
-        //    })
-        //    .into()
-        //}
-    }
-
     fn reduce(&self) -> Expr {
-        self.reduce2()
-        //use Atom as A;
-        //if self.args.is_empty() {
-        //    return Expr::zero();
-        //}
-
-        //let mut res = Sum::zero();
-        //let mut r_sum = Rational::ZERO;
-
-        //for a in &self.args {
-        //    match a.get() {
-        //        A::Irrational(_) | A::Func(_) | A::Var(_) | A::Sum(_) | A::Prod(_) | A::Pow(_) => {
-        //            res.add_rhs(a)
-        //        }
-        //        A::Undef => return Expr::undef(),
-        //        A::Rational(r) => r_sum += r,
-        //    }
-        //}
-
-        //if !r_sum.is_zero() {
-        //    //res.args.push_front(r_sum.into());
-        //    if let Some(Atom::Rational(r)) = res.args.first().map(|a| a.get()) {
-
-        //    } else {
-        //        res.args.insert(0, r_sum.into())
-        //    }
-        //}
-        //res.add_rhs(&A::Rational(r_sum).into());
-        //if res.args.len() == 1 {
-        //    return res.args.pop().unwrap();
-        //}
-
-        //Atom::Sum(res).into()
+        let mut sum = Sum::reduce_rec(&self.args);
+        if sum.is_zero() {
+            Expr::zero()
+        } else if sum.is_undef() {
+            Expr::undef()
+        } else if sum.args.len() == 1 {
+            sum.args.remove(0)
+        } else {
+            Atom::Sum(sum).into()
+        }
     }
 }
 impl fmt::Debug for Sum {
@@ -249,12 +216,12 @@ impl fmt::Debug for Sum {
         if self.args.is_empty() {
             return write!(f, "(+)");
         } else if self.args.len() == 1 {
-            return write!(f, "(+{:?})", self.args.first().unwrap());
+            return write!(f, "(+{:?})", self.args[0]);
         }
         utils::fmt_iter(
             ["(", " + ", ")"],
             self.args.iter(),
-            |a, f| write!(f, "{:?}", a),
+            |a, f| write!(f, "{a:?}"),
             f,
         )
     }
@@ -268,11 +235,13 @@ impl fmt::Debug for Prod {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.args.is_empty() {
             return write!(f, "(*)");
+        } else if self.args.len() == 1 {
+            return write!(f, "(1*{:?})", self.args[0])
         }
         utils::fmt_iter(
             ["(", " * ", ")"],
             self.args.iter(),
-            |a, f| write!(f, "{:?}", a),
+            |a, f| write!(f, "{a:?}"),
             f,
         )
     }
@@ -380,19 +349,19 @@ impl Prod {
         }
     }
 
-    fn reduce_mul(lhs: &Expr, rhs: &Expr) -> Expr {
-        match (lhs.get(), rhs.get()) {
-            (Atom::Undef, _) | (_, Atom::Undef) => Expr::undef(),
-            (&Atom::ZERO, _) | (_, &Atom::ZERO) => Expr::zero(),
-            (&Atom::ONE, _) => rhs.clone(),
-            (_, &Atom::ONE) => lhs.clone(),
-            (Atom::Rational(r1), Atom::Rational(r2)) => Atom::Rational(r1.clone() * r2).into(),
-            _ => Atom::Prod(Prod {
-                args: [lhs.clone(), rhs.clone()].into_iter().collect(),
-            })
-            .into(),
-        }
-    }
+    //fn reduce_mul(lhs: &Expr, rhs: &Expr) -> Expr {
+    //    match (lhs.get(), rhs.get()) {
+    //        (Atom::Undef, _) | (_, Atom::Undef) => Expr::undef(),
+    //        (&Atom::ZERO, _) | (_, &Atom::ZERO) => Expr::zero(),
+    //        (&Atom::ONE, _) => rhs.clone(),
+    //        (_, &Atom::ONE) => lhs.clone(),
+    //        (Atom::Rational(r1), Atom::Rational(r2)) => Atom::Rational(r1.clone() * r2).into(),
+    //        _ => Atom::Prod(Prod {
+    //            args: [lhs.clone(), rhs.clone()].into_iter().collect(),
+    //        })
+    //        .into(),
+    //    }
+    //}
 
     fn expand_mul(lhs: &Expr, rhs: &Expr) -> Expr {
         use Atom as A;
@@ -465,29 +434,49 @@ impl Prod {
             })
     }
 
-    fn flat_merge(lhs: Expr, mut rhs: Prod) -> Prod {
-        if let Atom::Prod(prod) = lhs.get() {
-            let mut prod = prod.clone();
-            rhs.args.into_iter().for_each(|a| {
-                prod.mul_rhs(&a);
-            });
-            //vec![Atom::Prod(prod).into()]
-            prod
-        } else {
-            let mut res = vec![lhs];
-            res.extend(rhs.args);
-            rhs.args = res;
-            rhs
+    fn flat_merge(lhs: &Expr, mut rhs: Prod) -> Prod {
+        match lhs.get() {
+            Atom::Prod(prod) => {
+                let mut prod = prod.clone();
+                rhs.args.into_iter().for_each(|a| {
+                    prod.mul_rhs(&a);
+                });
+                prod
+            }
+            &Atom::ONE => {
+                rhs
+            }
+            &Atom::ZERO => {
+                rhs.args = vec![Expr::zero()];
+                rhs
+            }
+            _ => {
+                let mut res = vec![lhs.clone()];
+                res.extend(rhs.args.drain(..));
+                rhs.args = res;
+                rhs
+            }
         }
+        //if let Atom::Prod(prod) = lhs.get() {
+        //    let mut prod = prod.clone();
+        //    rhs.args.into_iter().for_each(|a| {
+        //        prod.mul_rhs(&a);
+        //    });
+        //    //vec![Atom::Prod(prod).into()]
+        //    prod
+        //} else {
+        //    let mut res = vec![lhs];
+        //    res.extend(rhs.args);
+        //    rhs.args = res;
+        //    rhs
+        //}
     }
 
     fn merge_args(p: &[Expr], q: &[Expr]) -> Prod {
         if p.is_empty() {
-            //q.into_iter().cloned().collect()
             Prod { args: q.into_iter().cloned().collect() } 
         } else if q.is_empty() {
-            //p.into_iter().cloned().collect()
-            Prod { args: q.into_iter().cloned().collect() } 
+            Prod { args: p.into_iter().cloned().collect() } 
         } else {
             let p1 = p.first().unwrap();
             let q1 = q.first().unwrap();
@@ -497,7 +486,7 @@ impl Prod {
             if h.is_empty() {
                 Prod::merge_args(p_rest, q_rest)
             } else if h.len() == 1 {
-                Prod::flat_merge(h[0].clone(), Prod::merge_args(p_rest, q_rest))
+                Prod::flat_merge(&h[0], Prod::merge_args(p_rest, q_rest))
             } else {
                 let rhs = if p1 == &h[0] && q1 == &h[1] {
                     Prod::merge_args(p_rest, q)
@@ -509,7 +498,7 @@ impl Prod {
                     panic!("Illegal reduction: {q:?} * {p:?} -> h")
                 };
 
-                Prod::flat_merge(h[0].clone(), rhs)
+                Prod::flat_merge(&h[0], rhs)
             }
         }
     }
@@ -523,13 +512,14 @@ impl Prod {
             let rhs = &args[1];
             if let (Atom::Prod(p1), Atom::Prod(p2)) = (lhs.get(), rhs.get()) {
                 Prod::merge_args(&p1.args, &p2.args)
+
             } else if let Atom::Prod(p) = lhs.get() {
-                Prod::merge_args(&p.args, &[rhs.clone()])
+                Prod::merge_args(&p.args, slice::from_ref(rhs))
+
             } else if let Atom::Prod(p) = rhs.get() {
-                Prod::merge_args(&[lhs.clone()], &p.args)
+                Prod::merge_args(slice::from_ref(lhs), &p.args)
+
             } else if lhs.is_const() || rhs.is_const() {
-                //return SmallVec::from([Prod::reduce_mul(lhs, rhs)]);
-                //Prod::reduce_mul(&lhs, &rhs)
                 let mut res = Prod::one();
                 if lhs < rhs {
                     res.mul_rhs(lhs);
@@ -558,17 +548,19 @@ impl Prod {
             if let Atom::Prod(p) = lhs.get() {
                 Prod::merge_args(&p.args, &rhs.args)
             } else {
-                Prod::merge_args(&[lhs.clone()], &rhs.args)
+                Prod::merge_args(slice::from_ref(lhs), &rhs.args)
             }
         }
     }
 
     fn reduce(&self) -> Expr {
-        let prod = Prod::reduce_rec(&self.args);
+        let mut prod = Prod::reduce_rec(&self.args);
         if prod.is_one() {
             Expr::one()
         } else if prod.is_undef() {
             Expr::undef()
+        } else if prod.args.len() == 1 {
+            prod.args.remove(0)
         } else {
             Atom::Prod(prod).into()
         }
@@ -612,7 +604,7 @@ impl Pow {
         };
         let expand_mul = |lhs: &Expr, rhs: &Expr| -> Expr {
             if recurse {
-                Expr::mul_expand(lhs, rhs)
+                Expr::mul(lhs, rhs).expand()
             } else {
                 Expr::mul(lhs, rhs)
             }
@@ -891,7 +883,7 @@ impl Func {
         }
     }
 
-    pub fn iter_args(&self) -> Box<dyn Iterator<Item = &Expr> + '_> {
+    pub fn args(&self) -> &[Expr] {
         use Func as F;
         match self {
             F::Sin(x)
@@ -902,10 +894,11 @@ impl Func {
             | F::ArcCos(x)
             | F::ArcTan(x)
             | F::Exp(x)
-            | F::Log(_, x) => Box::new(std::iter::once(x)),
+            | F::Log(_, x) => slice::from_ref(x),
         }
     }
-    pub fn iter_args_mut(&mut self) -> Box<dyn Iterator<Item = &mut Expr> + '_> {
+
+    pub fn args_mut(&mut self) -> &mut [Expr] {
         use Func as F;
         match self {
             F::Sin(x)
@@ -916,8 +909,15 @@ impl Func {
             | F::ArcCos(x)
             | F::ArcTan(x)
             | F::Exp(x)
-            | F::Log(_, x) => Box::new(std::iter::once(x)),
+            | F::Log(_, x) => slice::from_mut(x),
         }
+    }
+
+    pub fn iter_args(&self) -> impl Iterator<Item = &Expr> {
+        self.args().iter()
+    }
+    pub fn iter_args_mut(&mut self) -> impl Iterator<Item = &mut Expr> {
+        self.args_mut().iter_mut()
     }
 
     pub fn reduce(&self) -> Expr {
@@ -953,6 +953,13 @@ pub enum Atom {
     Pow(Pow),
     Func(Func),
 }
+
+impl From<Atom> for Expr {
+    fn from(value: Atom) -> Self {
+        Expr(value.into())
+    }
+}
+
 
 impl Atom {
     pub const MINUS_ONE: Atom = Atom::Rational(Rational::MINUS_ONE);
@@ -1086,7 +1093,15 @@ impl Expr {
         Expr::log(Rational::from(10), e)
     }
 
-    pub fn raw_pow(base: impl Borrow<Expr>, exponent: impl Borrow<Expr>) -> Expr {
+    pub fn mul_raw(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {
+        Atom::Prod(Prod { args: vec![lhs.borrow().clone(), rhs.borrow().clone()] }).into()
+    }
+    pub fn div_raw(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {
+        let min_one = Expr::min_one();
+        let one_div_rhs = Expr::pow_raw(rhs, min_one);
+        Expr::mul_raw(lhs, one_div_rhs)
+    }
+    pub fn pow_raw(base: impl Borrow<Expr>, exponent: impl Borrow<Expr>) -> Expr {
         Atom::Pow(Pow {
             args: [base.borrow().clone(), exponent.borrow().clone()],
         })
@@ -1119,7 +1134,7 @@ impl Expr {
             //        _ => Expr::raw_pow(base, exponent),
             //    }
             //}
-            _ => Expr::raw_pow(base, exponent),
+            _ => Expr::pow_raw(base, exponent),
         }
     }
 
@@ -1311,24 +1326,45 @@ impl Expr {
         PTR::make_mut(&mut self.0)
     }
 
-    fn iter_args(&self) -> Box<dyn Iterator<Item = &Self> + '_> {
+    pub fn args(&self) -> &[Self] {
         use Atom as A;
         match self.get() {
-            A::Irrational(_) | A::Rational(_) | A::Var(_) | A::Undef => Box::new([].iter()),
-            A::Sum(Sum { args }) | A::Prod(Prod { args }) => Box::new(args.iter()),
-            A::Pow(Pow { args }) => Box::new(args.iter()),
-            A::Func(func) => func.iter_args(),
+            A::Undef
+            | A::Rational(_)
+            | A::Irrational(_)
+            | A::Var(_) => &[],
+            A::Sum(Sum { args })
+            | A::Prod(Prod { args }) => args.as_slice(),
+            A::Pow(Pow { args }) => args,
+            A::Func(func) => func.args(),
         }
     }
 
-    fn iter_args_mut(&mut self) -> Box<dyn Iterator<Item = &mut Self> + '_> {
+    pub fn args_mut(&mut self) -> &mut [Self] {
         use Atom as A;
         match self.make_mut() {
-            A::Irrational(_) | A::Rational(_) | A::Var(_) | A::Undef => Box::new([].iter_mut()),
-            A::Sum(Sum { args }) | A::Prod(Prod { args }) => Box::new(args.iter_mut()),
-            A::Pow(Pow { args }) => Box::new(args.iter_mut()),
-            A::Func(func) => func.iter_args_mut(),
+            A::Undef
+            | A::Rational(_)
+            | A::Irrational(_)
+            | A::Var(_) => &mut [],
+            A::Sum(Sum { args })
+            | A::Prod(Prod { args }) => args.as_mut_slice(),
+            A::Pow(Pow { args }) => args,
+            A::Func(func) => func.args_mut(),
         }
+    }
+
+    fn iter_args(&self) -> impl Iterator<Item = &Self> {
+        self.args().iter()
+    }
+
+    fn iter_args_mut(&mut self) -> impl Iterator<Item = &mut Self> {
+        self.args_mut().iter_mut()
+    }
+
+    fn map_args(mut self, map_fn: impl Fn(&mut Expr)) -> Self {
+        self.iter_args_mut().for_each(map_fn);
+        self
     }
 
     fn try_for_each_compl_sub_expr<F>(&mut self, func: F)
@@ -1390,6 +1426,7 @@ impl Expr {
 }
 
 impl Expr {
+    /*
     pub fn pow_expand(base: impl Borrow<Expr>, exponent: impl Borrow<Expr>) -> Expr {
         Expr::pow(base, exponent).expand()
     }
@@ -1423,8 +1460,8 @@ impl Expr {
             _ => Expr::mul(lhs, rhs),
         }
     }
+    */
 
-    // TODO: quot rule
     pub fn derivative<T: Borrow<Self>>(&self, x: T) -> Self {
         use Atom as A;
         let x = x.borrow();
@@ -1487,7 +1524,7 @@ impl Expr {
             A::Prod(Prod { args }) if args.len() == 1 => args.first().unwrap().expand(),
             A::Prod(prod) => prod.distribute(),
             A::Pow(pow) => match pow.exponent().get() {
-                A::Rational(r) if /*r.is_int() &&*/ r > &Rational::ONE => pow.expand_pow(),
+                A::Rational(r) if /*r.is_int() &&*/ r > &Rational::ONE || r == &Rational::MINUS_ONE => pow.expand_pow(),
                 A::Rational(r) if r == &Rational::ONE => return pow.base().clone(),
                 _ => expanded.clone(),
             },
@@ -1832,6 +1869,43 @@ impl<'a> Iterator for ExprIterator<'a> {
     }
 }
 
+trait ArgsIterator<T>: iter::ExactSizeIterator<Item = T> {}
+impl<I, T: iter::ExactSizeIterator<Item = I>> ArgsIterator<I> for T {}
+
+trait ArgsRef: ops::Index<usize> {
+    fn args(&self) -> Box<dyn ArgsIterator<&Expr> + '_>;
+    fn args_mut(&mut self) -> Box<dyn ArgsIterator<&mut Expr> + '_>;
+    fn len(&self) -> usize;
+}
+
+impl ArgsRef for [Expr; 2] {
+    fn args(&self) -> Box<dyn ArgsIterator<&Expr> + '_> {
+        Box::new(self.iter())
+    }
+
+    fn args_mut(&mut self) -> Box<dyn ArgsIterator<&mut Expr> + '_> {
+        Box::new(self.iter_mut())
+    }
+
+    fn len(&self) -> usize {
+        2
+    }
+}
+
+impl ArgsRef for Vec<Expr> {
+    fn args(&self) -> Box<dyn ArgsIterator<&Expr> + '_> {
+        Box::new(self.iter())
+    }
+
+    fn args_mut(&mut self) -> Box<dyn ArgsIterator<&mut Expr> + '_> {
+        Box::new(self.iter_mut())
+    }
+
+    fn len(&self) -> usize {
+        Self::len(self)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use assert_eq as eq;
@@ -1851,7 +1925,7 @@ mod test {
         );
         eq!(
             e!(2 ^ (1 / 2) * x ^ 2 + 3 ^ (1 / 2) * x + 5 ^ (1 / 2)).variables(),
-            [e!(x), e!(2 ^ (1 / 2)), e!(3 ^ (1 / 2)), e!(5 ^ (1 / 2))]
+            [e!(x), e!(2 ^ (1 / 2)), e!(3 ^ (1/2)), e!(5 ^ (1 / 2))]
                 .into_iter()
                 .collect()
         );
@@ -1978,33 +2052,35 @@ mod test {
             e!(2 ^ (1 / 2) * (1 + 2 ^ (1 / 2)))
         );
         eq!(
-            e!(a * b * x + a * c * x + b * c * x).factor_out(),
-            e!(x * (a * b + a * c + b * c))
+            e!(a*b*x + a*c*x + b*c*x).factor_out(),
+            e!(x*(a*b + a*c + b*c))
         );
-        eq!(e!(a / x + b / x), e!(a / x + b / x))
+        eq!(e!(a/x + b/x), e!(a/x + b/x))
     }
 
     #[test]
     fn derivative() {
         let d = |e: Expr| {
             e.derivative(e!(x))
-                .reduce()
                 .rationalize()
                 .expand()
                 .factor_out()
+                .reduce()
+                .reduce()
         };
 
-        eq!(d(e!(x ^ 2)), e!(2 * x));
+        eq!(d(e!(x^2)), e!(2*x));
         eq!(d(e!(sin(x))), e!(cos(x)));
         eq!(d(e!(exp(x))), e!(exp(x)));
-        eq!(d(e!(x * exp(x))), e!(exp(x) * (x + 1)));
-        eq!(d(e!(ln(x))), e!(1 / x));
-        eq!(d(e!(1 / x)), e!(-1 / x^2));
+        eq!(d(e!(x * exp(x))), e!((1+x) * exp(x)));
+        eq!(d(e!(ln(x))), e!(1/x));
+        eq!(d(e!(1/x)), e!(-1/x^2));
         eq!(d(e!(tan(x))), e!(sec(x) ^ 2));
-        eq!(d(e!(arc_tan(x))), e!(1 / (1 + x^2)));
+        eq!(d(e!(arc_tan(x))), e!(1/(1 + x^2)));
         eq!(
             d(e!(x * ln(x) * sin(x))),
-            e!(sin(x) + x*cos(x)*ln(x) + sin(x)*ln(x))
+            e!(x*cos(x)*ln(x) + sin(x)*ln(x) + sin(x))
+            //e!(sin(x) + x*cos(x)*ln(x) + sin(x)*ln(x))
         );
         //eq!(d(e!(x ^ 2)), e!(2 * x));
         //eq!(d(exp(e!(sin(x)))), exp(e!(x)));

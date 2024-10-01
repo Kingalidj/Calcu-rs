@@ -5,9 +5,7 @@ use calcu_rs::prelude::*;
 use calcurs_macros::expr as e;
 
 fn main() {
-    env_logger::builder()
-        .filter_level(log::LevelFilter::Trace)
-        .init();
+
 
     let start = Instant::now();
     //println!("{:?}", e!((2*x)^2).as_monomial(&[e!(x)].into()).coeff());
@@ -23,9 +21,11 @@ fn main() {
     //println!("{}", e!((x+1)*(x-1)).reduce().expand().rationalize().factor_out().reduce());
 
     //let e = e!(x + -1 * y);
-    let e = e!((x+y)^3);
-    println!("{:?}", e);
-    println!("{:?}", e.reduce());
+    //let e = e!(x * ln(x)).derivative(e!(x)).rationalize().expand().factor_out();
+    let e = Expr::div_raw(e!(x*y), e!(x*y));
+    println!("{}", e);
+    println!("{}", e.expand().reduce());
+    println!("{:?}", e!((a*b)^-1).expand());
 
 
     println!("took: {:?}ms", (Instant::now() - start).as_micros());

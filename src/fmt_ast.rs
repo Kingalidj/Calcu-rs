@@ -185,7 +185,6 @@ impl FmtAtom {
 
     pub fn fmt_prod(args: &VecDeque<FmtAtom>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use FmtAtom as F;
-        println!("{args:?}");
         let mut args = args.iter().peekable();
 
         //if let Some(a) = args.next() {
@@ -206,15 +205,19 @@ impl FmtAtom {
                     Self::fmt_w_prec(prod_prec(), a, f)?;
                     prev = Some(a);
                 }
+                (Some(F::Func(..)), F::Func(..), _) => {
+                    Self::fmt_w_prec(prod_prec(), a, f)?;
+                    prev = Some(a)
+                }
                 (Some(_), F::Inverse(e), _) => {
                     write!(f, "/")?;
                     Self::fmt_w_prec(pow_prec(), e, f)?;
-                    prev = Some(&*e);
-                }
-                (_, a, Some(F::Inverse(_))) => {
-                    Self::fmt_w_prec(pow_prec(), a, f)?;
                     prev = Some(a);
                 }
+                //(_, a, Some(F::Inverse(_))) => {
+                //    Self::fmt_w_prec(pow_prec(), a, f)?;
+                //    prev = Some(a);
+                //}
                 _ => {
                     if prev.is_some() {
                         write!(f, "·")?;
