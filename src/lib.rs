@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 mod atom;
-mod expr;
+mod algos;
 mod fmt_ast;
 mod polynomial;
 mod rational;
