@@ -6,6 +6,12 @@ pub(crate) type HashMap<K, V, B = BuildHasher> = std::collections::HashMap<K, V,
 pub(crate) type HashSet<K, B = BuildHasher> = std::collections::HashSet<K, B>;
 pub(crate) type Instant = quanta::Instant;
 
+macro_rules! during_debug {
+    () => {{
+        #[cfg(debug_assertions)] true
+        #[cfg(not(debug_assertions))] false
+    }}
+}
 
 macro_rules! function_name {
     ($lvl: literal) => {{
@@ -20,8 +26,8 @@ macro_rules! function_name {
             .collect::<Vec<_>>()
             .join("::")
 
-            //.find(|&part| part!= "f" && part != "{{closure}}")
-            //.expect("function name")
+        //.find(|&part| part!= "f" && part != "{{closure}}")
+        //.expect("function name")
     }};
 }
 pub(crate) use function_name;
@@ -42,7 +48,6 @@ macro_rules! trace_fn {
     }}
 }
 pub(crate) use trace_fn;
-
 
 //pub trait Pow<Rhs = Self> {
 //    type Output;
@@ -72,4 +77,3 @@ where
     write!(f, "{end}")?;
     Ok(())
 }
-

@@ -4,6 +4,9 @@ use std::{
     ops,
 };
 
+use proc_macro2::TokenStream;
+use quote::quote;
+
 use logos::{Logos, Source};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
@@ -555,6 +558,8 @@ impl SymExpr {
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 struct WolframContext {
     exprs: Vec<SymExpr>,
+    func_defs: HashMap<String, HashSet<FuncDef>>,
+    func_calls: HashMap<String, HashSet<FuncCall>>,
 }
 
 impl WolframContext {
@@ -562,35 +567,9 @@ impl WolframContext {
     fn push_expr(&mut self, e: SymExpr) {
         self.exprs.push(e);
     }
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-struct WolframFiles {
-    func_defs: HashMap<String, HashSet<FuncDef>>,
-    func_calls: HashMap<String, HashSet<FuncCall>>,
-    files: Vec<(String, WolframContext)>,
-}
-
-impl WolframFiles {
-    fn next_file(&mut self, name: String) {
-        self.files.push((name.into(), Default::default()))
-    }
 
     fn func_defs(&self) -> Vec<String> {
         self.func_defs.keys().cloned().collect()
-    }
-
-    fn register_expr(&mut self, e: &SymExpr) {
-        match e {
-            SymExpr::FuncDef(fd) => self.func_def(fd),
-            SymExpr::FuncCall(fc) => self.func_call(fc),
-            _ => (),
-        }
-    }
-
-    fn push_expr(&mut self, e: SymExpr) {
-        self.register_expr(&e);
-        self.files.last_mut().unwrap().1.push_expr(e)
     }
 
     fn func_call(&mut self, fc: &FuncCall) {
@@ -621,11 +600,94 @@ impl WolframFiles {
             .cloned()
             .collect()
     }
+
+    fn register_expr(&mut self, e: &SymExpr) {
+        match e {
+            SymExpr::FuncDef(fd) => self.func_def(fd),
+            SymExpr::FuncCall(fc) => self.func_call(fc),
+            _ => (),
+        }
+    }
+
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+struct File { name: String, cntxt: WolframContext }
+
+impl From<(String, WolframContext)> for File {
+    fn from(value: (String, WolframContext)) -> Self {
+        File { name: value.0, cntxt: value.1 }
+    }
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+struct WolframFiles {
+    files: Vec<File>,
+}
+
+impl WolframFiles {
+    fn next_file(&mut self, name: impl Into<String>) {
+        self.files.push((name.into(), Default::default()).into())
+    }
+
+    fn current_file(&mut self) -> &mut File {
+        if self.files.is_empty() {
+            self.next_file("NO FILENAME");
+            self.files.last_mut().unwrap()
+        } else {
+            self.files.last_mut().unwrap()
+        }
+    }
+
+    fn current_cntxt(&mut self) -> &mut WolframContext {
+        &mut self.current_file().cntxt
+    }
+
+    fn push_expr(&mut self, e: SymExpr) {
+        self.register_expr(&e);
+        self.current_cntxt().push_expr(e)
+    }
+
+    fn register_expr(&mut self, e: &SymExpr) {
+        self.current_cntxt().register_expr(e)
+    }
+
+    fn func_defs_glob(&self) -> HashSet<String> {
+        self.func_defs_from(0..self.files.len())
+    }
+
+    fn func_defs_from(&self, span: ops::Range<usize>) -> HashSet<String> {
+        let mut func_defs = HashSet::new();
+        for i in span {
+            for def in self.files[i].cntxt.func_defs() {
+                func_defs.insert(def);
+            }
+        }
+        func_defs
+    }
+
+    fn builtin_fns_glob(&self) -> HashSet<String> {
+        self.builtin_fns_from(0..self.files.len())
+    }
+
+    fn builtin_fns_from(&self, span: ops::Range<usize>) -> HashSet<String> {
+        let glob_defs = self.func_defs_glob();
+        let mut builtins = HashSet::new();
+        for i in span {
+            let f = &self.files[i];
+            for call in f.cntxt.func_calls() {
+                if !glob_defs.contains(&call) {
+                    builtins.insert(call);
+                }
+            }
+        }
+        builtins
+    }
 }
 
 struct Parser {
     current: (Wolfram, ops::Range<usize>),
-    cntxt: WolframFiles,
+    glob_cntxt: WolframFiles,
     tok_count: usize,
     token_iter: std::iter::Peekable<Box<dyn Iterator<Item = (Wolfram, ops::Range<usize>)>>>,
 }
@@ -634,7 +696,7 @@ impl fmt::Debug for Parser {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Parser")
             .field("current", &self.current)
-            .field("context", &self.cntxt)
+            .field("context", &self.glob_cntxt)
             .finish()
     }
 }
@@ -662,7 +724,7 @@ impl Parser {
             Box::new(token_iter);
         Self {
             current,
-            cntxt: Default::default(),
+            glob_cntxt: Default::default(),
             tok_count: 0,
             token_iter: token_iter.peekable(),
         }
@@ -680,7 +742,7 @@ impl Parser {
         let mut n = self.current.0.clone();
         while let Wolfram::Comment(c) = n {
             if c.contains("FILE:") {
-                self.cntxt.next_file(c.clone())
+                self.glob_cntxt.next_file(c)
             }
             n = self.next()?.clone();
         }
@@ -692,7 +754,7 @@ impl Parser {
         while n.skippable() {
             if let Wolfram::Comment(c) = n {
                 if c.contains("FILE:") {
-                    self.cntxt.next_file(c.clone())
+                    self.glob_cntxt.next_file(c)
                 }
             }
             n = self.next()?.clone();
@@ -838,12 +900,12 @@ fn parse_call(name: String, t: &mut Parser) -> SymExpr {
     let call = FuncCall { name, args };
     if t.check(&W::Def) {
         let fd = SymExpr::FuncDef(parse_func_def(call, t));
-        t.cntxt.register_expr(&fd);
+        t.glob_cntxt.register_expr(&fd);
         fd
     } else {
         //t.cntxt.func_call(&call);
         let fc = SymExpr::FuncCall(call);
-        t.cntxt.register_expr(&fc);
+        t.glob_cntxt.register_expr(&fc);
         fc
     }
 }
@@ -1104,28 +1166,16 @@ pub fn load_rubi() {
     });
 
     let mut t = Parser::new(tokens);
-    let mut count = 0;
+    //let mut count = 0;
     loop {
         let expr = parse_expr(&mut t);
-        t.cntxt.push_expr(expr);
+        t.glob_cntxt.push_expr(expr);
         t.skip_comment_nl();
         if t.reached_end() {
             break;
         }
         //assert_tok!(t, &Wolfram::NL);
     }
-    //println!("{:?}", t.cntxt.builtin_func_calls());
-    //let f1 = t.cntxt.files.first().unwrap();
-    //println!("{:?}", f1.0);
-    //f1.1.exprs.iter().for_each(|e| {
-    //    println!("{:?}", e);
-    //})
-    //t.cntxt.files.iter().for_each(|f| println!("{:?}", f.1.builtin_func_calls()));
 
-    //let exprs_str = serde_json::to_string(&exprs).unwrap();
-    //std::fs::write("exprs.json", &exprs_str).expect("Unable to write file");
-
-    //println!("func. calls: {:?}", t.cntxt.builtin_func_calls());
-    //let tokens: Vec<_> = tokens.collect();
-    //println!("{:?}", &tokens[0..10]);
+    assert!(false, "{:?}", t.glob_cntxt.builtin_fns_glob());
 }

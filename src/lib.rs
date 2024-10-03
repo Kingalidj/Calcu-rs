@@ -1,13 +1,15 @@
 mod expr;
-mod utils;
-mod rational;
+mod atom;
 mod fmt_ast;
 mod polynomial;
+mod rational;
 mod rubi;
+mod utils;
 
 pub mod prelude {
     use super::*;
-    pub use expr::{Expr, Pow, Prod, Sum, Irrational};
-    pub use rational::Rational;
     pub use calcurs_macros::expr;
+    pub use expr::Expr;
+    pub use atom::{Irrational, Pow, Prod, Sum};
+    pub use rational::Rational;
 }

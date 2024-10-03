@@ -2,7 +2,7 @@ use proc_macro2::{Ident, Span, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
 use std::fmt::Write;
 use syn::{
-    parenthesized, parse::{self, discouraged::Speculative, Parse, ParseStream}, punctuated::{self as punc, Punctuated}, token, Token
+    parenthesized, parse::{self, discouraged::Speculative, Parse, ParseStream}, parse_macro_input, punctuated::{self as punc, Punctuated}, token, Attribute, Token
 };
 
 mod rubi;
@@ -164,271 +164,12 @@ impl Expr {
 
         Ok(expr)
     }
-
-    fn eval_op(op: OpKind, lhs: TokenStream, rhs: TokenStream) -> TokenStream {
-        match op {
-            OpKind::Add => quote!((#lhs + #rhs)),
-            OpKind::Sub => quote!((#lhs - #rhs)),
-            OpKind::Mul => quote!((#lhs * #rhs)),
-            OpKind::Div => quote!((#lhs / #rhs)),
-            OpKind::Pow => quote!((#lhs.pow(#rhs))),
-        }
-    }
 }
 
 impl Parse for Expr {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         Expr::parse_bin_expr(input, 0 + 1)
     }
-}
-
-#[derive(Debug, Clone)]
-struct RewriteRule {
-    name: String,
-    lhs: Expr,
-    rhs: Expr,
-    cond: Option<syn::Expr>,
-    bidir: bool,
-}
-
-impl RewriteRule {
-    fn quote_lhs_to_rhs(
-        name: &String,
-        lhs: &Expr,
-        rhs: &Expr,
-        cond: &Option<syn::Expr>,
-        dbg: bool,
-    ) -> TokenStream {
-        let lhs = to_pat_stream(lhs).unwrap();
-        let rhs = to_pat_stream(rhs).unwrap();
-
-        let mut debug = TokenStream::new();
-        if dbg {
-            let cond_str = match cond {
-                Some(cond) => {
-                    let mut str = " if ".to_string();
-                    write!(str, "{},", cond.clone().to_token_stream().to_string()).unwrap();
-                    str
-                }
-                None => ",".into(),
-            };
-
-            debug = quote!(
-            debug!("  {}: {} => {}{}", #name, __searcher, __applier, #cond_str);
-            )
-        }
-
-        let mut cond_applier = TokenStream::new();
-
-        if let Some(cond) = cond {
-            cond_applier = quote!(
-            let __applier = egraph::ConditionalApplier {
-                condition: #cond,
-                applier: __applier,
-            };
-            )
-        }
-
-        quote!({
-            let __searcher = egraph::Pattern::new(#lhs);
-            let __applier  = egraph::Pattern::new(#rhs);
-            #debug
-            #cond_applier
-            egraph::Rewrite::new(#name.to_string(), __searcher, __applier).unwrap()
-        })
-    }
-
-    fn quote_debug(&self, dbg: bool) -> TokenStream {
-        if self.bidir {
-            let n1 = self.name.clone();
-            let mut n2 = self.name.clone();
-            n2.push_str(" REV");
-            let r1 = Self::quote_lhs_to_rhs(&n1, &self.lhs, &self.rhs, &self.cond, dbg);
-            let r2 = Self::quote_lhs_to_rhs(&n2, &self.rhs, &self.lhs, &self.cond, dbg);
-            quote!(#r1, #r2)
-        } else {
-            Self::quote_lhs_to_rhs(&self.name, &self.lhs, &self.rhs, &self.cond, dbg)
-        }
-    }
-}
-
-impl Parse for RewriteRule {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let mut name = syn::Ident::parse(input)?.to_string();
-
-        loop {
-            let token = proc_macro2::TokenTree::parse(input).expect("expected :");
-            match token {
-                TokenTree::Punct(punct) if punct.as_char() == ':' => break,
-                tok => {
-                    name.push_str(" ");
-                    name.push_str(&tok.to_string());
-                }
-            }
-            //if let Ok(n) = syn::Ident::parse(input) {
-            //    name.push_str(" ");
-            //    name.push_str(&n.to_string());
-            //} else if let Ok(n) = syn::Lit::parse(input) {
-            //    name.push_str(" ");
-            //    name.push_str(&n.to_token_stream().to_string());
-            //} else if let Ok(eq) = syn::token::Eq::parse(input) {
-            //    name.push_str(" ");
-            //    name.push_str(&eq.to_token_stream().to_string());
-            //} else {
-            //    break;
-            //}
-        }
-
-        //let _ = input.parse::<Token![:]>()?;
-
-        let lhs = Expr::parse(input)?;
-
-        let bidir = if input.peek(Token![->]) {
-            let _ = input.parse::<Token![->]>()?;
-            false
-        } else if input.peek(Token![<]) && input.peek2(Token![->]) {
-            let _ = input.parse::<Token![<]>()?;
-            let _ = input.parse::<Token![->]>()?;
-            true
-        } else {
-            return Err(parse::Error::new(input.span(), "expected -> or <->"));
-        };
-
-        let rhs = Expr::parse(input)?;
-
-        let cond = if let Ok(_) = input.parse::<Token![if]>() {
-            Some(syn::Expr::parse(input)?)
-        } else {
-            None
-        };
-
-        Ok(RewriteRule {
-            name,
-            lhs,
-            rhs,
-            cond,
-            bidir,
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
-struct RuleSet {
-    gen_name: Ident,
-    rules: Vec<RewriteRule>,
-    debug: bool,
-}
-
-impl RuleSet {
-    fn quote(&self) -> TokenStream {
-        let gen_name = &self.gen_name;
-
-        let mut n_rules: usize = 0;
-        for r in &self.rules {
-            n_rules += if r.bidir { 2 } else { 1 };
-        }
-
-        let mut rules = TokenStream::new();
-        for r in &self.rules {
-            let r = r.quote_debug(true); // r.quote_debug(self.debug)
-            rules.extend(quote!(#r,))
-        }
-
-        let mut debug = TokenStream::new();
-        if self.debug {
-            let name = gen_name.to_string();
-            debug = quote!(println!("{}:", #name););
-        }
-
-        quote!(
-        pub fn #gen_name() -> [egraph::Rewrite<ExprFold>; #n_rules] {
-            #debug
-            [ #rules ]
-        })
-    }
-}
-
-impl Parse for RuleSet {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let mut gen_name = syn::Ident::parse(input)?;
-        let mut debug = false;
-
-        if gen_name == "debug" {
-            debug = true;
-            gen_name = syn::Ident::parse(input)?;
-        }
-
-        let _ = input.parse::<Token![:]>();
-        let rules: Vec<_> =
-            punc::Punctuated::<RewriteRule, syn::Token![,]>::parse_terminated(&input)?
-                .into_iter()
-                .collect();
-
-        Ok(RuleSet {
-            gen_name,
-            rules,
-            debug,
-        })
-    }
-}
-
-fn op_to_pat_stream(op: OpKind) -> TokenStream {
-    match op {
-        OpKind::Add => quote!(Node::Add([lhs, rhs])),
-        OpKind::Mul => quote!(Node::Mul([lhs, rhs])),
-        OpKind::Pow => quote!(Node::Pow([lhs, rhs])),
-
-        OpKind::Sub => quote! {{
-            let minus_one = pat.add(egraph::ENodeOrVar::ENode(Node::Rational(Rational::from(-1))));
-            let minus_rhs = pat.add(egraph::ENodeOrVar::ENode(Node::Mul([minus_one, rhs])));
-            Node::Add([lhs, minus_rhs])
-        }},
-        OpKind::Div => quote! {{
-            let minus_one = pat.add(egraph::ENodeOrVar::ENode(Node::Rational(Rational::from(-1))));
-            let inv_rhs = pat.add(egraph::ENodeOrVar::ENode(Node::Pow([rhs, minus_one])));
-            Node::Mul([lhs, inv_rhs])
-        }},
-    }
-}
-
-fn gen_pat_stream(e: &Expr) -> parse::Result<TokenStream> {
-    let node = match e {
-        Expr::Num(n) => quote!(Node::Rational(Rational::from(#n))),
-        Expr::Symbol(s) => {
-            panic!("symbols currently not supported with patterns");
-        }
-        Expr::Undef => quote!(Node::Undef),
-        Expr::Binary(op, lhs, rhs) => {
-            let lhs = gen_pat_stream(lhs)?;
-            let rhs = gen_pat_stream(rhs)?;
-            let op = op_to_pat_stream(*op);
-            quote! {{
-                let lhs = #lhs;
-                let rhs = #rhs;
-                #op
-            }}
-        }
-        Expr::PlaceHolder(var) => {
-            return Ok(quote! {
-                pat.add(egraph::ENodeOrVar::Var(#var.into()))
-            })
-        }
-        _ => todo!(),
-    };
-
-    Ok(quote! {{
-        let p = #node;
-        pat.add(egraph::ENodeOrVar::ENode(p))
-    }})
-}
-
-fn to_pat_stream(e: &Expr) -> parse::Result<TokenStream> {
-    let n = gen_pat_stream(e)?;
-    Ok(quote!({
-        let mut pat = egraph::RecExpr::default();
-        #n;
-        pat
-    }))
 }
 
 fn to_expr_stream(e: &Expr) -> parse::Result<TokenStream> {
@@ -440,6 +181,7 @@ fn gen_expr_stream(e: &Expr) -> parse::Result<TokenStream> {
     use OpKind as OK;
     Ok(match e {
         E::Num(n) => quote!(Expr::rational(#n)),
+        E::Symbol(s) if s == "pi" => quote!(Expr::pi()),
         E::Symbol(s) => quote!(Expr::from(#s)),
         E::Undef => quote!(Expr::undef()),
         E::Binary(op, lhs, rhs) => {
@@ -489,7 +231,7 @@ impl Parse for ExprArgs {
 
 #[proc_macro]
 pub fn expr(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let args = syn::parse_macro_input!(input as ExprArgs);
+    let args = parse_macro_input!(input as ExprArgs);
     let stream = to_expr_stream(&args.expr);
     //panic!("{}", stream);
     match stream {
@@ -499,22 +241,99 @@ pub fn expr(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 }
 
 #[proc_macro]
-pub fn pat(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let expr = syn::parse_macro_input!(input as Expr);
-    let stream = to_pat_stream(&expr);
-    match stream {
-        Ok(s) => s.into(),
-        Err(e) => e.to_compile_error().into(),
-    }
-}
-
-#[proc_macro]
-pub fn define_rules(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    syn::parse_macro_input!(input as RuleSet).quote().into()
-}
-
-#[proc_macro]
 pub fn integration_rules(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
     rubi::load_rubi();
     TokenStream::new().into()
 }
+
+struct ArithOpsArgs {
+    ref_tok: syn::Token![ref],
+    comma: syn::Token![,],
+    field: syn::ExprField,
+}
+
+impl Parse for ArithOpsArgs {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        Ok(Self {
+            ref_tok: input.parse()?,
+            comma: input.parse()?,
+            field: input.parse()?,
+        })
+    }
+}
+
+#[proc_macro_attribute]
+pub fn arith_ops(attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let item = parse_macro_input!(item as syn::ItemStruct);
+
+    let mut attribs = quote! {
+        #[derive(Add, AddAssign, Sub, SubAssign, Mul, MulAssign, Div, DivAssign)]
+        #[mul(forward)]
+        #[div(forward)]
+        #[mul_assign(forward)]
+        #[div_assign(forward)]
+        #item
+    };
+
+    if !attr.is_empty() {
+        let args: ArithOpsArgs = match syn::parse(attr){
+            Ok(id) => id, 
+            Err(e) => return e.into_compile_error().into(),
+        };
+
+        let member = args.field.member;
+
+        #[allow(non_snake_case)]
+        let T = item.ident;
+
+        attribs.extend(quote! {
+            impl ops::AddAssign<&#T> for #T {
+                fn add_assign(&mut self, rhs: &Self) {
+                    self.#member += &rhs.#member
+                }
+            }
+            impl ops::Add<&#T> for #T {
+                type Output = #T;
+                fn add(self, rhs: &Self) -> Self::Output {
+                    Self(self.#member + &rhs.#member)
+                }
+            }
+            impl ops::SubAssign<&#T> for #T {
+                fn sub_assign(&mut self, rhs: &Self) {
+                    self.#member -= &rhs.#member
+                }
+            }
+            impl ops::Sub<&#T> for #T {
+                type Output = #T;
+                fn sub(self, rhs: &Self) -> Self::Output {
+                    Self(self.#member - &rhs.#member)
+                }
+            }
+            impl ops::MulAssign<&#T> for #T {
+                fn mul_assign(&mut self, rhs: &Self) {
+                    self.#member *= &rhs.#member
+                }
+            }
+            impl ops::Mul<&#T> for #T {
+                type Output = #T;
+                fn mul(self, rhs: &Self) -> Self::Output {
+                    Self(self.#member * &rhs.#member)
+                }
+            }
+            impl ops::Div<&#T> for #T {
+                type Output = #T;
+                fn div(self, rhs: &Self) -> Self::Output {
+                    Self(self.#member / &rhs.#member)
+                }
+            }
+            impl ops::DivAssign<&#T> for #T {
+                fn div_assign(&mut self, rhs: &Self) {
+                    self.#member /= &rhs.#member
+                }
+            }
+        })
+    }
+
+    attribs.into()
+}
+

@@ -1,6 +1,7 @@
 use crate::{
-    expr::{Atom, Expr, Prod, Sum},
-    rational::{Rational, Int},
+    expr::Expr,
+    atom::{Atom, Prod, Sum},
+    rational::{Int, Rational},
     utils::HashMap,
 };
 
@@ -138,7 +139,8 @@ impl GPE {
     }
 
     pub fn sort_by_degree(&mut self) {
-        self.terms.sort_unstable_by(|(_, vp1,), (_, vp2)| vp1.cmp(vp2).reverse());
+        self.terms
+            .sort_unstable_by(|(_, vp1), (_, vp2)| vp1.cmp(vp2).reverse());
     }
 
     pub fn add(&mut self, c: Coeff, vp: VarPow) {
@@ -151,7 +153,10 @@ impl GPE {
 
     pub fn to_expr(mut self) -> Expr {
         self.sort_by_degree();
-        self.terms.into_iter().map(|(c, vp)| c * vp.to_expr()).fold(Expr::zero(), |sum, term| sum + term)
+        self.terms
+            .into_iter()
+            .map(|(c, vp)| c * vp.to_expr())
+            .fold(Expr::zero(), |sum, term| sum + term)
     }
 }
 
@@ -173,7 +178,7 @@ impl<'a> MonomialView<'a> {
             return true;
         }
 
-        match self.monom.get() {
+        match self.monom.atom() {
             A::Undef => return false,
             A::Irrational(_) | A::Rational(_) | A::Var(_) | A::Sum(_) => (),
             A::Prod(Prod { args }) => {
@@ -184,7 +189,7 @@ impl<'a> MonomialView<'a> {
                 }
                 return true;
             }
-            A::Pow(pow) => match (pow.base(), pow.exponent().get()) {
+            A::Pow(pow) => match (pow.base(), pow.exponent().atom()) {
                 (base, A::Rational(r))
                     // TODO: negative exponent?
                     if self.vars.has(base) && r.is_int() && r >= &Rational::ONE =>
@@ -212,7 +217,7 @@ impl<'a> MonomialView<'a> {
             return Some((Expr::one(), [(v.clone(), Int::ONE)].into()));
         }
 
-        match self.monom.get() {
+        match self.monom.atom() {
             A::Prod(Prod { args }) => {
                 let mut coeff = Expr::one();
                 let mut degree = VarPow::default();
@@ -224,19 +229,19 @@ impl<'a> MonomialView<'a> {
                 return Some((coeff, degree));
             }
             A::Pow(pow) => {
-                match pow.exponent().get() {
+                match pow.exponent().atom() {
                     // TODO: negative exponent?
                     A::Rational(r) if r.is_int() && r >= &Rational::ONE => {
                         let (c, mut d) = pow.base().as_monomial(self.vars).coeff()?;
                         d.pow(&r.to_int().unwrap());
-                        return Some((Expr::pow(c, pow.exponent()), d))
+                        return Some((Expr::pow(c, pow.exponent()), d));
                         //if self.vars.has(pow.base()) {
                         //    let v = pow.base();
                         //    return Some((Expr::one(), [(v.clone(), r.numer().clone())].into()));
                         //}
                     }
                     _ => (),
-                } 
+                }
             }
             _ => (),
         }
@@ -268,7 +273,7 @@ impl<'a> PolynomialView<'a> {
 
     pub fn check(&self) -> bool {
         use Atom as A;
-        if let A::Sum(Sum { args }) = self.poly.get() {
+        if let A::Sum(Sum { args }) = self.poly.atom() {
             if self.vars.has(self.poly) {
                 return true;
             }
@@ -329,7 +334,7 @@ impl<'a> PolynomialView<'a> {
             return coeffs;
         }
 
-        if let A::Sum(Sum { args }) = self.poly.get() {
+        if let A::Sum(Sum { args }) = self.poly.atom() {
             if self.vars.has(self.poly) {
                 let v = self.poly;
                 coeffs.insert([(v.clone(), Int::ZERO)].into(), Expr::one());
@@ -366,7 +371,7 @@ impl<'a> PolynomialView<'a> {
 
     pub fn collect_terms(&self) -> Option<Expr> {
         use Atom as A;
-        let sum = if let A::Sum(sum) = self.poly.get() {
+        let sum = if let A::Sum(sum) = self.poly.atom() {
             sum
         } else {
             // self.poly != A::Sum(_)
@@ -568,15 +573,18 @@ mod polynomial_uv {
         assert_eq!(poly.coeffs_of_deg(&e!(x ^ 2 + 1), &Int::ONE), None);
         assert_eq!(
             poly.coeffs_of_deg(&e!(x ^ 2 + 1), &Int::ZERO),
-            Some(e!(x^2 + 1))
+            Some(e!(x ^ 2 + 1))
         );
     }
 
     #[test]
     fn collect_terms() {
-        let expr = e!(2*a*x*y + 3*b*x*y + 4*a*x + 5*b*x);
-        assert_eq!(expr.as_polynomial(&[e!(x), e!(y)].into()).collect_terms().unwrap(), 
-            e!((2*a + 3*b)*x*y + (4*a + 5*b)*x)
-            )
+        let expr = e!(2 * a * x * y + 3 * b * x * y + 4 * a * x + 5 * b * x);
+        assert_eq!(
+            expr.as_polynomial(&[e!(x), e!(y)].into())
+                .collect_terms()
+                .unwrap(),
+            e!((2 * a + 3 * b) * x * y + (4 * a + 5 * b) * x)
+        )
     }
 }

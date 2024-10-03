@@ -1,21 +1,120 @@
-use std::{
-    cmp::Ordering,
-    fmt::{self, Debug, Display, Formatter},
-    ops,
+use std::{cmp::Ordering, ops};
+
+use calcurs_macros::arith_ops;
+use derive_more::{
+    Add, AddAssign, Debug, Display, Div, DivAssign, From, Into, Mul, MulAssign, Sub, SubAssign,
 };
 
 use malachite::{
     self as mal,
-    num::{
-        arithmetic::traits::{Abs, Gcd, DivRem, PowAssign, Sign as MalSign},
-        conversion::traits::IsInteger,
-    },
+    num::{arithmetic::traits as marith, conversion::traits as mconv},
 };
-use ref_cast::RefCast;
 
-#[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, RefCast)]
+#[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Display, From, Into)]
+#[arith_ops(ref, self.0)]
+#[from(i32, u32, i64, u64)]
+#[into(mal::Rational)]
+#[debug("{}", self.0)]
 #[repr(transparent)]
 pub struct Int(mal::Integer);
+
+impl num::Zero for Int {
+    fn zero() -> Self {
+        Self::ZERO
+    }
+
+    fn is_zero(&self) -> bool {
+        self.is_zero()
+    }
+}
+
+impl ops::Rem<&Int> for Int {
+    type Output = Self;
+
+    fn rem(self, rhs: &Self) -> Self::Output {
+        Int(self.0.rem(&rhs.0))
+    }
+}
+
+impl ops::Rem for Int {
+    type Output = Self;
+
+    fn rem(self, rhs: Self) -> Self::Output {
+        Int(self.0.rem(rhs.0))
+    }
+}
+
+impl num::Num for Int {
+    type FromStrRadixErr = ();
+
+    fn from_str_radix(str: &str, radix: u32) -> Result<Self, Self::FromStrRadixErr> {
+        let int = mconv::FromStringBase::from_string_base(radix as u8, str).ok_or(())?;
+        Ok(Int(int))
+    }
+}
+
+impl num::Integer for Int {
+    fn div_floor(&self, other: &Self) -> Self {
+        Int(marith::DivMod::div_mod(&self.0, &other.0).0)
+    }
+
+    fn mod_floor(&self, other: &Self) -> Self {
+        Int(marith::Mod::mod_op(&self.0, &other.0))
+    }
+
+    fn gcd(&self, other: &Self) -> Self {
+        Int(marith::Gcd::gcd(self.0.unsigned_abs_ref(), other.0.unsigned_abs_ref()).into())
+    }
+
+    fn lcm(&self, other: &Self) -> Self {
+        Int(marith::Lcm::lcm(self.0.unsigned_abs_ref(), other.0.unsigned_abs_ref()).into())
+    }
+
+    fn is_multiple_of(&self, other: &Self) -> bool {
+        self.mod_floor(other).is_zero()
+    }
+
+    fn is_even(&self) -> bool {
+        marith::Parity::even(&self.0)
+    }
+
+    fn is_odd(&self) -> bool {
+        marith::Parity::odd(&self.0)
+    }
+
+    fn div_rem(&self, other: &Self) -> (Self, Self) {
+        let (quot, rem) = marith::DivRem::div_rem(&self.0, &other.0);
+        (Int(quot), Int(rem))
+    }
+}
+
+impl num::FromPrimitive for Int {
+    fn from_i64(n: i64) -> Option<Self> {
+        Some(Int(n.into()))
+    }
+
+    fn from_i128(n: i128) -> Option<Self> {
+        Some(Int(n.into()))
+    }
+
+    fn from_u64(n: u64) -> Option<Self> {
+        Some(Int(n.into()))
+    }
+
+    fn from_u128(n: u128) -> Option<Self> {
+        Some(Int(n.into()))
+    }
+}
+
+impl num_integer::Roots for Int {
+    fn nth_root(&self, n: u32) -> Self {
+        if self.is_pos() {
+            Int(marith::FloorRoot::floor_root(&self.0, n.into()))
+        } else {
+            Int(marith::CeilingRoot::ceiling_root(&self.0, n.into()))
+        }
+    }
+}
 
 impl Int {
     pub const ZERO: Int = Int(mal::Integer::const_from_signed(0));
@@ -23,7 +122,9 @@ impl Int {
     pub const TWO: Int = Int(mal::Integer::const_from_signed(2));
 
     pub fn binomial_coeff(n: &Int, k: &Int) -> Int {
-        Self(mal::num::arithmetic::traits::BinomialCoefficient::binomial_coefficient(&n.0, &k.0))
+        Self(marith::BinomialCoefficient::binomial_coefficient(
+            &n.0, &k.0,
+        ))
     }
 
     pub fn range_inclusive(start: Self, stop: Self) -> num::iter::RangeInclusive<Int> {
@@ -33,25 +134,24 @@ impl Int {
     pub fn is_one(&self) -> bool {
         self == &Int::ONE
     }
-
     pub fn is_zero(&self) -> bool {
         self == &Int::ZERO
     }
+    pub fn is_pos(&self) -> bool {
+        self > &Int::ZERO
+    }
+    pub fn is_neg(&self) -> bool {
+        self < &Int::ZERO
+    }
 
     pub fn gcd(&self, other: &Self) -> Self {
-        let n = self.0.unsigned_abs_ref().gcd(other.0.unsigned_abs_ref());
+        let n = marith::Gcd::gcd(self.0.unsigned_abs_ref(), other.0.unsigned_abs_ref());
         Self(n.into())
     }
-}
 
-impl fmt::Debug for Int {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-impl fmt::Display for Int {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+    pub fn prime_factorize(&self) {
+        //num_prime::nt_funcs::factorize(self.0);
+        todo!()
     }
 }
 
@@ -88,107 +188,11 @@ impl TryFrom<Rational> for Int {
         }
     }
 }
-impl From<Int> for Rational {
-    fn from(value: Int) -> Self {
-        Rational::from(value.0)
-    }
-}
-impl From<u64> for Int {
-    fn from(value: u64) -> Self {
-        Self(mal::Integer::from(value))
-    }
-}
 
-impl ops::Add for Int {
-    type Output = Int;
-    fn add(self, rhs: Self) -> Self::Output {
-        Self(self.0 + rhs.0)
-    }
-}
-impl ops::AddAssign for Int {
-    fn add_assign(&mut self, rhs: Self) {
-        self.0 = self.0.clone() + rhs.0;
-    }
-}
-impl ops::AddAssign<&Int> for Int {
-    fn add_assign(&mut self, rhs: &Self) {
-        self.0 = self.0.clone() + &rhs.0;
-    }
-}
-impl ops::Add<&Int> for Int {
-    type Output = Int;
-    fn add(self, rhs: &Self) -> Self::Output {
-        Self(self.0 + &rhs.0)
-    }
-}
-impl ops::Sub for Int {
-    type Output = Int;
-    fn sub(self, rhs: Self) -> Self::Output {
-        Self(self.0 - rhs.0)
-    }
-}
-impl ops::SubAssign for Int {
-    fn sub_assign(&mut self, rhs: Self) {
-        self.0 = self.0.clone() - rhs.0;
-    }
-}
-impl ops::SubAssign<&Int> for Int {
-    fn sub_assign(&mut self, rhs: &Self) {
-        self.0 = self.0.clone() - &rhs.0;
-    }
-}
-impl ops::Sub<&Int> for Int {
-    type Output = Int;
-    fn sub(self, rhs: &Self) -> Self::Output {
-        Self(self.0 - &rhs.0)
-    }
-}
-impl ops::Mul for Int {
-    type Output = Int;
-    fn mul(self, rhs: Self) -> Self::Output {
-        Self(self.0 * rhs.0)
-    }
-}
-impl ops::MulAssign for Int {
-    fn mul_assign(&mut self, rhs: Self) {
-        self.0 = self.0.clone() * rhs.0;
-    }
-}
-impl ops::MulAssign<&Int> for Int {
-    fn mul_assign(&mut self, rhs: &Self) {
-        self.0 = self.0.clone() * &rhs.0;
-    }
-}
-impl ops::Mul<&Int> for Int {
-    type Output = Int;
-    fn mul(self, rhs: &Self) -> Self::Output {
-        Self(self.0 * &rhs.0)
-    }
-}
-impl ops::Div for Int {
-    type Output = Int;
-    fn div(self, rhs: Self) -> Self::Output {
-        Self(self.0 / rhs.0)
-    }
-}
-impl ops::Div<&Int> for Int {
-    type Output = Int;
-    fn div(self, rhs: &Self) -> Self::Output {
-        Self(self.0 / &rhs.0)
-    }
-}
-impl ops::DivAssign for Int {
-    fn div_assign(&mut self, rhs: Self) {
-        self.0 = self.0.clone() / rhs.0;
-    }
-}
-impl ops::DivAssign<&Int> for Int {
-    fn div_assign(&mut self, rhs: &Self) {
-        self.0 = self.0.clone() / &rhs.0;
-    }
-}
-
-#[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Display, From)]
+#[arith_ops(ref, self.0)]
+#[from(i64, i32, u64, u32, Int)]
+#[debug("{}", self.0)]
 pub struct Rational(pub(crate) mal::Rational);
 
 impl Rational {
@@ -204,7 +208,6 @@ impl Rational {
 
     pub fn numer(&self) -> Int {
         Int(mal::Integer::from(self.0.numerator_ref().clone()))
-        //UInt::ref_cast(self.0.numerator_ref())
     }
 
     pub fn to_int(&self) -> Option<Int> {
@@ -217,23 +220,40 @@ impl Rational {
 
     #[inline(always)]
     pub fn is_zero(&self) -> bool {
-        matches!(self.0.sign(), Ordering::Equal)
+        matches!(marith::Sign::sign(&self.0), Ordering::Equal)
     }
+
     pub fn is_one(&self) -> bool {
         self == &Rational::ONE
     }
+
     #[inline(always)]
     pub fn is_pos(&self) -> bool {
-        matches!(self.0.sign(), Ordering::Greater)
+        matches!(marith::Sign::sign(&self.0), Ordering::Greater)
     }
+
     #[inline(always)]
     pub fn is_neg(&self) -> bool {
-        matches!(self.0.sign(), Ordering::Less)
+        matches!(marith::Sign::sign(&self.0), Ordering::Less)
     }
 
     #[inline(always)]
     pub fn is_int(&self) -> bool {
-        self.0.is_integer()
+        mconv::IsInteger::is_integer(&self.0)
+    }
+
+    #[inline(always)]
+    pub fn is_fraction(&self) -> bool {
+        !self.is_int()
+    }
+
+    #[inline(always)]
+    pub fn is_even(&self) -> bool {
+        if self.is_int() {
+            marith::Parity::even(self.0.numerator_ref())
+        } else {
+            false
+        }
     }
 
     /// none if [self] is zero
@@ -254,15 +274,17 @@ impl Rational {
     }
 
     pub fn abs(self) -> Self {
-        Self(self.0.abs())
+        Self(marith::Abs::abs(self.0))
     }
 
     pub fn div_rem(&self) -> (Self, Self) {
         let denom = self.denom();
         let (num, den) = self.0.to_numerator_and_denominator();
-        let (quot, rem) = num.div_rem(den);
-        (Self(mal::Rational::from(quot)), (Self(mal::Rational::from(rem)) / Self::from(denom)).unwrap())
-
+        let (quot, rem) = marith::DivRem::div_rem(num, den);
+        (
+            Self(mal::Rational::from(quot)),
+            (Self(mal::Rational::from(rem)) / Self::from(denom)),
+        )
     }
 
     /// will calculate [self] to the power of an integer number.
@@ -295,7 +317,7 @@ impl Rational {
         if rhs.is_int() {
             let exp = rhs.0.numerator_ref();
             if let Ok(exp) = u64::try_from(exp) {
-                self.0.pow_assign(exp);
+                marith::PowAssign::pow_assign(&mut self.0, exp);
                 return (self, Rational::ZERO);
             } else {
                 return (self, rhs);
@@ -306,11 +328,11 @@ impl Rational {
         // a^(b/c) -> ( b/c -> quot + rem ) -> a^quot * a^rem  // apply the quotient
         if rhs.0.numerator_ref() > rhs.0.denominator_ref() {
             let (num, den) = rhs.0.to_numerator_and_denominator();
-            let (quot, rem) = num.div_rem(den);
+            let (quot, rem) = marith::DivRem::div_rem(num, den);
             let rem_exp = Self(mal::Rational::from(rem));
 
             if let Ok(apply_exp) = u64::try_from(&quot) {
-                self.0.pow_assign(apply_exp);
+                marith::PowAssign::pow_assign(&mut self.0, apply_exp);
                 return (self, rem_exp);
             }
         }
@@ -329,146 +351,9 @@ impl Rational {
     }
 }
 
-impl ops::Add for Rational {
-    type Output = Self;
-
-    #[inline(always)]
-    fn add(mut self, rhs: Self) -> Self::Output {
-        self.0 += rhs.0;
-        self
-    }
-}
-impl ops::Add<&Rational> for Rational {
-    type Output = Self;
-
-    #[inline(always)]
-    fn add(mut self, rhs: &Self) -> Self::Output {
-        self.0 += &rhs.0;
-        self
-    }
-}
-impl ops::AddAssign for Rational {
-    fn add_assign(&mut self, rhs: Self) {
-        self.0 += rhs.0;
-    }
-}
-impl ops::AddAssign<&Rational> for Rational {
-    fn add_assign(&mut self, rhs: &Self) {
-        self.0 += &rhs.0;
-    }
-}
-impl ops::Sub for Rational {
-    type Output = Self;
-
-    #[inline(always)]
-    fn sub(mut self, rhs: Self) -> Self::Output {
-        self.0 -= rhs.0;
-        self
-    }
-}
-impl ops::Sub<&Rational> for Rational {
-    type Output = Self;
-
-    #[inline(always)]
-    fn sub(mut self, rhs: &Self) -> Self::Output {
-        self.0 -= &rhs.0;
-        self
-    }
-}
-impl ops::SubAssign for Rational {
-    fn sub_assign(&mut self, rhs: Self) {
-        self.0 -= rhs.0;
-    }
-}
-impl ops::SubAssign<&Rational> for Rational {
-    fn sub_assign(&mut self, rhs: &Self) {
-        self.0 -= &rhs.0;
-    }
-}
-impl ops::Mul for Rational {
-    type Output = Self;
-
-    #[inline(always)]
-    fn mul(mut self, rhs: Self) -> Self::Output {
-        self.0 *= rhs.0;
-        self
-    }
-}
-impl ops::Mul<&Rational> for Rational {
-    type Output = Self;
-
-    #[inline(always)]
-    fn mul(mut self, rhs: &Self) -> Self::Output {
-        self.0 *= &rhs.0;
-        self
-    }
-}
-impl ops::MulAssign for Rational {
-    fn mul_assign(&mut self, rhs: Self) {
-        self.0 *= rhs.0;
-    }
-}
-impl ops::MulAssign<&Rational> for Rational {
-    fn mul_assign(&mut self, rhs: &Self) {
-        self.0 *= &rhs.0;
-    }
-}
-impl ops::Div for Rational {
-    type Output = Option<Self>;
-
-    #[inline(always)]
-    fn div(mut self, rhs: Self) -> Self::Output {
-        if rhs.is_zero() {
-            None
-        } else {
-            self.0 /= rhs.0;
-            Some(self)
-        }
-    }
-}
-impl ops::Div<&Rational> for Rational {
-    type Output = Option<Self>;
-
-    #[inline(always)]
-    fn div(mut self, rhs: &Self) -> Self::Output {
-        if rhs.is_zero() {
-            None
-        } else {
-            self.0 /= &rhs.0;
-            Some(self)
-        }
-    }
-}
-
-impl From<u128> for Rational {
-    fn from(value: u128) -> Self {
-        Self(mal::Rational::from(value))
-    }
-}
-impl From<i64> for Rational {
-    fn from(value: i64) -> Self {
-        Self(mal::Rational::from(value))
-    }
-}
-impl From<i32> for Rational {
-    fn from(value: i32) -> Self {
-        Self(mal::Rational::from(value))
-    }
-}
-impl From<mal::Integer> for Rational {
-    fn from(value: mal::Integer) -> Self {
-        Self(mal::Rational::from(value))
-    }
-}
-impl From<(u64, u64)> for Rational {
-    fn from(value: (u64, u64)) -> Self {
-        let n = mal::Integer::from(value.0);
-        let d = mal::Integer::from(value.1);
-        Self(mal::Rational::from_integers(n, d))
-    }
-}
-impl From<(i64, i64)> for Rational {
-    fn from(value: (i64, i64)) -> Self {
+impl<I: Into<i64>> From<(I, I)> for Rational {
+    fn from(value: (I, I)) -> Self {
+        let value = (value.0.into(), value.1.into());
         let is_neg = (value.0 * value.1) < 0;
         let n = mal::Integer::from(value.0.unsigned_abs());
         let d = mal::Integer::from(value.1.unsigned_abs());
@@ -478,16 +363,5 @@ impl From<(i64, i64)> for Rational {
             r *= Rational::MINUS_ONE.0;
         }
         Self(r)
-    }
-}
-
-impl Display for Rational {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-impl Debug for Rational {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
     }
 }

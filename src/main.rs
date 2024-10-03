@@ -5,8 +5,6 @@ use calcu_rs::prelude::*;
 use calcurs_macros::expr as e;
 
 fn main() {
-
-
     let start = Instant::now();
     //println!("{:?}", e!((2*x)^2).as_monomial(&[e!(x)].into()).coeff());
     //println!("{:?}", e!(a / (b*c + b*d)).as_polynomial(&[e!(1/b)].into()).coeffs());
@@ -22,11 +20,9 @@ fn main() {
 
     //let e = e!(x + -1 * y);
     //let e = e!(x * ln(x)).derivative(e!(x)).rationalize().expand().factor_out();
-    let e = Expr::div_raw(e!(x*y), e!(x*y));
+    let e = e!(3 / 0);
     println!("{}", e);
-    println!("{}", e.expand().reduce());
-    println!("{:?}", e!((a*b)^-1).expand());
-
+    println!("{}", e.reduce());
 
     println!("took: {:?}ms", (Instant::now() - start).as_micros());
 }

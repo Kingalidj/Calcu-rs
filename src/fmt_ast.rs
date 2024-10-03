@@ -1,13 +1,11 @@
+
 use crate::{expr, rational::Rational};
-use std::{
-    collections::VecDeque,
-    fmt,
-    ops,
-};
+use std::{collections::VecDeque, fmt, ops};
 
-use crate::expr::{Atom, Irrational};
+use crate::atom::{Atom, Irrational, self};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Debug)]
 pub enum FmtAtom {
     Undef,
     Rational(Rational),
@@ -17,7 +15,6 @@ pub enum FmtAtom {
     Prod(VecDeque<FmtAtom>),
     Pow(Box<FmtAtom>, Box<FmtAtom>),
     Func(String, Vec<FmtAtom>),
-
     Inverse(Box<FmtAtom>),
     UnrySub(Box<FmtAtom>),
 }
@@ -38,26 +35,33 @@ impl From<&Atom> for FmtAtom {
                 } else {
                     FmtAtom::Rational(r.clone())
                 }
-            },
+            }
             Atom::Irrational(i) => FmtAtom::Irrational(*i),
             Atom::Var(v) => FmtAtom::Var(v.to_string()),
-            Atom::Prod(expr::Prod { args }) => {
-                args.into_iter().map(|a| FmtAtom::from(a.get())).fold(FmtAtom::ONE, |prod, r| prod * r)
-            },
-            Atom::Sum(expr::Sum { args }) => {
+            Atom::Prod(atom::Prod { args }) => args
+                .into_iter()
+                .map(|a| FmtAtom::from(a.atom()))
+                .fold(FmtAtom::ONE, |prod, r| prod * r),
+            Atom::Sum(atom::Sum { args }) => {
                 //FmtAtom::Sum(args.into_iter().map(|a| FmtAtom::from(a.get())).collect())
-                args.into_iter().map(|a| FmtAtom::from(a.get())).fold(FmtAtom::ZERO, |prod, r| prod + r)
-            },
+                args.into_iter()
+                    .map(|a| FmtAtom::from(a.atom()))
+                    .fold(FmtAtom::ZERO, |prod, r| prod + r)
+            }
             Atom::Pow(pow) => {
-                if pow.exponent().get() == &Atom::MINUS_ONE {
-                    FmtAtom::Inverse(FmtAtom::from(pow.base().get()).into())
+                if pow.exponent().atom() == &Atom::MINUS_ONE {
+                    FmtAtom::Inverse(FmtAtom::from(pow.base().atom()).into())
                 } else {
-                FmtAtom::Pow(FmtAtom::from(pow.base().get()).into(), FmtAtom::from(pow.exponent().get()).into())
+                    FmtAtom::Pow(
+                        FmtAtom::from(pow.base().atom()).into(),
+                        FmtAtom::from(pow.exponent().atom()).into(),
+                    )
                 }
-            },
-            Atom::Func(func) => {
-                FmtAtom::Func(func.name(), func.iter_args().map(|a| FmtAtom::from(a.get())).collect())
-            },
+            }
+            Atom::Func(func) => FmtAtom::Func(
+                func.name(),
+                func.iter_args().map(|a| FmtAtom::from(a.atom())).collect(),
+            ),
         }
     }
 }
@@ -96,15 +100,9 @@ impl ops::Mul for FmtAtom {
         use FmtAtom as F;
         match (self, rhs) {
             (F::Rational(Rational::ONE), e) | (e, F::Rational(Rational::ONE)) => e,
-            (F::UnrySub(lhs), F::UnrySub(rhs)) => {
-                *lhs * *rhs
-            }
-            (F::UnrySub(lhs), rhs) => {
-                F::UnrySub((*lhs * rhs).into())
-            },
-            (lhs, F::UnrySub(rhs)) => {
-                F::UnrySub((lhs * *rhs).into())
-            },
+            (F::UnrySub(lhs), F::UnrySub(rhs)) => *lhs * *rhs,
+            (F::UnrySub(lhs), rhs) => F::UnrySub((*lhs * rhs).into()),
+            (lhs, F::UnrySub(rhs)) => F::UnrySub((lhs * *rhs).into()),
             (lhs, F::Prod(mut s)) => {
                 s.push_front(lhs);
                 F::Prod(s)
@@ -131,17 +129,25 @@ impl FmtAtom {
     }
 }
 
-
-const fn sum_prec() -> u32 { 1 }
-const fn prod_prec() -> u32 { 2 }
-const fn pow_prec() -> u32 { 3 }
-const fn atom_prec() -> u32 { 4 }
+const fn sum_prec() -> u32 {
+    1
+}
+const fn prod_prec() -> u32 {
+    2
+}
+const fn pow_prec() -> u32 {
+    3
+}
+const fn atom_prec() -> u32 {
+    4
+}
 
 impl FmtAtom {
-
     fn prec(&self) -> u32 {
         match self {
-            FmtAtom::Func(_, _) | FmtAtom::Undef | FmtAtom::Irrational(_) | FmtAtom::Var(_) => atom_prec(),
+            FmtAtom::Func(_, _) | FmtAtom::Undef | FmtAtom::Irrational(_) | FmtAtom::Var(_) => {
+                atom_prec()
+            }
             FmtAtom::Rational(r) if r.is_int() => atom_prec(),
 
             FmtAtom::Pow(_, _) => pow_prec(),
@@ -198,9 +204,9 @@ impl FmtAtom {
             let next = args.peek();
             match (prev, &a, next) {
                 //FmtAtom::UnrySub(_) => write!(f, " − "),
-
-                (Some(F::Sum(_)), F::Sum(_), _) 
-                | (Some(F::Rational(_)), F::Var(_) | F::Sum(_) | F::Func(_, _) | F::Pow(_, _), _) => {
+                (Some(F::Sum(_)), F::Sum(_), _)
+                | (Some(F::Rational(_)), F::Var(_) | F::Sum(_) | F::Func(_, _) | F::Pow(_, _), _) =>
+                {
                     write!(f, "")?;
                     Self::fmt_w_prec(prod_prec(), a, f)?;
                     prev = Some(a);
@@ -251,7 +257,7 @@ impl FmtAtom {
         if let Some(a) = args.next() {
             write!(f, "{a}")?;
         }
-        for a in args { 
+        for a in args {
             write!(f, ", {a}")?;
         }
         write!(f, ")")
@@ -275,11 +281,10 @@ impl fmt::Display for FmtAtom {
     }
 }
 
-
 #[cfg(test)]
 mod test_unicode_fmt {
     use super::expr::Expr;
-    
+
     use calcurs_macros::expr as e;
 
     #[test]
@@ -287,21 +292,23 @@ mod test_unicode_fmt {
         let fmt_res = vec![
             (e!(a + b * c), "a + b·c"),
             (e!(2 * x * y), "2x·y"),
-            (e!(2 * x^3), "2x^3"),
-            (e!(2 * x^(a + b)), "2x^(a + b)"),
-            (e!(2 * x^(2*a)), "2x^(2a)"),
-            (e!(a/b), "a/b"),
-            (e!((x + y)/(x * y)), "(x + y)/(x·y)"),
+            (e!(2 * x ^ 3), "2x^3"),
+            (e!(2 * x ^ (a + b)), "2x^(a + b)"),
+            (e!(2 * x ^ (2 * a)), "2x^(2a)"),
+            (e!(a / b), "a/b"),
+            (Expr::div_raw(e!(a * b), e!(a * b)), "a·b/(a·b)"),
+            (e!((x + y) / (x * y)), "(x + y)/(x·y)"),
             (e!((x + y) * (a + b)), "(x + y)(a + b)"),
             (e!(3 * (a + b)), "3(a + b)"),
             (e!(x * (a + b)), "x·(a + b)"),
             (e!((a + b) * x), "(a + b)·x"),
-            (e!(x^(a + b)), "x^(a + b)"),
+            (e!(x ^ (a + b)), "x^(a + b)"),
             (e!(y + -x), "y − x"),
-            (e!(1/x), "1/x"),
-            (e!(y * 1/x), "y/x"),
-            (e!(3 * 1/x), "3/x"),
-            (e!((1 + x)^2), "(1 + x)^2"),
+            (e!(1 / x), "1/x"),
+            (e!(y * 1 / x), "y/x"),
+            (e!(3 * 1 / x), "3/x"),
+            (e!((1 + x) ^ 2), "(1 + x)^2"),
+            (e!(pi), "π"),
         ];
 
         for (e, res) in fmt_res {
