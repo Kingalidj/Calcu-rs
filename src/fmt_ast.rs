@@ -37,12 +37,12 @@ impl From<&Atom> for FmtAtom {
             Atom::Irrational(i) => FmtAtom::Irrational(*i),
             Atom::Var(v) => FmtAtom::Var(v.to_string()),
             Atom::Prod(atom::Prod { args }) => args
-                .into_iter()
+                .iter()
                 .map(|a| FmtAtom::from(a.atom()))
                 .fold(FmtAtom::ONE, |prod, r| prod * r),
             Atom::Sum(atom::Sum { args }) => {
                 //FmtAtom::Sum(args.into_iter().map(|a| FmtAtom::from(a.get())).collect())
-                args.into_iter()
+                args.iter()
                     .map(|a| FmtAtom::from(a.atom()))
                     .fold(FmtAtom::ZERO, |prod, r| prod + r)
             }
@@ -113,6 +113,8 @@ impl ops::Mul for FmtAtom {
         }
     }
 }
+
+#[allow(clippy::suspicious_arithmetic_impl)]
 impl ops::Div for FmtAtom {
     type Output = Self;
     fn div(self, rhs: Self) -> Self::Output {
@@ -249,7 +251,7 @@ impl FmtAtom {
         }
     }
 
-    pub fn fmt_func(name: &String, args: &Vec<Self>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    pub fn fmt_func(name: &String, args: &[Self], f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{name}(")?;
         let mut args = args.iter();
         if let Some(a) = args.next() {

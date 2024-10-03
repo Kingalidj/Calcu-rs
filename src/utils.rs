@@ -1,4 +1,3 @@
-use log;
 use std::fmt;
 
 pub(crate) type BuildHasher = fxhash::FxBuildHasher;
@@ -30,7 +29,6 @@ macro_rules! function_name {
         //.expect("function name")
     }};
 }
-pub(crate) use function_name;
 
 macro_rules! trace_fn {
     () => {{
@@ -47,7 +45,6 @@ macro_rules! trace_fn {
         log::trace!("{}", buff);
     }}
 }
-pub(crate) use trace_fn;
 
 //pub trait Pow<Rhs = Self> {
 //    type Output;

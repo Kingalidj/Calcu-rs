@@ -1,15 +1,11 @@
-use std::{borrow::Borrow, iter, ops, slice};
+use std::{borrow::Borrow, ops, slice};
 
 use crate::{
-    atom::{Atom, Expr, Func, Irrational, Pow, Prod, Real, Sum},
-    fmt_ast,
-    polynomial::{MonomialView, PolynomialView, VarSet},
+    atom::{Atom, Expr, Pow, Prod, Sum},
     rational::{Int, Rational},
-    utils::{self, HashSet},
 };
 
-use derive_more::{Debug, Display, From, Into};
-use paste::paste;
+use derive_more::{From, Into};
 
 impl Sum {
     pub fn add_rhs(&mut self, rhs: &Expr) {
@@ -55,7 +51,7 @@ impl Sum {
             &Atom::ZERO => rhs,
             _ => {
                 let mut res = vec![lhs.clone()];
-                res.extend(rhs.args.drain(..));
+                res.append(&mut rhs.args);
                 rhs.args = res;
                 rhs
             }
@@ -78,12 +74,12 @@ impl Sum {
         let res = if p.is_empty() {
             //q.into_iter().cloned().collect()
             Sum {
-                args: q.into_iter().cloned().collect(),
+                args: q.to_vec(),
             }
         } else if q.is_empty() {
             //p.into_iter().cloned().collect()
             Sum {
-                args: p.into_iter().cloned().collect(),
+                args: p.to_vec(),
             }
         } else {
             let p1 = p.first().unwrap();
@@ -115,7 +111,7 @@ impl Sum {
         let res = if args.len() < 2 {
             //return args.into_iter().cloned().collect();
             Sum {
-                args: args.into_iter().cloned().collect(),
+                args: args.to_vec(),
             }
         } else if args.len() == 2 {
             let lhs = &args[0];
@@ -303,7 +299,7 @@ impl Prod {
             }
             _ => {
                 let mut res = vec![lhs.clone()];
-                res.extend(rhs.args.drain(..));
+                res.append(&mut rhs.args);
                 rhs.args = res;
                 rhs
             }
@@ -326,11 +322,11 @@ impl Prod {
     fn merge_args(p: &[Expr], q: &[Expr]) -> Prod {
         if p.is_empty() {
             Prod {
-                args: q.into_iter().cloned().collect(),
+                args: q.to_vec(),
             }
         } else if q.is_empty() {
             Prod {
-                args: p.into_iter().cloned().collect(),
+                args: p.to_vec(),
             }
         } else {
             let p1 = p.first().unwrap();
@@ -362,7 +358,7 @@ impl Prod {
         if args.len() < 2 {
             //return args.into_iter().cloned().collect();
             Prod {
-                args: args.into_iter().cloned().collect(),
+                args: args.to_vec(),
             }
         } else if args.len() == 2 {
             let lhs = &args[0];
@@ -470,7 +466,7 @@ impl Pow {
             let rhs = if k == Int::ZERO {
                 // 1 * a^exp
                 expand_pow(&a, &exp)
-            } else if &k == &e {
+            } else if k == e {
                 // 1 * b^k
                 expand_pow(&b, &Expr::from(k.clone()))
             } else {
@@ -533,7 +529,7 @@ impl Expr {
             (A::Rational(r1), A::Rational(r2)) => A::Rational(r1.clone() * r2).into(),
             (_, _) => {
                 if lhs.base() == rhs.base() {
-                    return Expr::pow(lhs.base(), lhs.exponent() + rhs.exponent());
+                    Expr::pow(lhs.base(), lhs.exponent() + rhs.exponent())
                 } else {
                     let mut prod = Prod::one();
                     prod.mul_rhs(lhs);

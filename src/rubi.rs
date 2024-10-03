@@ -285,7 +285,7 @@ impl WlfrmBuiltins {
 
             let base: Real = match b.atom() {
                 Atom::Rational(r) => r.clone().into(),
-                Atom::Irrational(ir) => ir.clone().into(),
+                Atom::Irrational(ir) => (*ir).into(),
                 b => error_msg!("expected real log base, found: {b:?}"),
             };
             Expr::log(base, e)

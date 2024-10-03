@@ -261,7 +261,7 @@ impl Func {
         match self {
             F::Sin(f) => d(f) * E::cos(f),
             F::Cos(f) => d(f) * e(-1) * E::sin(f),
-            F::Tan(f) => d(f) * E::pow(E::sec(f), &e(2)),
+            F::Tan(f) => d(f) * E::pow(E::sec(f), e(2)),
             F::Sec(f) => d(f) * E::tan(f) * E::sec(f),
             F::ArcSin(f) => d(f) * E::pow(e(1) - E::pow(f, e(2)), r(-1, 2)),
             F::ArcCos(f) => d(f) * e(-1) * E::pow(e(1) - E::pow(f, e(2)), r(-1, 2)),
@@ -318,7 +318,7 @@ impl Sum {
                 rest[0].clone()
             } else {
                 Expr::from(Atom::Sum(Sum {
-                    args: rest.into_iter().cloned().collect(),
+                    args: rest.to_vec(),
                 }))
             };
             (a, b)
@@ -406,7 +406,7 @@ impl Prod {
                 rest[0].clone()
             } else {
                 Expr::from(Atom::Prod(Prod {
-                    args: rest.into_iter().cloned().collect(),
+                    args: rest.to_vec(),
                 }))
             };
             (a, b)
@@ -560,8 +560,13 @@ impl Expr {
         Expr::log(Rational::from(10), e)
     }
 
+    //TODO: CLIPPY BUG
+    //pub fn sqrt(v: impl Borrow<Expr>) -> Expr {
+    //    Expr::pow(v, &Rational::from((1, 2)).into())
+    //}
     pub fn sqrt(v: impl Borrow<Expr>) -> Expr {
-        Expr::pow(v, &Rational::from((1, 2)).into())
+        let exp = Expr::from(Rational::from((1, 2)));
+        Expr::pow(v, &exp)
     }
 
     #[inline(always)]
@@ -729,9 +734,8 @@ impl<'a> Iterator for ExprIterator<'a> {
     type Item = &'a Expr;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.atoms.pop().map(|expr| {
+        self.atoms.pop().inspect(|expr| {
             expr.for_each_arg(|arg| self.atoms.push(arg));
-            expr
         })
     }
 }

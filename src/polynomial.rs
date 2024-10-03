@@ -88,7 +88,7 @@ impl VarPow {
             .find_map(|(var, d)| if var == v { Some(d) } else { None })
     }
 
-    fn to_expr(self) -> Expr {
+    fn as_expr(self) -> Expr {
         self.var_deg
             .into_iter()
             .map(|(v, d)| Expr::pow(v, Expr::from(d)))
@@ -150,11 +150,11 @@ impl GPE {
         }
     }
 
-    pub fn to_expr(mut self) -> Expr {
+    pub fn into_expr(mut self) -> Expr {
         self.sort_by_degree();
         self.terms
             .into_iter()
-            .map(|(c, vp)| c * vp.to_expr())
+            .map(|(c, vp)| c * vp.as_expr())
             .fold(Expr::zero(), |sum, term| sum + term)
     }
 }
@@ -289,17 +289,15 @@ impl<'a> PolynomialView<'a> {
     }
 
     pub fn degree(&self) -> Option<Int> {
-        self.coeffs()
-            .into_iter()
-            .map(|(d, _)| d.total_deg())
-            .reduce(|max, d| std::cmp::max(max, d))
+        self.coeffs().into_keys().map(|d| d.total_deg())
+            .reduce(std::cmp::max)
     }
 
     pub fn degree_of(&self, v: &GVar) -> Option<Int> {
         self.coeffs()
             .into_iter()
             .filter_map(|(d, _)| d.degree_of(v).cloned())
-            .reduce(|max, d| std::cmp::max(max, d))
+            .reduce(std::cmp::max)
     }
 
     pub fn coeffs_of_deg(&self, v: &GVar, deg: &Degree) -> Option<Coeff> {
@@ -390,7 +388,7 @@ impl<'a> PolynomialView<'a> {
             let (mc, mv) = a.as_monomial(self.vars).coeff()?;
             res.add(mc, mv);
         }
-        Some(res.to_expr())
+        Some(res.into_expr())
 
         //let mut n = 0;
         //let mut t: Vec<(Expr, VarPow)> = vec![(Expr::zero(), Default::default()); sum.args.len()];
