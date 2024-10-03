@@ -1,11 +1,9 @@
-
-use crate::{expr, rational::Rational};
+use crate::rational::Rational;
 use std::{collections::VecDeque, fmt, ops};
 
-use crate::atom::{Atom, Irrational, self};
+use crate::atom::{self, Atom, Irrational};
 
-#[derive(Clone, PartialEq, Eq, Hash)]
-#[derive(Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum FmtAtom {
     Undef,
     Rational(Rational),
@@ -283,7 +281,7 @@ impl fmt::Display for FmtAtom {
 
 #[cfg(test)]
 mod test_unicode_fmt {
-    use super::expr::Expr;
+    use super::atom::Expr;
 
     use calcurs_macros::expr as e;
 

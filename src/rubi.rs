@@ -1,6 +1,5 @@
-use crate::{expr::Expr, rational::Rational};
-use crate::atom::{Atom, Real};
-
+use crate::atom::{Atom, Expr, Real};
+use crate::rational::Rational;
 
 //calcurs_macros::integration_rules!();
 
@@ -29,9 +28,9 @@ impl From<Expr> for WlfrmAtom {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Hash)]
 pub(crate) enum WlfrmFuncArgs {
     One(WlfrmAtom),
-    Two([WlfrmAtom;2]),
-    Three([WlfrmAtom;3]),
-    Var(Vec<WlfrmAtom>)
+    Two([WlfrmAtom; 2]),
+    Three([WlfrmAtom; 3]),
+    Var(Vec<WlfrmAtom>),
 }
 
 impl WlfrmFuncArgs {
@@ -51,15 +50,13 @@ impl WlfrmFuncArgs {
         }
     }
 
-    fn get_two_args(self) -> Option<[WlfrmAtom;2]> {
+    fn get_two_args(self) -> Option<[WlfrmAtom; 2]> {
         match self {
             WlfrmFuncArgs::Two(args) => Some(args),
             _ => None,
         }
     }
 }
-
-
 
 macro_rules! wlfrm_fn {
     (func_body: ) => {
@@ -108,17 +105,19 @@ macro_rules! args {
             WArgs::Two(args) => args,
             args => error_msg!("expected two argument, found: {:?}", args),
         }
-    }}
+    }};
 }
 
 macro_rules! arg {
-    ($args:expr) => { args!($args, 1) }
+    ($args:expr) => {
+        args!($args, 1)
+    };
 }
 
 pub(crate) struct WlfrmBuiltins;
 
-use WlfrmFuncArgs as WArgs;
 use WlfrmAtom as WA;
+use WlfrmFuncArgs as WArgs;
 
 #[allow(non_snake_case, dead_code, unused_variables)]
 impl WlfrmBuiltins {

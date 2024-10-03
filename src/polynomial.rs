@@ -1,6 +1,5 @@
 use crate::{
-    expr::Expr,
-    atom::{Atom, Prod, Sum},
+    atom::{Atom, Expr, Prod, Sum},
     rational::{Int, Rational},
     utils::HashMap,
 };
