@@ -32,26 +32,39 @@ pub enum Atom {
     #[debug("undef")]
     Undef,
     #[from(i32, i64, u32, u64, Int, Rational)]
+    #[debug("{_0:?}")]
     Rational(Rational),
     #[from]
+    #[debug("{_0:?}")]
     Irrational(Irrational),
     #[from(forward)]
+    #[debug("{_0:?}")]
     Var(Var),
     #[from]
+    #[debug("{_0:?}")]
     Sum(Sum),
     #[from]
+    #[debug("{_0:?}")]
     Prod(Prod),
     #[from]
+    #[debug("{_0:?}")]
     Pow(Pow),
     #[from]
+    #[debug("{_0:?}")]
     Func(Func),
 }
 
 impl Atom {
     pub const UNDEF: Atom = Atom::Undef;
+
+    pub const MINUS_TWO: Atom = Atom::Rational(Rational::MINUS_TWO);
     pub const MINUS_ONE: Atom = Atom::Rational(Rational::MINUS_ONE);
     pub const ZERO: Atom = Atom::Rational(Rational::ZERO);
     pub const ONE: Atom = Atom::Rational(Rational::ONE);
+    pub const TWO: Atom = Atom::Rational(Rational::TWO);
+
+    pub const PI: Atom = Atom::Irrational(Irrational::PI);
+    pub const E: Atom = Atom::Irrational(Irrational::E);
 
     pub fn is_zero(&self) -> bool {
         self == &Atom::ZERO
@@ -175,8 +188,8 @@ pub enum Irrational {
     PI,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Display)]
-#[derive(Unwrap, TryUnwrap)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Display, Unwrap, TryUnwrap)]
 #[unwrap(ref)]
 #[try_unwrap(ref)]
 #[display("{}({_0})", self.name())]
@@ -235,7 +248,14 @@ impl Func {
         use Func as F;
 
         let r = |n: i32, d: i32| Expr::from(Rational::from((n, d)));
-        let e = |e: i32| Expr::from(e);
+        let e = |e: i32| {
+            match e {
+                -1 => Expr::min_one(),
+                1 => Expr::one(),
+                2 => Expr::two(),
+                _ => Expr::from(e),
+            }
+        };
         let d = |e: &Expr| -> Expr { e.derivative(x) };
 
         match self {
@@ -395,8 +415,10 @@ impl fmt::Debug for Pow {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Display)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Display, From)]
 #[display("{}", fmt_ast::FmtAtom::from(self.atom()))]
+#[debug("{:?}", self.atom())]
 pub struct Expr(PTR<Atom>);
 
 impl<T: Into<Atom>> From<T> for Expr {
@@ -423,50 +445,42 @@ macro_rules! func_atom {
     };
 }
 
-std::thread_local! {
-    static E_ONE: Expr =  Expr::from(Atom::ONE);
-    static E_ZERO: Expr = Expr::from(Atom::ZERO);
-    static E_MINUS_ONE: Expr = Expr::from(Atom::MINUS_ONE);
-}
-
-/*
-static E_ONE: std::sync::LazyLock<Expr> = std::sync::LazyLock::new(|| {
-    Expr::from(Atom::ONE)
-});
-static E_ZERO: std::sync::LazyLock<Expr> = std::sync::LazyLock::new(|| {
-    Expr::from(Atom::ZERO)
-});
-static E_UNDEF: std::sync::LazyLock<Expr> = std::sync::LazyLock::new(|| {
-    Expr::from(Atom::ZERO)
-});
-static E_MINUS_ONE: std::sync::LazyLock<Expr> = std::sync::LazyLock::new(|| {
-    Expr::from(Atom::ZERO)
-});
-*/
 
 impl Expr {
-    pub fn pi() -> Expr {
-        Irrational::PI.into()
-    }
-    pub fn undef() -> Expr {
-        Atom::Undef.into()
+
+    //TODO store consts on stack
+    std::thread_local! {
+        static _UNDEF: Expr = Expr::from(Atom::UNDEF);
+
+        static _MINUS_TWO: Expr = Expr::from(Atom::MINUS_TWO);
+        static _MINUS_ONE: Expr = Expr::from(Atom::MINUS_ONE);
+        static _ZERO: Expr = Expr::from(Atom::ZERO);
+        static _ONE: Expr =  Expr::from(Atom::ONE);
+        static _TWO: Expr = Expr::from(Atom::TWO);
+
+        static _PI: Expr = Expr::from(Atom::PI);
+        static _E: Expr = Expr::from(Atom::E);
     }
 
-    pub fn zero() -> Expr {
-        E_ZERO.with(|e| e.clone())
+    fn from_atom(a: Atom) -> Expr {
+        Self(PTR::from(a))
     }
 
-    pub fn one() -> Expr {
-        E_ONE.with(|e| e.clone())
-    }
+    pub fn undef() -> Expr { Self::_UNDEF.with(|e| e.clone()) }
 
-    pub fn min_one() -> Expr {
-        E_MINUS_ONE.with(|e| e.clone())
-    }
+    pub fn min_two() -> Expr { Self::_MINUS_TWO.with(|e| e.clone()) }
+    pub fn min_one() -> Expr { Self::_MINUS_ONE.with(|e| e.clone()) }
+    pub fn zero() -> Expr { Self::_ZERO.with(|e| e.clone()) }
+    pub fn one() -> Expr { Self::_ONE.with(|e| e.clone()) }
+    //pub fn zero() -> Expr { Expr::from_atom(Atom::Rational(Rational::from(0))) }
+    //pub fn one() -> Expr { Expr::from_atom(Atom::Rational(Rational::from(1))) }
+    //pub fn one() -> Expr { Self::_ONE.with(|e| e.clone()) }
+    pub fn two() -> Expr { Self::_TWO.with(|e| e.clone()) }
 
-    pub fn var(str: &str) -> Expr {
-        Expr::from(str)
-    }
+    pub fn pi() -> Expr { Self::_PI.with(|e| e.clone()) }
+    pub fn e() -> Expr { Self::_E.with(|e| e.clone()) }
+
+    pub fn var(str: &str) -> Expr { Expr::from_atom(Atom::Var(str.into())) }
 
     pub fn atom(&self) -> &Atom {
         ops::Deref::deref(self)
@@ -551,20 +565,20 @@ impl Expr {
     }
 
     pub fn base(&self) -> Expr {
-        match self.atom_flat() {
+        match self.flatten().atom() {
             Atom::Pow(p) => p.base().clone(),
             _ => self.clone(),
         }
     }
     pub fn exponent(&self) -> Expr {
-        match self.atom_flat() {
+        match self.flatten().atom() {
             Atom::Pow(p) => p.exponent().clone(),
             _ => Expr::one(),
         }
     }
 
     pub fn r#const(&self) -> Option<Expr> {
-        match self.atom() {
+        match self.flatten().atom() {
             Atom::Var(_) | Atom::Sum(_) | Atom::Pow(_) | Atom::Func(_) => Some(Expr::one()),
             Atom::Undef | Atom::Rational(_) | Atom::Irrational(_) => None,
             Atom::Prod(Prod { args }) => {
@@ -594,13 +608,13 @@ impl Expr {
         }
     }
 
-    pub fn atom_flat(&self) -> &Atom {
-        match self.atom() {
-            Atom::Sum(sum) if sum.n_args() == 1 => sum.args().first().unwrap().atom(),
-            Atom::Prod(prod) if prod.n_args() == 1 => prod.args().first().unwrap().atom(),
-            a => return a,
-        }
-    }
+    //pub fn atom_flat(&self) -> &Atom {
+    //    match self.atom() {
+    //        Atom::Sum(sum) if sum.n_args() == 1 => sum.args().first().unwrap().atom(),
+    //        Atom::Prod(prod) if prod.n_args() == 1 => prod.args().first().unwrap().atom(),
+    //        a => return a,
+    //    }
+    //}
 
     pub fn variables(&self) -> HashSet<Expr> {
         let mut vars = Default::default();
@@ -648,6 +662,15 @@ impl Expr {
     pub fn iter_compl_sub_exprs(&self) -> ExprIterator<'_> {
         let atoms = vec![self];
         ExprIterator { atoms }
+    }
+
+    pub fn flatten(&self) -> &Expr {
+        match self.atom() {
+            Atom::Sum(sum) if sum.n_args() == 1 => sum.args().first().unwrap(),
+            Atom::Prod(prod) if prod.n_args() == 1 => prod.args().first().unwrap(),
+            Atom::Pow(pow) if pow.exponent().is_one() => pow.base(),
+            _ => self
+        }
     }
 }
 

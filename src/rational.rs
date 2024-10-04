@@ -222,14 +222,11 @@ impl Rational {
         Int(mal::Integer::from(self.0.denominator_ref().clone()))
     }
 
-    #[inline(always)]
-    pub fn is_zero(&self) -> bool {
-        matches!(marith::Sign::sign(&self.0), Ordering::Equal)
-    }
-
-    pub fn is_one(&self) -> bool {
-        self == &Rational::ONE
-    }
+    pub fn is_min_two(&self) -> bool { self == &Self::MINUS_TWO }
+    pub fn is_min_one(&self) -> bool { self == &Self::MINUS_ONE }
+    pub fn is_zero(&self) -> bool { self == &Self::ZERO }
+    pub fn is_one(&self) -> bool { self == &Self::ONE }
+    pub fn is_two(&self) -> bool { self == &Self::TWO }
 
     #[inline(always)]
     pub fn is_pos(&self) -> bool {

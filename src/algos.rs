@@ -15,6 +15,7 @@ impl Sum {
             return;
         }
 
+        let rhs = rhs.flatten();
         match rhs.atom() {
             &A::ZERO => (),
             A::Sum(sum) => {
@@ -40,6 +41,8 @@ impl Sum {
     }
 
     fn flat_merge(lhs: &Expr, mut rhs: Sum) -> Sum {
+        let lhs = lhs.flatten();
+
         match lhs.atom() {
             Atom::Sum(sum) => {
                 let mut sum = sum.clone();
@@ -110,8 +113,8 @@ impl Sum {
                 args: args.to_vec(),
             }
         } else if args.len() == 2 {
-            let lhs = &args[0];
-            let rhs = &args[1];
+            let lhs = args[0].flatten();
+            let rhs = args[1].flatten();
             if let (Atom::Sum(p1), Atom::Sum(p2)) = (lhs.atom(), rhs.atom()) {
                 Sum::merge_args(&p1.args, &p2.args)
             } else if let Atom::Sum(p) = lhs.atom() {
@@ -146,7 +149,7 @@ impl Sum {
                 }
             }
         } else {
-            let lhs = args.first().unwrap();
+            let lhs = args.first().unwrap().flatten();
             let rhs = Sum::reduce_rec(&args[1..]);
 
             if let Atom::Sum(p) = lhs.atom() {
@@ -162,9 +165,10 @@ impl Prod {
     pub fn mul_rhs(&mut self, rhs: &Expr) {
         use Atom as A;
 
+        let rhs = rhs.flatten();
         if let Atom::Undef = rhs.atom() {
             self.args.clear();
-            self.args.push(rhs.clone());
+            self.args.push(Expr::undef());
             return;
         }
 
@@ -280,6 +284,7 @@ impl Prod {
     }
 
     fn flat_merge(lhs: &Expr, mut rhs: Prod) -> Prod {
+        let lhs = lhs.flatten();
         match lhs.atom() {
             Atom::Prod(prod) => {
                 let mut prod = prod.clone();
@@ -353,8 +358,8 @@ impl Prod {
                 args: args.to_vec(),
             }
         } else if args.len() == 2 {
-            let lhs = &args[0];
-            let rhs = &args[1];
+            let lhs = args[0].flatten();
+            let rhs = args[1].flatten();
             if let (Atom::Prod(p1), Atom::Prod(p2)) = (lhs.atom(), rhs.atom()) {
                 Prod::merge_args(&p1.args, &p2.args)
             } else if let Atom::Prod(p) = lhs.atom() {
@@ -388,7 +393,7 @@ impl Prod {
                 }
             }
         } else {
-            let lhs = args.first().unwrap();
+           let lhs = args.first().unwrap().flatten();
             let rhs = Prod::reduce_rec(&args[1..]);
 
             if let Atom::Prod(p) = lhs.atom() {
@@ -489,7 +494,7 @@ impl Pow {
 impl Expr {
     pub fn add(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {
         use Atom as A;
-        let (lhs, rhs): (&Expr, &Expr) = (lhs.borrow(), rhs.borrow());
+        let (lhs, rhs): (&Expr, &Expr) = (lhs.borrow().flatten(), rhs.borrow().flatten());
         match (lhs.atom(), rhs.atom()) {
             (A::Undef, _) => A::Undef.into(),
             (_, A::Undef) => A::Undef.into(),
