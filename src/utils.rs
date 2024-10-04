@@ -5,6 +5,11 @@ pub(crate) type HashMap<K, V, B = BuildHasher> = std::collections::HashMap<K, V,
 pub(crate) type HashSet<K, B = BuildHasher> = std::collections::HashSet<K, B>;
 pub(crate) type Instant = quanta::Instant;
 
+#[allow(unused_imports)]
+pub(crate) mod log_macros {
+    pub(crate) use log::{debug, error, info, log, trace, warn};
+}
+
 macro_rules! during_debug {
     () => {{
         #[cfg(debug_assertions)] true

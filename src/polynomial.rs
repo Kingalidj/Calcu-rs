@@ -289,7 +289,9 @@ impl<'a> PolynomialView<'a> {
     }
 
     pub fn degree(&self) -> Option<Int> {
-        self.coeffs().into_keys().map(|d| d.total_deg())
+        self.coeffs()
+            .into_keys()
+            .map(|d| d.total_deg())
             .reduce(std::cmp::max)
     }
 

@@ -1,10 +1,15 @@
 use std::time::Instant;
 
-use calcu_rs::prelude::*;
+//use calcu_rs::prelude::*;
 
-use calcurs_macros::expr as e;
+use calcu_rs::{expr as e, SymbolicExpr};
 
 fn main() {
+    env_logger::builder()
+        .filter_level(log::LevelFilter::Info)
+        .format_timestamp(None)
+        .init();
+
     let start = Instant::now();
     //println!("{:?}", e!((2*x)^2).as_monomial(&[e!(x)].into()).coeff());
     //println!("{:?}", e!(a / (b*c + b*d)).as_polynomial(&[e!(1/b)].into()).coeffs());
@@ -20,7 +25,7 @@ fn main() {
 
     //let e = e!(x + -1 * y);
     //let e = e!(x * ln(x)).derivative(e!(x)).rationalize().expand().factor_out();
-    let e = e!(3 / 0);
+    let e = e!(3);
     println!("{}", e);
     println!("{}", e.reduce());
 

@@ -10,7 +10,9 @@ use malachite::{
     num::{arithmetic::traits as marith, conversion::traits as mconv},
 };
 
-#[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Display, From, Into)]
+#[derive(
+    Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Display, From, Into
+)]
 #[arith_ops(ref, self.0)]
 #[from(i32, u32, i64, u64)]
 #[into(mal::Rational)]
@@ -189,7 +191,9 @@ impl TryFrom<Rational> for Int {
     }
 }
 
-#[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Display, From)]
+#[derive(
+    Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Display, From
+)]
 #[arith_ops(ref, self.0)]
 #[from(i64, i32, u64, u32, Int)]
 #[debug("{}", self.0)]

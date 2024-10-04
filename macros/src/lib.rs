@@ -176,14 +176,19 @@ fn to_expr_stream(e: &Expr) -> parse::Result<TokenStream> {
     gen_expr_stream(e)
 }
 
+fn get_crate_name() -> TokenStream {
+    quote!(calcu_rs)
+}
+
 fn gen_expr_stream(e: &Expr) -> parse::Result<TokenStream> {
     use Expr as E;
     use OpKind as OK;
+    let cname = get_crate_name();
     Ok(match e {
-        E::Num(n) => quote!(Expr::rational(#n)),
-        E::Symbol(s) if s == "pi" => quote!(Expr::pi()),
-        E::Symbol(s) => quote!(Expr::from(#s)),
-        E::Undef => quote!(Expr::undef()),
+        E::Num(n) => quote!(#cname::Expr::rational(#n)),
+        E::Symbol(s) if s == "pi" => quote!(#cname::Expr::pi()),
+        E::Symbol(s) => quote!(#cname::Expr::from(#s)),
+        E::Undef => quote!(#cname::Expr::undef()),
         E::Binary(op, lhs, rhs) => {
             let lhs = gen_expr_stream(lhs)?;
             let rhs = gen_expr_stream(rhs)?;
@@ -194,7 +199,7 @@ fn gen_expr_stream(e: &Expr) -> parse::Result<TokenStream> {
                 OK::Div => quote!(div),
                 OK::Pow => quote!(pow),
             };
-            quote! { Expr::#op(#lhs, #rhs)}
+            quote! { #cname::Expr::#op(#lhs, #rhs)}
         }
         E::PlaceHolder(_) => {
             return Err(parse::Error::new(
@@ -208,7 +213,7 @@ fn gen_expr_stream(e: &Expr) -> parse::Result<TokenStream> {
                 let e = gen_expr_stream(a)?;
                 args_tok.extend(quote!(#e, ));
             }
-            quote!(Expr::#func(#args_tok))
+            quote!(#cname::Expr::#func(#args_tok))
         }
         _ => todo!(),
     })

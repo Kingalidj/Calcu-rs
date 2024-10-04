@@ -2,6 +2,7 @@ use crate::{
     fmt_ast,
     polynomial::{MonomialView, PolynomialView, VarSet},
     rational::{Int, Rational},
+    utils::log_macros::*,
     utils::{self, HashSet},
 };
 use std::{borrow::Borrow, fmt, ops, slice};
@@ -9,6 +10,7 @@ use std::{borrow::Borrow, fmt, ops, slice};
 use derive_more::{Debug, Display, From, Into, IsVariant, TryUnwrap, Unwrap};
 use paste::paste;
 
+//pub(crate) type PTR<T> = std::sync::Arc<T>;
 pub(crate) type PTR<T> = std::rc::Rc<T>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -18,9 +20,12 @@ struct Derivative {
     degree: u64,
 }
 
-#[derive(
-    Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, From, IsVariant, Unwrap, TryUnwrap,
-)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Display, Debug, From)]
+#[from(&str, String)]
+pub struct Var(pub(crate) PTR<str>);
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, From, IsVariant, Unwrap, TryUnwrap)]
 #[unwrap(ref)]
 #[try_unwrap(ref)]
 pub enum Atom {
@@ -30,11 +35,15 @@ pub enum Atom {
     Rational(Rational),
     #[from]
     Irrational(Irrational),
-    #[from(&str)]
+    #[from(forward)]
     Var(Var),
+    #[from]
     Sum(Sum),
+    #[from]
     Prod(Prod),
+    #[from]
     Pow(Pow),
+    #[from]
     Func(Func),
 }
 
@@ -101,8 +110,9 @@ impl Atom {
         use Atom as A;
         match self {
             A::Undef | A::Rational(_) | A::Irrational(_) | A::Var(_) => &[],
-            A::Sum(Sum { args }) | A::Prod(Prod { args }) => args.as_slice(),
-            A::Pow(Pow { args }) => args,
+            A::Sum(sum) => sum.args(),
+            A::Prod(prod) => prod.args(),
+            A::Pow(pow) => pow.args(),
             A::Func(func) => func.args(),
         }
     }
@@ -111,27 +121,15 @@ impl Atom {
         use Atom as A;
         match self {
             A::Undef | A::Rational(_) | A::Irrational(_) | A::Var(_) => &mut [],
-            A::Sum(Sum { args }) | A::Prod(Prod { args }) => args.as_mut_slice(),
-            A::Pow(Pow { args }) => args,
+            A::Sum(sum) => sum.args_mut(),
+            A::Prod(prod) => prod.args_mut(),
+            A::Pow(pow) => pow.args_mut(),
             A::Func(func) => func.args_mut(),
         }
     }
 
     pub fn for_each_arg<'a>(&'a self, func: impl FnMut(&'a Expr)) {
         self.args().iter().for_each(func)
-    }
-}
-
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Display, Debug, From)]
-#[from(&str)]
-pub struct Var(pub(crate) PTR<str>);
-impl Var {
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    fn as_ref(&self) -> &str {
-        self.0.as_ref()
     }
 }
 
@@ -178,7 +176,10 @@ pub enum Irrational {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Display)]
-#[display("{}{_0}", self.name())]
+#[derive(Unwrap, TryUnwrap)]
+#[unwrap(ref)]
+#[try_unwrap(ref)]
+#[display("{}({_0})", self.name())]
 pub enum Func {
     Sin(Expr),
     Cos(Expr),
@@ -194,56 +195,35 @@ pub enum Func {
 
 impl Func {
     pub fn is_nat_log(&self) -> bool {
-        match self {
-            Func::Log(base, _) => base == &Real::from(Irrational::E),
-            _ => false,
+        self.try_unwrap_nat_log_ref().is_some()
+    }
+
+    pub fn try_unwrap_log_base(&self, base: &Real) -> Option<&Expr> {
+        match self.try_unwrap_log_ref() {
+            Ok((b, expr)) if b == base => Some(expr),
+            _ => None,
         }
+    }
+
+    pub fn try_unwrap_nat_log_ref(&self) -> Option<&Expr> {
+        self.try_unwrap_log_base(&Real::Irrational(Irrational::E))
     }
 
     pub fn name(&self) -> String {
         match self {
-            Func::Sin(_) => "sin".into(),
-            Func::Cos(_) => "cos".into(),
-            Func::Tan(_) => "tan".into(),
-            Func::Sec(_) => "sec".into(),
-            Func::ArcSin(_) => "arcsin".into(),
-            Func::ArcCos(_) => "arccos".into(),
-            Func::ArcTan(_) => "arctan".into(),
-            Func::Exp(_) => "exp".into(),
+            Func::Sin(_) => "sin",
+            Func::Cos(_) => "cos",
+            Func::Tan(_) => "tan",
+            Func::Sec(_) => "sec",
+            Func::ArcSin(_) => "arcsin",
+            Func::ArcCos(_) => "arccos",
+            Func::ArcTan(_) => "arctan",
+            Func::Exp(_) => "exp",
             Func::Log(Real::Irrational(Irrational::E), _) => "ln".into(),
             Func::Log(Real::Rational(r), _) if r == &Rational::from(10) => "log".into(),
-            Func::Log(base, _) => format!("log{base}"),
+            Func::Log(base, _) => return format!("log{base}"),
         }
-    }
-
-    pub fn args(&self) -> &[Expr] {
-        use Func as F;
-        match self {
-            F::Sin(x)
-            | F::Cos(x)
-            | F::Tan(x)
-            | F::Sec(x)
-            | F::ArcSin(x)
-            | F::ArcCos(x)
-            | F::ArcTan(x)
-            | F::Exp(x)
-            | F::Log(_, x) => slice::from_ref(x),
-        }
-    }
-
-    pub fn args_mut(&mut self) -> &mut [Expr] {
-        use Func as F;
-        match self {
-            F::Sin(x)
-            | F::Cos(x)
-            | F::Tan(x)
-            | F::Sec(x)
-            | F::ArcSin(x)
-            | F::ArcCos(x)
-            | F::ArcTan(x)
-            | F::Exp(x)
-            | F::Log(_, x) => slice::from_mut(x),
-        }
+        .into()
     }
 
     pub fn iter_args(&self) -> impl Iterator<Item = &Expr> {
@@ -273,14 +253,6 @@ impl Func {
     //pub fn iter_args_mut(&mut self) -> impl Iterator<Item = &mut Expr> {
     //    self.args_mut().iter_mut()
     //}
-
-    pub fn reduce(&self) -> Expr {
-        use Func as F;
-        match self {
-            F::Log(base, x) if x.atom() == base => Expr::one(),
-            _ => Atom::Func(self.clone()).into(),
-        }
-    }
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -322,19 +294,6 @@ impl Sum {
                 }))
             };
             (a, b)
-        }
-    }
-
-    pub fn reduce(&self) -> Expr {
-        let mut sum = Sum::reduce_rec(&self.args);
-        if sum.is_zero() {
-            Expr::zero()
-        } else if sum.is_undef() {
-            Expr::undef()
-        } else if sum.args.len() == 1 {
-            sum.args.remove(0)
-        } else {
-            Atom::Sum(sum).into()
         }
     }
 }
@@ -412,19 +371,6 @@ impl Prod {
             (a, b)
         }
     }
-
-    pub fn reduce(&self) -> Expr {
-        let mut prod = Prod::reduce_rec(&self.args);
-        if prod.is_one() {
-            Expr::one()
-        } else if prod.is_undef() {
-            Expr::undef()
-        } else if prod.args.len() == 1 {
-            prod.args.remove(0)
-        } else {
-            Atom::Prod(prod).into()
-        }
-    }
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -440,33 +386,6 @@ impl Pow {
 
     pub fn exponent(&self) -> &Expr {
         &self.args[1]
-    }
-
-    pub fn reduce(&self) -> Expr {
-        use Atom as A;
-        match (self.base().atom(), self.exponent().atom()) {
-            (A::Undef, _) | (_, A::Undef) | (&A::ZERO, &A::ZERO) => Expr::undef(),
-            (&A::ZERO, A::Rational(r)) if r.is_neg() => Expr::undef(),
-            (&A::ZERO, A::Rational(_)) => Expr::zero(),
-            (&A::ONE, _) => Expr::one(),
-            (_, &A::ONE) => self.base().clone(),
-            (A::Rational(b), A::Rational(e)) => {
-                let (res, rem) = b.clone().pow(e.clone());
-                if rem.is_zero() {
-                    Expr::from(res)
-                } else {
-                    //Expr::from(res) * Expr::from(b.clone()).pow(Expr::from(rem))
-                    A::Pow(self.clone()).into()
-                }
-            }
-            //TODO: rule?
-            (A::Pow(pow), _) => {
-                let mut pow = pow.clone();
-                pow.args[1] *= self.exponent();
-                pow.reduce()
-            }
-            _ => A::Pow(self.clone()).into(),
-        }
     }
 }
 
@@ -504,25 +423,45 @@ macro_rules! func_atom {
     };
 }
 
+std::thread_local! {
+    static E_ONE: Expr =  Expr::from(Atom::ONE);
+    static E_ZERO: Expr = Expr::from(Atom::ZERO);
+    static E_MINUS_ONE: Expr = Expr::from(Atom::MINUS_ONE);
+}
+
+/*
+static E_ONE: std::sync::LazyLock<Expr> = std::sync::LazyLock::new(|| {
+    Expr::from(Atom::ONE)
+});
+static E_ZERO: std::sync::LazyLock<Expr> = std::sync::LazyLock::new(|| {
+    Expr::from(Atom::ZERO)
+});
+static E_UNDEF: std::sync::LazyLock<Expr> = std::sync::LazyLock::new(|| {
+    Expr::from(Atom::ZERO)
+});
+static E_MINUS_ONE: std::sync::LazyLock<Expr> = std::sync::LazyLock::new(|| {
+    Expr::from(Atom::ZERO)
+});
+*/
+
 impl Expr {
+    pub fn pi() -> Expr {
+        Irrational::PI.into()
+    }
     pub fn undef() -> Expr {
         Atom::Undef.into()
     }
 
-    pub fn pi() -> Expr {
-        Irrational::PI.into()
-    }
-
     pub fn zero() -> Expr {
-        Atom::ZERO.into()
+        E_ZERO.with(|e| e.clone())
     }
 
     pub fn one() -> Expr {
-        Atom::ONE.into()
+        E_ONE.with(|e| e.clone())
     }
 
     pub fn min_one() -> Expr {
-        Atom::MINUS_ONE.into()
+        E_MINUS_ONE.with(|e| e.clone())
     }
 
     pub fn var(str: &str) -> Expr {
@@ -612,13 +551,13 @@ impl Expr {
     }
 
     pub fn base(&self) -> Expr {
-        match self.get_flatten() {
+        match self.atom_flat() {
             Atom::Pow(p) => p.base().clone(),
             _ => self.clone(),
         }
     }
     pub fn exponent(&self) -> Expr {
-        match self.get_flatten() {
+        match self.atom_flat() {
             Atom::Pow(p) => p.exponent().clone(),
             _ => Expr::one(),
         }
@@ -655,12 +594,11 @@ impl Expr {
         }
     }
 
-    pub fn get_flatten(&self) -> &Atom {
+    pub fn atom_flat(&self) -> &Atom {
         match self.atom() {
-            Atom::Sum(Sum { args }) | Atom::Prod(Prod { args }) if args.len() == 1 => {
-                args.first().unwrap().atom()
-            }
-            a => a,
+            Atom::Sum(sum) if sum.n_args() == 1 => sum.args().first().unwrap().atom(),
+            Atom::Prod(prod) if prod.n_args() == 1 => prod.args().first().unwrap().atom(),
+            a => return a,
         }
     }
 
@@ -707,18 +645,6 @@ impl Expr {
         exprs.into_iter().all(|e| self.free_of(e))
     }
 
-    pub fn reduce(&self) -> Self {
-        use Atom as A;
-        let res = self.clone().map_args(|a| *a = a.reduce());
-        match res.atom() {
-            A::Irrational(_) | A::Undef | A::Rational(_) | A::Var(_) => res,
-            A::Sum(sum) => sum.reduce(),
-            A::Prod(prod) => prod.reduce(),
-            A::Pow(pow) => pow.reduce(),
-            A::Func(func) => func.reduce(),
-        }
-    }
-
     pub fn iter_compl_sub_exprs(&self) -> ExprIterator<'_> {
         let atoms = vec![self];
         ExprIterator { atoms }
@@ -737,5 +663,170 @@ impl<'a> Iterator for ExprIterator<'a> {
         self.atoms.pop().inspect(|expr| {
             expr.for_each_arg(|arg| self.atoms.push(arg));
         })
+    }
+}
+
+pub trait SymbolicExpr: Clone + PartialOrd + PartialEq + Into<Expr> {
+    /// basic simplification that can be applied regardless of context
+    ///
+    /// e.g 1 + 2 => 3
+    fn reduce(&self) -> Expr {
+        error!(
+            "reduce called on irreducable type: {}",
+            std::any::type_name_of_val(self)
+        );
+        self.clone().into()
+    }
+
+    fn n_args(&self) -> usize {
+        self.args().len()
+    }
+    fn args(&self) -> &[Expr] {
+        &[]
+    }
+    fn args_mut(&mut self) -> &mut [Expr] {
+        &mut []
+    }
+}
+
+impl SymbolicExpr for Irrational {}
+impl SymbolicExpr for Rational {}
+impl SymbolicExpr for Var {}
+
+impl SymbolicExpr for Expr {
+    fn reduce(&self) -> Self {
+        use Atom as A;
+        let res = self.clone().map_args(|a| *a = a.reduce());
+        match res.atom() {
+            A::Irrational(_) | A::Undef | A::Rational(_) | A::Var(_) => res,
+            A::Sum(sum) => sum.reduce(),
+            A::Prod(prod) => prod.reduce(),
+            A::Pow(pow) => pow.reduce(),
+            A::Func(func) => func.reduce(),
+        }
+    }
+
+    fn args(&self) -> &[Expr] {
+        self.atom().args()
+    }
+    fn args_mut(&mut self) -> &mut [Expr] {
+        self.atom_mut().args_mut()
+    }
+}
+
+impl SymbolicExpr for Sum {
+    fn reduce(&self) -> Expr {
+        let mut sum = Sum::reduce_rec(&self.args);
+        if sum.is_zero() {
+            Expr::zero()
+        } else if sum.is_undef() {
+            Expr::undef()
+        } else if sum.args.len() == 1 {
+            sum.args.remove(0)
+        } else {
+            Atom::Sum(sum).into()
+        }
+    }
+
+    fn args(&self) -> &[Expr] {
+        self.args.as_slice()
+    }
+    fn args_mut(&mut self) -> &mut [Expr] {
+        self.args.as_mut_slice()
+    }
+}
+impl SymbolicExpr for Prod {
+    fn reduce(&self) -> Expr {
+        let mut prod = Prod::reduce_rec(&self.args);
+        if prod.is_one() {
+            Expr::one()
+        } else if prod.is_undef() {
+            Expr::undef()
+        } else if prod.args.len() == 1 {
+            prod.args.remove(0)
+        } else {
+            Atom::Prod(prod).into()
+        }
+    }
+
+    fn args(&self) -> &[Expr] {
+        self.args.as_slice()
+    }
+    fn args_mut(&mut self) -> &mut [Expr] {
+        self.args.as_mut_slice()
+    }
+}
+impl SymbolicExpr for Pow {
+    fn reduce(&self) -> Expr {
+        use Atom as A;
+        match (self.base().atom(), self.exponent().atom()) {
+            (A::Undef, _) | (_, A::Undef) | (&A::ZERO, &A::ZERO) => Expr::undef(),
+            (&A::ZERO, A::Rational(r)) if r.is_neg() => Expr::undef(),
+            (&A::ZERO, A::Rational(_)) => Expr::zero(),
+            (&A::ONE, _) => Expr::one(),
+            (_, &A::ONE) => self.base().clone(),
+            (A::Rational(b), A::Rational(e)) => {
+                let (res, rem) = b.clone().pow(e.clone());
+                if rem.is_zero() {
+                    Expr::from(res)
+                } else {
+                    //Expr::from(res) * Expr::from(b.clone()).pow(Expr::from(rem))
+                    A::Pow(self.clone()).into()
+                }
+            }
+            //TODO: rule?
+            (A::Pow(pow), _) => {
+                let mut pow = pow.clone();
+                pow.args[1] *= self.exponent();
+                pow.reduce()
+            }
+            _ => A::Pow(self.clone()).into(),
+        }
+    }
+
+    fn args(&self) -> &[Expr] {
+        &self.args
+    }
+    fn args_mut(&mut self) -> &mut [Expr] {
+        &mut self.args
+    }
+}
+impl SymbolicExpr for Func {
+    fn reduce(&self) -> Expr {
+        use Func as F;
+        match self {
+            F::Log(base, x) if x.atom() == base => Expr::one(),
+            _ => Atom::Func(self.clone()).into(),
+        }
+    }
+
+    fn args_mut(&mut self) -> &mut [Expr] {
+        use Func as F;
+        match self {
+            F::Sin(x)
+            | F::Cos(x)
+            | F::Tan(x)
+            | F::Sec(x)
+            | F::ArcSin(x)
+            | F::ArcCos(x)
+            | F::ArcTan(x)
+            | F::Exp(x)
+            | F::Log(_, x) => slice::from_mut(x),
+        }
+    }
+
+    fn args(&self) -> &[Expr] {
+        use Func as F;
+        match self {
+            F::Sin(x)
+            | F::Cos(x)
+            | F::Tan(x)
+            | F::Sec(x)
+            | F::ArcSin(x)
+            | F::ArcCos(x)
+            | F::ArcTan(x)
+            | F::Exp(x)
+            | F::Log(_, x) => slice::from_ref(x),
+        }
     }
 }

@@ -1,7 +1,7 @@
 use std::{borrow::Borrow, ops, slice};
 
 use crate::{
-    atom::{Atom, Expr, Pow, Prod, Sum},
+    atom::{Atom, Expr, Irrational, Pow, Prod, Sum, SymbolicExpr, Var},
     rational::{Int, Rational},
 };
 
@@ -73,14 +73,10 @@ impl Sum {
     fn merge_args(p: &[Expr], q: &[Expr]) -> Sum {
         let res = if p.is_empty() {
             //q.into_iter().cloned().collect()
-            Sum {
-                args: q.to_vec(),
-            }
+            Sum { args: q.to_vec() }
         } else if q.is_empty() {
             //p.into_iter().cloned().collect()
-            Sum {
-                args: p.to_vec(),
-            }
+            Sum { args: p.to_vec() }
         } else {
             let p1 = p.first().unwrap();
             let q1 = q.first().unwrap();
@@ -321,13 +317,9 @@ impl Prod {
 
     fn merge_args(p: &[Expr], q: &[Expr]) -> Prod {
         if p.is_empty() {
-            Prod {
-                args: q.to_vec(),
-            }
+            Prod { args: q.to_vec() }
         } else if q.is_empty() {
-            Prod {
-                args: p.to_vec(),
-            }
+            Prod { args: p.to_vec() }
         } else {
             let p1 = p.first().unwrap();
             let q1 = q.first().unwrap();
