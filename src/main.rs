@@ -25,9 +25,10 @@ fn main() {
 
     //let e = e!(x + -1 * y);
     //let e = e!(x * ln(x)).derivative(e!(x)).rationalize().expand().factor_out();
-    let e = e!(3);
+    //let e = e!(((x+1)^2 + 1)^2);
+    let e = e!(exp(2*(x+y)));
     println!("{}", e);
-    println!("{}", e.reduce());
+    println!("{}", e.expand_exponential());
 
     println!("took: {:?}ms", (Instant::now() - start).as_micros());
 }

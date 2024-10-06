@@ -1,7 +1,7 @@
 use crate::rational::Rational;
 use std::{collections::VecDeque, fmt, ops};
 
-use crate::atom::{self, Atom, Irrational};
+use crate::atom::{self, unicode, Atom, Irrational, SymbolicExpr};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum FmtAtom {
@@ -13,7 +13,7 @@ pub enum FmtAtom {
     Prod(VecDeque<FmtAtom>),
     Pow(Box<FmtAtom>, Box<FmtAtom>),
     Func(String, Vec<FmtAtom>),
-    Inverse(Box<FmtAtom>),
+    Fraction(Box<FmtAtom>, Box<FmtAtom>),
     UnrySub(Box<FmtAtom>),
 }
 
@@ -30,6 +30,10 @@ impl From<&Atom> for FmtAtom {
             Atom::Rational(r) => {
                 if r.is_neg() {
                     FmtAtom::UnrySub(FmtAtom::Rational(r.clone().abs()).into())
+                } else if r.is_fraction() && r.numer().is_one() {
+                    let n = Atom::from(r.numer());
+                    let d = Atom::from(r.denom());
+                    FmtAtom::Fraction(Self::from(&n).into(), Self::from(&d).into())
                 } else {
                     FmtAtom::Rational(r.clone())
                 }
@@ -48,7 +52,8 @@ impl From<&Atom> for FmtAtom {
             }
             Atom::Pow(pow) => {
                 if pow.exponent().atom() == &Atom::MINUS_ONE {
-                    FmtAtom::Inverse(FmtAtom::from(pow.base().atom()).into())
+                    let n = Atom::ONE;
+                    FmtAtom::Fraction(Self::from(&n).into(), Self::from(pow.base().atom()).into())
                 } else {
                     FmtAtom::Pow(
                         FmtAtom::from(pow.base().atom()).into(),
@@ -101,6 +106,8 @@ impl ops::Mul for FmtAtom {
             (F::UnrySub(lhs), F::UnrySub(rhs)) => *lhs * *rhs,
             (F::UnrySub(lhs), rhs) => F::UnrySub((*lhs * rhs).into()),
             (lhs, F::UnrySub(rhs)) => F::UnrySub((lhs * *rhs).into()),
+            // TODO use len for deciding if we combine
+            (F::Fraction(n, d), e) | (e, F::Fraction(n, d)) => F::Fraction((*n * e).into(), d),
             (lhs, F::Prod(mut s)) => {
                 s.push_front(lhs);
                 F::Prod(s)
@@ -153,7 +160,7 @@ impl FmtAtom {
             FmtAtom::Pow(_, _) => pow_prec(),
 
             FmtAtom::Prod(_) | FmtAtom::UnrySub(_) => prod_prec(),
-            FmtAtom::Inverse(_) | FmtAtom::Rational(_) => prod_prec(),
+            FmtAtom::Fraction(_, _) | FmtAtom::Rational(_) => prod_prec(),
 
             FmtAtom::Sum(_) => sum_prec(),
         }
@@ -176,11 +183,11 @@ impl FmtAtom {
         for a in args {
             match &a {
                 FmtAtom::UnrySub(e) => {
-                    write!(f, " − ")?;
+                    write!(f, " {} ", unicode::sub())?;
                     Self::fmt_w_prec(sum_prec(), e, f)?;
                 }
                 _ => {
-                    write!(f, " + ")?;
+                    write!(f, " {} ", unicode::add())?;
                     Self::fmt_w_prec(sum_prec(), a, f)?;
                 }
             };
@@ -193,21 +200,16 @@ impl FmtAtom {
         use FmtAtom as F;
         let mut args = args.iter().peekable();
 
-        //if let Some(a) = args.next() {
-        //    prev = a;
-        //    write!(f, "{a}")?;
-        //} else {
-        //    return Ok(());
-        //}
         let mut prev: Option<&Self> = None;
         while let Some(a) = args.next() {
             let next = args.peek();
             match (prev, &a, next) {
-                //FmtAtom::UnrySub(_) => write!(f, " − "),
                 (Some(F::Sum(_)), F::Sum(_), _)
-                | (Some(F::Rational(_)), F::Var(_) | F::Sum(_) | F::Func(_, _) | F::Pow(_, _), _) =>
-                {
-                    write!(f, "")?;
+                | (
+                    Some(F::Rational(_)),
+                    F::Var(_) | F::Irrational(_) | F::Sum(_) | F::Func(_, _) | F::Pow(_, _),
+                    _,
+                ) => {
                     Self::fmt_w_prec(prod_prec(), a, f)?;
                     prev = Some(a);
                 }
@@ -215,9 +217,8 @@ impl FmtAtom {
                     Self::fmt_w_prec(prod_prec(), a, f)?;
                     prev = Some(a)
                 }
-                (Some(_), F::Inverse(e), _) => {
-                    write!(f, "/")?;
-                    Self::fmt_w_prec(pow_prec(), e, f)?;
+                (Some(_), F::Fraction(n, d), _) => {
+                    Self::fmt_frac(n, d, f)?;
                     prev = Some(a);
                 }
                 //(_, a, Some(F::Inverse(_))) => {
@@ -226,7 +227,7 @@ impl FmtAtom {
                 //}
                 _ => {
                     if prev.is_some() {
-                        write!(f, "·")?;
+                        write!(f, "{}", unicode::mul())?;
                     }
                     Self::fmt_w_prec(prod_prec(), a, f)?;
                     prev = Some(a);
@@ -237,13 +238,19 @@ impl FmtAtom {
         Ok(())
     }
 
+    pub fn fmt_frac(n: &FmtAtom, d: &FmtAtom, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Self::fmt_w_prec(prod_prec(), n, f)?;
+        write!(f, "{}", unicode::frac_slash())?;
+        Self::fmt_w_prec(pow_prec(), d, f)
+    }
+
     pub fn fmt_pow(b: &FmtAtom, e: &FmtAtom, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if pow_prec() < b.prec() {
             write!(f, "{b}")
         } else {
             write!(f, "({b})")
         }?;
-        write!(f, "^")?;
+        write!(f, "{}", unicode::pow())?;
         if pow_prec() < e.prec() {
             write!(f, "{e}")
         } else {
@@ -267,7 +274,7 @@ impl FmtAtom {
 impl fmt::Display for FmtAtom {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            FmtAtom::Undef => write!(f, "undef"),
+            FmtAtom::Undef => write!(f, "{}", unicode::undef()),
             FmtAtom::Rational(r) => write!(f, "{r}"),
             FmtAtom::Irrational(i) => write!(f, "{i}"),
             FmtAtom::Var(v) => write!(f, "{v}"),
@@ -275,8 +282,8 @@ impl fmt::Display for FmtAtom {
             FmtAtom::Prod(args) => FmtAtom::fmt_prod(args, f),
             FmtAtom::Pow(b, e) => FmtAtom::fmt_pow(b, e, f),
             FmtAtom::Func(n, args) => FmtAtom::fmt_func(n, args, f),
-            FmtAtom::UnrySub(e) => write!(f, "-{e}"),
-            FmtAtom::Inverse(e) => write!(f, "1/{e}"),
+            FmtAtom::UnrySub(e) => write!(f, "{}{e}", unicode::unry_sub()),
+            FmtAtom::Fraction(n, d) => FmtAtom::fmt_frac(n, d, f),
         }
     }
 }
@@ -308,7 +315,8 @@ mod test_unicode_fmt {
             (e!(y * 1 / x), "y/x"),
             (e!(3 * 1 / x), "3/x"),
             (e!((1 + x) ^ 2), "(1 + x)^2"),
-            (e!(pi), "π"),
+            (e!(2 * pi), "2π"),
+            (e!(3 + 1 / 6 * pi), "3 + π/6"),
         ];
 
         for (e, res) in fmt_res {

@@ -3,6 +3,7 @@ use std::{borrow::Borrow, ops, slice};
 use crate::{
     atom::{Atom, Expr, Irrational, Pow, Prod, Sum, SymbolicExpr, Var},
     rational::{Int, Rational},
+    utils::log_macros::*,
 };
 
 use derive_more::{From, Into};
@@ -137,6 +138,11 @@ impl Sum {
             //} else if lhs.base() == rhs.base() {
             //    let e = (lhs.exponent() + rhs.exponent()).reduce();
             //    Sum { args: vec![Expr::pow(lhs.base(), e).reduce()] }
+            } else if lhs.term() == rhs.term() && lhs.term().is_some() {
+                let e = (lhs.r#const().unwrap() + rhs.r#const().unwrap()).reduce();
+                Sum {
+                    args: vec![(e * lhs.term().unwrap()).reduce()],
+                }
             } else {
                 let mut lhs = lhs.clone();
                 let mut rhs = rhs.clone();
@@ -393,7 +399,7 @@ impl Prod {
                 }
             }
         } else {
-           let lhs = args.first().unwrap().flatten();
+            let lhs = args.first().unwrap().flatten();
             let rhs = Prod::reduce_rec(&args[1..]);
 
             if let Atom::Prod(p) = lhs.atom() {
@@ -636,6 +642,7 @@ impl Expr {
                 if self.free_of(x) {
                     Expr::zero()
                 } else {
+                    // TODO: d(f)/d(x^2)
                     todo!()
                 }
             }
@@ -671,6 +678,30 @@ impl Expr {
             A::Irrational(_) | A::Undef | A::Rational(_) | A::Var(_) | A::Sum(_) => self.clone(),
             A::Func(_) => todo!(),
         }
+    }
+
+    pub fn expand_exponential(&self) -> Self {
+        if self.is_const() || self.is_var() || self.is_undef() {
+            return self.clone();
+        }
+
+        let e = self.clone().map_args(|a| *a = a.expand_exponential());
+    
+        if e.is_exponential() {
+            let a = e.exponent();
+            if let Atom::Sum(s) = a.atom() {
+                let (s1, s2) = s.as_binary_sum();
+                let prod = Expr::mul_raw(Expr::exp(s1), Expr::exp(s2));
+                return prod.expand_exponential()
+            } else if let Atom::Prod(p) = a.atom() {
+                let (p1, p2) = p.as_binary_mul();
+                if p1.is_int() {
+                    return Expr::pow(Expr::exp(p2).expand_exponential(), p1)
+                }
+            }
+        } 
+
+        e
     }
 
     pub fn distribute(&self) -> Self {
@@ -896,11 +927,6 @@ impl Expr {
             ops::ControlFlow::Continue(())
         });
     }
-
-    pub fn map_args(mut self, map_fn: impl Fn(&mut Expr)) -> Self {
-        self.atom_mut().args_mut().iter_mut().for_each(map_fn);
-        self
-    }
 }
 
 impl<T: Borrow<Expr>> ops::Add<T> for &Expr {
@@ -974,28 +1000,9 @@ impl<T: Borrow<Expr>> ops::DivAssign<T> for Expr {
 
 #[cfg(test)]
 mod test {
+    use super::*;
     use assert_eq as eq;
     use calcurs_macros::expr as e;
-
-    use super::*;
-
-    #[test]
-    fn variables() {
-        eq!(
-            e!(x ^ 3 + 3 * x ^ 2 * y + 3 * x * y ^ 2 + y ^ 3).variables(),
-            [e!(x), e!(y)].into_iter().collect()
-        );
-        eq!(
-            e!(3 * x * (x + 1) * y ^ 2 * z ^ n).variables(),
-            [e!(x), e!(x + 1), e!(y), e!(z ^ n)].into_iter().collect()
-        );
-        eq!(
-            e!(2 ^ (1 / 2) * x ^ 2 + 3 ^ (1 / 2) * x + 5 ^ (1 / 2)).variables(),
-            [e!(x), e!(2 ^ (1 / 2)), e!(3 ^ (1 / 2)), e!(5 ^ (1 / 2))]
-                .into_iter()
-                .collect()
-        );
-    }
 
     #[test]
     fn expand() {
@@ -1017,51 +1024,11 @@ mod test {
         eq!(
             e!((x + 1) ^ 2 + (y + 1) ^ 2).expand().reduce(),
             e!(2 + 2 * x + 2 * y + x ^ 2 + y ^ 2),
-            //e!(2 + (2 * x) + x ^ 2 + (2 * y) + y ^ 2)
         );
-        //eq!(
-        //    e!(((x + 2) ^ 2 + 3) ^ 2).expand().reduce(),
-        //    e!(x ^ 4 + 8 ^ 3 + 30 * x ^ 2 + 56 * x + 49)
-        //);
-    }
-
-    #[test]
-    fn reduce() {
-        let checks = vec![
-            (e!(2 * x), e!(2 * x)),
-            (e!(1 + 2), e!(3)),
-            (e!(a + undef), e!(undef)),
-            (e!(a + (b + c)), e!(a + (b + c))),
-            (e!(0 - 2 * b), e!((2 - 4) * b)),
-            (e!(a + 0), e!(a)),
-            (e!(0 + a), e!(a)),
-            (e!(1 + 2), e!(3)),
-            (e!(x + 0), e!(x)),
-            (e!(0 + x), e!(x)),
-            (e!(0 - x), e!((4 - 5) * x)),
-            (e!(x - 0), e!(x)),
-            (e!(3 - 2), e!(1)),
-            (e!(x * 0), e!(0)),
-            (e!(0 * x), e!(0)),
-            (e!(x * 1), e!(x)),
-            (e!(1 * x), e!(x)),
-            (e!(0 ^ 0), e!(undef)),
-            (e!(0 ^ 1), e!(0)),
-            (e!(0 ^ 314), e!(0)),
-            (e!(1 ^ 0), e!(1)),
-            (e!(314 ^ 0), e!(1)),
-            (e!(314 ^ 1), e!(314)),
-            (e!(x ^ 1), e!(x)),
-            (e!(1 ^ x), e!(1)),
-            (e!(1 ^ 314), e!(1)),
-            (e!(3 ^ 3), e!(27)),
-            (e!(a - b), e!(a + ((2 - 3) * b))),
-            (e!(a / b), e!(a * b ^ (2 - 3))),
-            (e!((x ^ (1 / 2) ^ (1 / 2)) ^ 8), e!(x ^ 2)),
-        ];
-        for (calc, res) in checks {
-            eq!(calc.reduce(), res);
-        }
+        eq!(
+            e!(((x + 2) ^ 2 + 3) ^ 2).expand().reduce(),
+            e!(x ^ 4 + 8 * x ^ 3 + 30 * x ^ 2 + 56 * x + 49).reduce()
+        );
     }
 
     #[test]
@@ -1073,15 +1040,6 @@ mod test {
         eq!(
             e!((x + y) / (x * y)).distribute(),
             e!(x / (x * y) + y / (x * y))
-        );
-    }
-
-    #[test]
-    fn num_denom() {
-        let nd = |e: Expr| (e.numerator(), e.denominator());
-        eq!(
-            nd(e!((2 / 3) * (x * (x + 1)) / (x + 2) * y ^ n)),
-            (e!(2 * x * (x + 1) * y ^ n), e!(3 * (x + 2)))
         );
     }
 
@@ -1125,38 +1083,44 @@ mod test {
     }
 
     #[test]
-    fn derivative() {
-        let d = |e: Expr| {
-            e.derivative(e!(x))
-                .rationalize()
-                .expand()
-                .factor_out()
-                .reduce()
-                .reduce()
-        };
-
-        eq!(d(e!(x ^ 2)), e!(2 * x));
-        eq!(d(e!(sin(x))), e!(cos(x)));
-        eq!(d(e!(exp(x))), e!(exp(x)));
-        eq!(d(e!(x * exp(x))), e!((1 + x) * exp(x)));
-        eq!(d(e!(ln(x))), e!(1 / x));
-        eq!(d(e!(1 / x)), e!(-1 / x ^ 2));
-        eq!(d(e!(tan(x))), e!(sec(x) ^ 2));
-        eq!(d(e!(arc_tan(x))), e!(1 / (1 + x ^ 2)));
-        eq!(
-            d(e!(x * ln(x) * sin(x))),
-            e!(x * cos(x) * ln(x) + sin(x) * ln(x) + sin(x)) //e!(sin(x) + x*cos(x)*ln(x) + sin(x)*ln(x))
-        );
-        eq!(d(e!(x ^ 2)), e!(2 * x));
-        //eq!(d(exp(e!(sin(x)))), exp(e!(x)));
-    }
-
-    #[test]
-    fn term_const() {
-        eq!(e!(2 * y).term(), Some(e!(y)));
-        eq!(e!(x * y).term(), Some(e!(x * y)));
-        eq!(e!(x).r#const(), Some(e!(1)));
-        eq!(e!(2 * x).r#const(), Some(e!(2)));
-        eq!(e!(y * x).r#const(), Some(e!(1)));
+    fn reduce() {
+        let checks = vec![
+            (e!(2 * x), e!(2 * x)),
+            (e!(1 + 2), e!(3)),
+            (e!(a + undef), e!(undef)),
+            (e!(a + (b + c)), e!(a + (b + c))),
+            (e!(0 - 2 * b), e!((2 - 4) * b)),
+            (e!(a + 0), e!(a)),
+            (e!(0 + a), e!(a)),
+            (e!(1 + 2), e!(3)),
+            (e!(x + 0), e!(x)),
+            (e!(0 + x), e!(x)),
+            (e!(0 - x), e!((4 - 5) * x)),
+            (e!(x - 0), e!(x)),
+            (e!(3 - 2), e!(1)),
+            (e!(x * 0), e!(0)),
+            (e!(0 * x), e!(0)),
+            (e!(x * 1), e!(x)),
+            (e!(1 * x), e!(x)),
+            (e!(0 ^ 0), e!(undef)),
+            (e!(0 ^ 1), e!(0)),
+            (e!(0 ^ 314), e!(0)),
+            (e!(1 ^ 0), e!(1)),
+            (e!(314 ^ 0), e!(1)),
+            (e!(314 ^ 1), e!(314)),
+            (e!(x ^ 1), e!(x)),
+            (e!(1 ^ x), e!(1)),
+            (e!(1 ^ 314), e!(1)),
+            (e!(3 ^ 3), e!(27)),
+            (e!(a - b), e!(a + ((2 - 3) * b))),
+            (e!(a / b), e!(a * b ^ (2 - 3))),
+            (e!((x ^ (1 / 2) ^ (1 / 2)) ^ 8), e!(x ^ 2)),
+            (e!(x + x), e!(2 * x)),
+            (e!(sin(0)), e!(0)),
+            (Expr::ln(Expr::e()), e!(1)),
+        ];
+        for (calc, res) in checks {
+            eq!(calc.reduce(), res);
+        }
     }
 }

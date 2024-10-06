@@ -75,6 +75,12 @@ impl Atom {
     pub fn is_min_one(&self) -> bool {
         self == &Atom::MINUS_ONE
     }
+    pub fn is_pi(&self) -> bool {
+        self == &Atom::PI
+    }
+    pub fn is_e(&self) -> bool {
+        self == &Atom::E
+    }
     pub fn is_neg(&self) -> bool {
         self.is_rational_and(Rational::is_neg)
     }
@@ -107,39 +113,17 @@ impl Atom {
             Atom::Sum(_) | Atom::Prod(_) | Atom::Pow(_) => false,
         }
     }
-
     pub fn is_rational_and(&self, cond: impl Fn(&Rational) -> bool) -> bool {
         match self {
             Atom::Rational(r) => cond(r),
             _ => false,
         }
     }
-
     pub fn is_const(&self) -> bool {
-        self.is_undef() || self.is_number()
+        self.is_number()
     }
 
-    pub fn args(&self) -> &[Expr] {
-        use Atom as A;
-        match self {
-            A::Undef | A::Rational(_) | A::Irrational(_) | A::Var(_) => &[],
-            A::Sum(sum) => sum.args(),
-            A::Prod(prod) => prod.args(),
-            A::Pow(pow) => pow.args(),
-            A::Func(func) => func.args(),
-        }
-    }
-
-    pub fn args_mut(&mut self) -> &mut [Expr] {
-        use Atom as A;
-        match self {
-            A::Undef | A::Rational(_) | A::Irrational(_) | A::Var(_) => &mut [],
-            A::Sum(sum) => sum.args_mut(),
-            A::Prod(prod) => prod.args_mut(),
-            A::Pow(pow) => pow.args_mut(),
-            A::Func(func) => func.args_mut(),
-        }
-    }
+    
 
     pub fn for_each_arg<'a>(&'a self, func: impl FnMut(&'a Expr)) {
         self.args().iter().for_each(func)
@@ -184,7 +168,7 @@ pub enum Irrational {
     #[display("𝓮")]
     E,
     #[debug("pi")]
-    #[display("π")]
+    #[display("{}", unicode::pi())]
     PI,
 }
 
@@ -201,7 +185,7 @@ pub enum Func {
     ArcSin(Expr),
     ArcCos(Expr),
     ArcTan(Expr),
-    Exp(Expr),
+    //Exp(Expr),
     #[display("{}{_1}", self.name())]
     Log(Real, Expr),
 }
@@ -231,48 +215,42 @@ impl Func {
             Func::ArcSin(_) => "arcsin",
             Func::ArcCos(_) => "arccos",
             Func::ArcTan(_) => "arctan",
-            Func::Exp(_) => "exp",
+            //Func::Exp(_) => "exp",
             Func::Log(Real::Irrational(Irrational::E), _) => "ln".into(),
             Func::Log(Real::Rational(r), _) if r == &Rational::from(10) => "log".into(),
             Func::Log(base, _) => return format!("log{base}"),
         }
         .into()
     }
-
-    pub fn iter_args(&self) -> impl Iterator<Item = &Expr> {
-        self.args().iter()
-    }
+    //pub fn iter_args_mut(&mut self) -> impl Iterator<Item = &mut Expr> {
+    //    self.args_mut().iter_mut()
+    //}
 
     pub fn derivative(&self, x: impl Borrow<Expr>) -> Expr {
         use Expr as E;
         use Func as F;
 
-        let r = |n: i32, d: i32| Expr::from(Rational::from((n, d)));
-        let e = |e: i32| {
-            match e {
-                -1 => Expr::min_one(),
-                1 => Expr::one(),
-                2 => Expr::two(),
-                _ => Expr::from(e),
-            }
+        let r = |n: i32, d: i32| E::from(Rational::from((n, d)));
+        let e = |e: i32| match e {
+            -1 => E::min_one(),
+            1 => E::one(),
+            2 => E::two(),
+            _ => E::from(e),
         };
-        let d = |e: &Expr| -> Expr { e.derivative(x) };
+        let d = |e: &E| -> E { e.derivative(x) };
 
         match self {
             F::Sin(f) => d(f) * E::cos(f),
-            F::Cos(f) => d(f) * e(-1) * E::sin(f),
+            F::Cos(f) => e(-1) * d(f) * E::sin(f),
             F::Tan(f) => d(f) * E::pow(E::sec(f), e(2)),
             F::Sec(f) => d(f) * E::tan(f) * E::sec(f),
             F::ArcSin(f) => d(f) * E::pow(e(1) - E::pow(f, e(2)), r(-1, 2)),
             F::ArcCos(f) => d(f) * e(-1) * E::pow(e(1) - E::pow(f, e(2)), r(-1, 2)),
             F::ArcTan(f) => d(f) * E::pow(e(1) + E::pow(f, e(2)), e(-1)),
-            F::Log(base, f) => d(f) * Expr::pow(f * E::ln(Expr::from(base.clone())), e(-1)),
-            F::Exp(f) => Expr::exp(f) * d(f),
+            F::Log(base, f) => d(f) * E::pow(f * E::ln(E::from(base.clone())), e(-1)),
+            //F::Exp(f) => E::exp(f) * d(f),
         }
     }
-    //pub fn iter_args_mut(&mut self) -> impl Iterator<Item = &mut Expr> {
-    //    self.args_mut().iter_mut()
-    //}
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -290,6 +268,7 @@ impl Sum {
     pub fn is_zero(&self) -> bool {
         self.args.is_empty()
     }
+
     pub fn is_undef(&self) -> bool {
         self.args.first().is_some_and(|e| e.is_undef())
     }
@@ -417,8 +396,8 @@ impl fmt::Debug for Pow {
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[derive(Debug, Display, From)]
-#[display("{}", fmt_ast::FmtAtom::from(self.atom()))]
 #[debug("{:?}", self.atom())]
+#[display("{}", fmt_ast::FmtAtom::from(self.atom()))]
 pub struct Expr(PTR<Atom>);
 
 impl<T: Into<Atom>> From<T> for Expr {
@@ -445,9 +424,7 @@ macro_rules! func_atom {
     };
 }
 
-
 impl Expr {
-
     //TODO store consts on stack
     std::thread_local! {
         static _UNDEF: Expr = Expr::from(Atom::UNDEF);
@@ -466,21 +443,42 @@ impl Expr {
         Self(PTR::from(a))
     }
 
-    pub fn undef() -> Expr { Self::_UNDEF.with(|e| e.clone()) }
+    pub fn undef() -> Expr {
+        Self::_UNDEF.with(|e| e.clone())
+    }
+    pub fn min_two() -> Expr {
+        Self::_MINUS_TWO.with(|e| e.clone())
+    }
+    pub fn min_one() -> Expr {
+        Self::_MINUS_ONE.with(|e| e.clone())
+    }
+    pub fn zero() -> Expr {
+        Self::_ZERO.with(|e| e.clone())
+    }
+    pub fn one() -> Expr {
+        Self::_ONE.with(|e| e.clone())
+    }
+    pub fn two() -> Expr {
+        Self::_TWO.with(|e| e.clone())
+    }
+    pub fn pi() -> Expr {
+        Self::_PI.with(|e| e.clone())
+    }
+    pub fn e() -> Expr {
+        Self::_E.with(|e| e.clone())
+    }
 
-    pub fn min_two() -> Expr { Self::_MINUS_TWO.with(|e| e.clone()) }
-    pub fn min_one() -> Expr { Self::_MINUS_ONE.with(|e| e.clone()) }
-    pub fn zero() -> Expr { Self::_ZERO.with(|e| e.clone()) }
-    pub fn one() -> Expr { Self::_ONE.with(|e| e.clone()) }
-    //pub fn zero() -> Expr { Expr::from_atom(Atom::Rational(Rational::from(0))) }
-    //pub fn one() -> Expr { Expr::from_atom(Atom::Rational(Rational::from(1))) }
-    //pub fn one() -> Expr { Self::_ONE.with(|e| e.clone()) }
-    pub fn two() -> Expr { Self::_TWO.with(|e| e.clone()) }
+    /*
+    pub fn min_two() -> Expr { Expr::from_atom(Atom::Rational(Rational::from(-2))) }
+    pub fn min_one() -> Expr { Expr::from_atom(Atom::Rational(Rational::from(-1))) }
+    pub fn zero() -> Expr { Expr::from_atom(Atom::Rational(Rational::from(0))) }
+    pub fn one() -> Expr { Expr::from_atom(Atom::Rational(Rational::from(1))) }
+    pub fn two() -> Expr { Expr::from_atom(Atom::Rational(Rational::from(2))) }
+    */
 
-    pub fn pi() -> Expr { Self::_PI.with(|e| e.clone()) }
-    pub fn e() -> Expr { Self::_E.with(|e| e.clone()) }
-
-    pub fn var(str: &str) -> Expr { Expr::from_atom(Atom::Var(str.into())) }
+    pub fn var(str: &str) -> Expr {
+        Expr::from_atom(Atom::Var(str.into()))
+    }
 
     pub fn atom(&self) -> &Atom {
         ops::Deref::deref(self)
@@ -500,8 +498,10 @@ impl Expr {
     func_atom!(arc_sin);
     func_atom!(arc_cos);
     func_atom!(arc_tan);
-    func_atom!(exp);
 
+    pub fn exp(e: impl Borrow<Expr>) -> Expr {
+        Expr::pow(Expr::e(), e)
+    }
     pub fn log(base: impl Into<Real>, e: impl Borrow<Expr>) -> Expr {
         let base = base.into();
         Expr::from(Atom::Func(Func::Log(base, e.borrow().clone())))
@@ -513,10 +513,6 @@ impl Expr {
         Expr::log(Rational::from(10), e)
     }
 
-    //TODO: CLIPPY BUG
-    //pub fn sqrt(v: impl Borrow<Expr>) -> Expr {
-    //    Expr::pow(v, &Rational::from((1, 2)).into())
-    //}
     pub fn sqrt(v: impl Borrow<Expr>) -> Expr {
         let exp = Expr::from(Rational::from((1, 2)));
         Expr::pow(v, &exp)
@@ -577,10 +573,13 @@ impl Expr {
         }
     }
 
+    pub fn is_exponential(&self) -> bool {
+        self.is_pow() && self.base().is_e()
+    }
+
     pub fn r#const(&self) -> Option<Expr> {
         match self.flatten().atom() {
             Atom::Var(_) | Atom::Sum(_) | Atom::Pow(_) | Atom::Func(_) => Some(Expr::one()),
-            Atom::Undef | Atom::Rational(_) | Atom::Irrational(_) => None,
             Atom::Prod(Prod { args }) => {
                 if let Some(a) = args.first() {
                     if a.is_const() {
@@ -589,6 +588,8 @@ impl Expr {
                 }
                 Some(Expr::one())
             }
+
+            Atom::Undef | Atom::Rational(_) | Atom::Irrational(_) => None,
         }
     }
 
@@ -604,17 +605,10 @@ impl Expr {
                 Some(self.clone())
             }
             Atom::Var(_) | Atom::Sum(_) | Atom::Pow(_) | Atom::Func(_) => Some(self.clone()),
+
             Atom::Undef | Atom::Rational(_) | Atom::Irrational(_) => None,
         }
     }
-
-    //pub fn atom_flat(&self) -> &Atom {
-    //    match self.atom() {
-    //        Atom::Sum(sum) if sum.n_args() == 1 => sum.args().first().unwrap().atom(),
-    //        Atom::Prod(prod) if prod.n_args() == 1 => prod.args().first().unwrap().atom(),
-    //        a => return a,
-    //    }
-    //}
 
     pub fn variables(&self) -> HashSet<Expr> {
         let mut vars = Default::default();
@@ -669,7 +663,7 @@ impl Expr {
             Atom::Sum(sum) if sum.n_args() == 1 => sum.args().first().unwrap(),
             Atom::Prod(prod) if prod.n_args() == 1 => prod.args().first().unwrap(),
             Atom::Pow(pow) if pow.exponent().is_one() => pow.base(),
-            _ => self
+            _ => self,
         }
     }
 }
@@ -710,6 +704,41 @@ pub trait SymbolicExpr: Clone + PartialOrd + PartialEq + Into<Expr> {
     fn args_mut(&mut self) -> &mut [Expr] {
         &mut []
     }
+    fn iter_args(&self) -> impl Iterator<Item = &Expr> {
+        self.args().iter()
+    }
+    //fn map_args(&mut self, func: impl FnMut(&mut Expr)) {
+    //    self.args_mut().iter_mut().for_each(func)
+    //}
+    fn map_args(mut self, map_fn: impl Fn(&mut Expr)) -> Self {
+        self.args_mut().iter_mut().for_each(map_fn);
+        self
+    }
+}
+
+impl SymbolicExpr for Atom {
+    fn args(&self) -> &[Expr] {
+        use Atom as A;
+        match self {
+            A::Undef | A::Rational(_) | A::Irrational(_) | A::Var(_) => &[],
+            A::Sum(sum) => sum.args(),
+            A::Prod(prod) => prod.args(),
+            A::Pow(pow) => pow.args(),
+            A::Func(func) => func.args(),
+        }
+    }
+
+    fn args_mut(&mut self) -> &mut [Expr] {
+        use Atom as A;
+        match self {
+            A::Undef | A::Rational(_) | A::Irrational(_) | A::Var(_) => &mut [],
+            A::Sum(sum) => sum.args_mut(),
+            A::Prod(prod) => prod.args_mut(),
+            A::Pow(pow) => pow.args_mut(),
+            A::Func(func) => func.args_mut(),
+        }
+    }
+
 }
 
 impl SymbolicExpr for Irrational {}
@@ -758,6 +787,7 @@ impl SymbolicExpr for Sum {
         self.args.as_mut_slice()
     }
 }
+
 impl SymbolicExpr for Prod {
     fn reduce(&self) -> Expr {
         let mut prod = Prod::reduce_rec(&self.args);
@@ -779,6 +809,7 @@ impl SymbolicExpr for Prod {
         self.args.as_mut_slice()
     }
 }
+
 impl SymbolicExpr for Pow {
     fn reduce(&self) -> Expr {
         use Atom as A;
@@ -814,12 +845,25 @@ impl SymbolicExpr for Pow {
         &mut self.args
     }
 }
+
 impl SymbolicExpr for Func {
     fn reduce(&self) -> Expr {
         use Func as F;
-        match self {
-            F::Log(base, x) if x.atom() == base => Expr::one(),
-            _ => Atom::Func(self.clone()).into(),
+
+        //let mut e = self.clone();
+        let e = self.clone().map_args(|a| *a = a.reduce());
+        match e {
+            // sin(0) => 0
+            F::Sin(x) if x.is_zero() => x.clone(),
+            // sin(pi/6) => 1/2
+            // sin(pi/4) => 1/sqrt(2)
+            // sin(pi/3) => sqrt(3)/2
+            //F::Sin(x) if x.numerator().is_pi() => {
+            //    todo!()
+            //}
+
+            F::Log(base, x) if x.atom() == &base => Expr::one(),
+            _ => e.into(),
         }
     }
 
@@ -833,7 +877,6 @@ impl SymbolicExpr for Func {
             | F::ArcSin(x)
             | F::ArcCos(x)
             | F::ArcTan(x)
-            | F::Exp(x)
             | F::Log(_, x) => slice::from_mut(x),
         }
     }
@@ -848,8 +891,101 @@ impl SymbolicExpr for Func {
             | F::ArcSin(x)
             | F::ArcCos(x)
             | F::ArcTan(x)
-            | F::Exp(x)
             | F::Log(_, x) => slice::from_ref(x),
         }
+    }
+}
+
+pub mod unicode {
+    use paste::paste;
+
+    macro_rules! symbl {
+        ($id:ident: $unicode: literal) => {
+            paste! {
+                pub const fn [<$id:snake>]() -> &'static str {
+                    $unicode
+                }
+            }
+        };
+    }
+
+    symbl!(pi: "π");
+    symbl!(e : "𝓮");
+    symbl!(sub : "−");
+    symbl!(unry_sub : "-");
+    symbl!(add : "+");
+    symbl!(mul : "·");
+    symbl!(frac_slash : "/");
+    symbl!(pow : "^");
+    symbl!(undef : "∅");
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use assert_eq as eq;
+    use calcurs_macros::expr as e;
+
+    #[test]
+    fn variables() {
+        eq!(
+            e!(x ^ 3 + 3 * x ^ 2 * y + 3 * x * y ^ 2 + y ^ 3).variables(),
+            [e!(x), e!(y)].into_iter().collect()
+        );
+        eq!(
+            e!(3 * x * (x + 1) * y ^ 2 * z ^ n).variables(),
+            [e!(x), e!(x + 1), e!(y), e!(z ^ n)].into_iter().collect()
+        );
+        eq!(
+            e!(2 ^ (1 / 2) * x ^ 2 + 3 ^ (1 / 2) * x + 5 ^ (1 / 2)).variables(),
+            [e!(x), e!(2 ^ (1 / 2)), e!(3 ^ (1 / 2)), e!(5 ^ (1 / 2))]
+                .into_iter()
+                .collect()
+        );
+    }
+
+    #[test]
+    fn num_denom() {
+        let nd = |e: Expr| (e.numerator(), e.denominator());
+        eq!(
+            nd(e!((2 / 3) * (x * (x + 1)) / (x + 2) * y ^ n)),
+            (e!(2 * x * (x + 1) * y ^ n), e!(3 * (x + 2)))
+        );
+    }
+
+    #[test]
+    fn derivative() {
+        let d = |e: Expr| {
+            e.derivative(e!(x))
+                .rationalize()
+                .expand()
+                .factor_out()
+                .reduce()
+                .reduce()
+        };
+
+        eq!(d(e!(x ^ 2)), e!(2 * x));
+        eq!(d(e!(sin(x))), e!(cos(x)));
+        eq!(d(e!(exp(x))), e!(exp(x)));
+        eq!(d(e!(x * exp(x))), e!((1 + x) * exp(x)));
+        eq!(d(e!(ln(x))), e!(1 / x));
+        eq!(d(e!(1 / x)), e!(-1 / x ^ 2));
+        eq!(d(e!(tan(x))), e!(sec(x) ^ 2));
+        eq!(d(e!(arc_tan(x))), e!(1 / (1 + x ^ 2)));
+        eq!(
+            d(e!(x * ln(x) * sin(x))),
+            e!(x * cos(x) * ln(x) + sin(x) * ln(x) + sin(x)) //e!(sin(x) + x*cos(x)*ln(x) + sin(x)*ln(x))
+        );
+        eq!(d(e!(x ^ 2)), e!(2 * x));
+        //eq!(d(exp(e!(sin(x)))), exp(e!(x)));
+    }
+
+    #[test]
+    fn term_const() {
+        eq!(e!(2 * y).term(), Some(e!(y)));
+        eq!(e!(x * y).term(), Some(e!(x * y)));
+        eq!(e!(x).r#const(), Some(e!(1)));
+        eq!(e!(2 * x).r#const(), Some(e!(2)));
+        eq!(e!(y * x).r#const(), Some(e!(1)));
     }
 }

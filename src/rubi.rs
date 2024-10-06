@@ -206,13 +206,11 @@ impl WlfrmBuiltins {
     //FreeQ,
 
     //QuadraticProductQ,
-    //FractionQ,
     //PowerQ,
     //PowerOfLinearQ,
     //PowerOfLinearMatchQ,
     //IntegerPowerQ,
     //FractionalPowerQ,
-    //NumberQ,
     //IntegersQ,
     //PolynomialQ,
     //ComplexNumberQ,

@@ -222,33 +222,33 @@ impl Rational {
         Int(mal::Integer::from(self.0.denominator_ref().clone()))
     }
 
-    pub fn is_min_two(&self) -> bool { self == &Self::MINUS_TWO }
-    pub fn is_min_one(&self) -> bool { self == &Self::MINUS_ONE }
-    pub fn is_zero(&self) -> bool { self == &Self::ZERO }
-    pub fn is_one(&self) -> bool { self == &Self::ONE }
-    pub fn is_two(&self) -> bool { self == &Self::TWO }
-
-    #[inline(always)]
+    pub fn is_min_two(&self) -> bool {
+        self == &Self::MINUS_TWO
+    }
+    pub fn is_min_one(&self) -> bool {
+        self == &Self::MINUS_ONE
+    }
+    pub fn is_zero(&self) -> bool {
+        self == &Self::ZERO
+    }
+    pub fn is_one(&self) -> bool {
+        self == &Self::ONE
+    }
+    pub fn is_two(&self) -> bool {
+        self == &Self::TWO
+    }
     pub fn is_pos(&self) -> bool {
         matches!(marith::Sign::sign(&self.0), Ordering::Greater)
     }
-
-    #[inline(always)]
     pub fn is_neg(&self) -> bool {
         matches!(marith::Sign::sign(&self.0), Ordering::Less)
     }
-
-    #[inline(always)]
     pub fn is_int(&self) -> bool {
         mconv::IsInteger::is_integer(&self.0)
     }
-
-    #[inline(always)]
     pub fn is_fraction(&self) -> bool {
         !self.is_int()
     }
-
-    #[inline(always)]
     pub fn is_even(&self) -> bool {
         if self.is_int() {
             marith::Parity::even(self.0.numerator_ref())
@@ -256,6 +256,7 @@ impl Rational {
             false
         }
     }
+
 
     /// none if [self] is zero
     #[inline(always)]
