@@ -119,6 +119,8 @@ impl num_integer::Roots for Int {
 }
 
 impl Int {
+    pub const MINUS_TWO: Int = Int(mal::Integer::const_from_signed(-2));
+    pub const MINUS_ONE: Int = Int(mal::Integer::const_from_signed(-1));
     pub const ZERO: Int = Int(mal::Integer::const_from_signed(0));
     pub const ONE: Int = Int(mal::Integer::const_from_signed(1));
     pub const TWO: Int = Int(mal::Integer::const_from_signed(2));
@@ -144,6 +146,15 @@ impl Int {
     }
     pub fn is_neg(&self) -> bool {
         self < &Int::ZERO
+    }
+    pub fn is_even(&self) -> bool {
+        marith::Parity::even(&self.0)
+    }
+    pub fn is_odd(&self) -> bool {
+        marith::Parity::odd(&self.0)
+    }
+    pub fn abs(&self) -> Self {
+        Self(self.0.unsigned_abs_ref().into())
     }
 
     pub fn gcd(&self, other: &Self) -> Self {
@@ -256,7 +267,6 @@ impl Rational {
             false
         }
     }
-
 
     /// none if [self] is zero
     #[inline(always)]

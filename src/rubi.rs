@@ -190,7 +190,7 @@ impl WlfrmBuiltins {
     // yields True if expr is an expression which cannot be divided into subexpressions, and yields False otherwise.
     AtomQ(arg: WArgs) {
         match arg!(arg) {
-            WA::Expr(e) => e.is_atom(),
+            WA::Expr(e) => e.is_irreducible(),
             _ => false
         }
     }

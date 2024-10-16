@@ -2,10 +2,9 @@ use crate::{
     fmt_ast,
     polynomial::{MonomialView, PolynomialView, VarSet},
     rational::{Int, Rational},
-    utils::log_macros::*,
-    utils::{self, HashSet},
+    utils::{self, log_macros::*, HashSet},
 };
-use std::{borrow::Borrow, fmt, ops, slice};
+use std::{borrow::Borrow, cmp, fmt, ops, slice};
 
 use derive_more::{Debug, Display, From, Into, IsVariant, TryUnwrap, Unwrap};
 use paste::paste;
@@ -102,7 +101,7 @@ impl Atom {
     pub fn is_real(&self) -> bool {
         self.is_rational() || self.is_irrational()
     }
-    pub fn is_atom(&self) -> bool {
+    pub fn is_irreducible(&self) -> bool {
         match self {
             Atom::Undef
             | Atom::Rational(_)
@@ -123,7 +122,16 @@ impl Atom {
         self.is_number()
     }
 
-    
+    pub fn try_unwrap_int(&self) -> Option<Int> {
+        match self {
+            Atom::Rational(r) if r.is_int() && r.is_neg() => Some(Int::MINUS_ONE * r.numer()),
+            Atom::Rational(r) if r.is_int() => Some(r.numer()),
+            _ => None,
+        }
+    }
+    pub fn unwrap_int(&self) -> Int {
+        self.try_unwrap_int().unwrap()
+    }
 
     pub fn for_each_arg<'a>(&'a self, func: impl FnMut(&'a Expr)) {
         self.args().iter().for_each(func)
@@ -137,6 +145,11 @@ pub enum Real {
     Rational(Rational),
     #[debug("{_0}")]
     Irrational(Irrational),
+}
+
+impl Real {
+    pub const E: Real = Real::Irrational(Irrational::E);
+    pub const PI: Real = Real::Irrational(Irrational::PI);
 }
 
 impl PartialEq<Atom> for Real {
@@ -193,6 +206,19 @@ pub enum Func {
 impl Func {
     pub fn is_nat_log(&self) -> bool {
         self.try_unwrap_nat_log_ref().is_some()
+    }
+
+    pub fn is_trig(&self) -> bool {
+        match self {
+            Func::Sin(_)
+            | Func::Cos(_)
+            | Func::Tan(_)
+            | Func::Sec(_)
+            | Func::ArcSin(_)
+            | Func::ArcCos(_)
+            | Func::ArcTan(_) => true,
+            _ => false,
+        }
     }
 
     pub fn try_unwrap_log_base(&self, base: &Real) -> Option<&Expr> {
@@ -394,11 +420,34 @@ impl fmt::Debug for Pow {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 #[derive(Debug, Display, From)]
 #[debug("{:?}", self.atom())]
 #[display("{}", fmt_ast::FmtAtom::from(self.atom()))]
 pub struct Expr(PTR<Atom>);
+
+fn expr_as_cmp_slice<'a>(e: &'a Expr) -> &[Expr] {
+    match e.atom() {
+        Atom::Sum(_) | Atom::Prod(_) => e.args(),
+        _ => slice::from_ref(e),
+    }
+}
+
+impl cmp::Ord for Expr {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        if self.is_atom() || other.is_atom() {
+            return self.atom().cmp(other.atom());
+        }
+        let lhs = expr_as_cmp_slice(self);
+        let rhs = expr_as_cmp_slice(other);
+        Self::cmp_slices(lhs, rhs)
+    }
+}
+impl cmp::PartialOrd for Expr {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
 
 impl<T: Into<Atom>> From<T> for Expr {
     fn from(value: T) -> Self {
@@ -512,18 +561,17 @@ impl Expr {
     pub fn log10(e: impl Borrow<Expr>) -> Expr {
         Expr::log(Rational::from(10), e)
     }
-
     pub fn sqrt(v: impl Borrow<Expr>) -> Expr {
         let exp = Expr::from(Rational::from((1, 2)));
         Expr::pow(v, &exp)
     }
 
     #[inline(always)]
-    pub fn as_monomial<'a>(&'a self, vars: &'a VarSet) -> MonomialView<'a> {
+    pub fn as_monomial_view<'a>(&'a self, vars: &'a VarSet) -> MonomialView<'a> {
         MonomialView::new(self, vars)
     }
     #[inline(always)]
-    pub fn as_polynomial<'a>(&'a self, vars: &'a VarSet) -> PolynomialView<'a> {
+    pub fn as_polynomial_view<'a>(&'a self, vars: &'a VarSet) -> PolynomialView<'a> {
         PolynomialView::new(self, vars)
     }
 
@@ -559,7 +607,6 @@ impl Expr {
             _ => Expr::one(),
         }
     }
-
     pub fn base(&self) -> Expr {
         match self.flatten().atom() {
             Atom::Pow(p) => p.base().clone(),
@@ -572,9 +619,11 @@ impl Expr {
             _ => Expr::one(),
         }
     }
-
     pub fn is_exponential(&self) -> bool {
         self.is_pow() && self.base().is_e()
+    }
+    pub fn is_trig(&self) -> bool {
+        self.try_unwrap_func_ref().is_ok_and(Func::is_trig)
     }
 
     pub fn r#const(&self) -> Option<Expr> {
@@ -666,6 +715,31 @@ impl Expr {
             _ => self,
         }
     }
+
+    fn cmp_slices(lhs: &[Self], rhs: &[Self]) -> cmp::Ordering {
+        let iter = lhs.iter().zip(rhs.iter());
+        for (l, r) in iter {
+            let cmp = l.atom().cmp(r.atom());
+            if !cmp.is_eq() {
+                return cmp;
+            }
+        }
+
+        if lhs.len() == rhs.len() {
+            cmp::Ordering::Equal
+        } else if lhs.len() < rhs.len() {
+            cmp::Ordering::Greater
+        } else {
+            cmp::Ordering::Less
+        }
+    }
+
+    fn cost(&self) -> usize {
+        let mut cost = 1;
+        self.iter_args().for_each(|e| cost += e.cost());
+        cost
+    }
+
 }
 
 #[derive(Debug)]
@@ -695,6 +769,9 @@ pub trait SymbolicExpr: Clone + PartialOrd + PartialEq + Into<Expr> {
         self.clone().into()
     }
 
+    fn is_atom(&self) -> bool {
+        self.n_args() == 0
+    }
     fn n_args(&self) -> usize {
         self.args().len()
     }
@@ -738,7 +815,6 @@ impl SymbolicExpr for Atom {
             A::Func(func) => func.args_mut(),
         }
     }
-
 }
 
 impl SymbolicExpr for Irrational {}
@@ -855,13 +931,34 @@ impl SymbolicExpr for Func {
         match e {
             // sin(0) => 0
             F::Sin(x) if x.is_zero() => x.clone(),
+
+            F::Sin(x)
+                if x.is_prod()
+                    && x.n_args() != 0
+                    && x.args()[0].is_rational_and(|r| r.is_int() && r.is_neg()) =>
+            {
+                let (n, x) = x.atom().clone().unwrap_prod().as_binary_mul();
+                debug_assert!(n.is_int() && n.is_neg());
+                let n = n.atom().unwrap_int();
+                Expr::min_one() * Expr::sin(Expr::from(n.abs()) * x)
+            }
+
+            F::Cos(x)
+                if x.is_prod()
+                    && x.n_args() != 0
+                    && x.args()[0].is_rational_and(|r| r.is_int() && r.is_neg()) =>
+            {
+                let (n, x) = x.atom().clone().unwrap_prod().as_binary_mul();
+                debug_assert!(n.is_int() && n.is_neg());
+                let n = n.atom().unwrap_int();
+                Expr::cos(Expr::from(n.abs()) * x)
+            }
             // sin(pi/6) => 1/2
             // sin(pi/4) => 1/sqrt(2)
             // sin(pi/3) => sqrt(3)/2
             //F::Sin(x) if x.numerator().is_pi() => {
             //    todo!()
             //}
-
             F::Log(base, x) if x.atom() == &base => Expr::one(),
             _ => e.into(),
         }
@@ -961,20 +1058,19 @@ mod test {
                 .expand()
                 .factor_out()
                 .reduce()
-                .reduce()
         };
 
         eq!(d(e!(x ^ 2)), e!(2 * x));
         eq!(d(e!(sin(x))), e!(cos(x)));
         eq!(d(e!(exp(x))), e!(exp(x)));
-        eq!(d(e!(x * exp(x))), e!((1 + x) * exp(x)));
+        eq!(d(e!(x * exp(x))), e!((x + 1) * exp(x)));
         eq!(d(e!(ln(x))), e!(1 / x));
         eq!(d(e!(1 / x)), e!(-1 / x ^ 2));
         eq!(d(e!(tan(x))), e!(sec(x) ^ 2));
-        eq!(d(e!(arc_tan(x))), e!(1 / (1 + x ^ 2)));
+        eq!(d(e!(arc_tan(x))), e!(1 / (x ^ 2 + 1)));
         eq!(
             d(e!(x * ln(x) * sin(x))),
-            e!(x * cos(x) * ln(x) + sin(x) * ln(x) + sin(x)) //e!(sin(x) + x*cos(x)*ln(x) + sin(x)*ln(x))
+            e!(x * cos(x) * ln(x) + sin(x) * ln(x) + sin(x)).sort_args() //e!(sin(x) + x*cos(x)*ln(x) + sin(x)*ln(x))
         );
         eq!(d(e!(x ^ 2)), e!(2 * x));
         //eq!(d(exp(e!(sin(x)))), exp(e!(x)));

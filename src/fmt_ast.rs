@@ -1,9 +1,13 @@
-use crate::rational::Rational;
 use std::{collections::VecDeque, fmt, ops};
 
-use crate::atom::{self, unicode, Atom, Irrational, SymbolicExpr};
+use derive_more::IsVariant;
 
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+use crate::{
+    atom::{self, unicode, Atom, Irrational, SymbolicExpr},
+    rational::Rational,
+};
+
+#[derive(Clone, PartialEq, Eq, Hash, Debug, IsVariant)]
 pub enum FmtAtom {
     Undef,
     Rational(Rational),
@@ -12,7 +16,7 @@ pub enum FmtAtom {
     Sum(VecDeque<FmtAtom>),
     Prod(VecDeque<FmtAtom>),
     Pow(Box<FmtAtom>, Box<FmtAtom>),
-    Func(String, Vec<FmtAtom>),
+    Func(atom::Func, Vec<FmtAtom>),
     Fraction(Box<FmtAtom>, Box<FmtAtom>),
     UnrySub(Box<FmtAtom>),
 }
@@ -62,7 +66,7 @@ impl From<&Atom> for FmtAtom {
                 }
             }
             Atom::Func(func) => FmtAtom::Func(
-                func.name(),
+                func.clone(),
                 func.iter_args().map(|a| FmtAtom::from(a.atom())).collect(),
             ),
         }
@@ -201,25 +205,29 @@ impl FmtAtom {
         let mut args = args.iter().peekable();
 
         let mut prev: Option<&Self> = None;
-        while let Some(a) = args.next() {
+        while let Some(curr) = args.next() {
             let next = args.peek();
-            match (prev, &a, next) {
-                (Some(F::Sum(_)), F::Sum(_), _)
-                | (
-                    Some(F::Rational(_)),
-                    F::Var(_) | F::Irrational(_) | F::Sum(_) | F::Func(_, _) | F::Pow(_, _),
-                    _,
-                ) => {
-                    Self::fmt_w_prec(prod_prec(), a, f)?;
-                    prev = Some(a);
+            match (prev, &curr, next) {
+                (Some(a), b, _) if implicit_postfix_mul(a) && implicit_prefix_mul(b) => {
+                    //next.is_some_and(|v| v.is_var()) => {
+                    Self::fmt_w_prec(prod_prec(), b, f)?;
+                }
+                (Some(F::Sum(_)), F::Sum(_), _) => {
+                    //| (Some(F::Rational(_)), F::Var(_) | F::Irrational(_) | F::Sum(_) | F::Func(_, _) | F::Pow(_, _), _,) => {
+                    Self::fmt_w_prec(prod_prec(), curr, f)?;
                 }
                 (Some(F::Func(..)), F::Func(..), _) => {
-                    Self::fmt_w_prec(prod_prec(), a, f)?;
-                    prev = Some(a)
+                    Self::fmt_w_prec(prod_prec(), curr, f)?;
                 }
                 (Some(_), F::Fraction(n, d), _) => {
                     Self::fmt_frac(n, d, f)?;
-                    prev = Some(a);
+                }
+                (Some(p), curr, _) if p.is_func_pow_number() && curr.is_func_pow_number() => {
+                    Self::fmt_w_prec(prod_prec(), curr, f)?;
+                }
+                (Some(F::Pow(..)), _, _) => {
+                    write!(f, " {} ", unicode::mul())?;
+                    Self::fmt_w_prec(prod_prec(), curr, f)?;
                 }
                 //(_, a, Some(F::Inverse(_))) => {
                 //    Self::fmt_w_prec(pow_prec(), a, f)?;
@@ -229,10 +237,10 @@ impl FmtAtom {
                     if prev.is_some() {
                         write!(f, "{}", unicode::mul())?;
                     }
-                    Self::fmt_w_prec(prod_prec(), a, f)?;
-                    prev = Some(a);
+                    Self::fmt_w_prec(prod_prec(), curr, f)?;
                 }
             };
+            prev = Some(curr);
         }
 
         Ok(())
@@ -244,22 +252,33 @@ impl FmtAtom {
         Self::fmt_w_prec(pow_prec(), d, f)
     }
 
-    pub fn fmt_pow(b: &FmtAtom, e: &FmtAtom, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if pow_prec() < b.prec() {
-            write!(f, "{b}")
-        } else {
-            write!(f, "({b})")
-        }?;
-        write!(f, "{}", unicode::pow())?;
-        if pow_prec() < e.prec() {
-            write!(f, "{e}")
-        } else {
-            write!(f, "({e})")
+    fn is_number(&self) -> bool {
+        self.is_rational() || self.is_irrational()
+    }
+    fn is_func_pow_number(&self) -> bool {
+        match self {
+            FmtAtom::Func(..) => true,
+            FmtAtom::Pow(b, e) if b.is_func() && e.is_number() => true,
+            _ => false,
         }
     }
 
-    pub fn fmt_func(name: &String, args: &[Self], f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{name}(")?;
+    pub fn fmt_pow(b: &FmtAtom, e: &FmtAtom, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use FmtAtom as F;
+        match (b, e) {
+            (F::Func(func, args), e) if e.is_number() => {
+                write!(f, "{}{}{}", func.name(), unicode::pow(), e)?;
+                return Self::fmt_func_args(args, f);
+            }
+            _ => (),
+        }
+        Self::fmt_w_prec(pow_prec() + 1, b, f)?;
+        write!(f, "{}", unicode::pow())?;
+        Self::fmt_w_prec(pow_prec() + 1, e, f)
+    }
+
+    fn fmt_func_args(args: &[Self], f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "(")?;
         let mut args = args.iter();
         if let Some(a) = args.next() {
             write!(f, "{a}")?;
@@ -268,6 +287,11 @@ impl FmtAtom {
             write!(f, ", {a}")?;
         }
         write!(f, ")")
+    }
+
+    pub fn fmt_func(func: &atom::Func, args: &[Self], f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", func.name())?;
+        Self::fmt_func_args(args, f)
     }
 }
 
@@ -288,6 +312,27 @@ impl fmt::Display for FmtAtom {
     }
 }
 
+fn implicit_prefix_mul(e: &FmtAtom) -> bool {
+    use FmtAtom as F;
+    match e {
+        F::Var(_)
+        | F::Rational(_)
+        | F::Irrational(_)
+        | F::Sum(_)
+        | F::Func(_, _)
+        | F::Pow(_, _) => true,
+        _ => false,
+    }
+}
+
+fn implicit_postfix_mul(e: &FmtAtom) -> bool {
+    use FmtAtom as F;
+    match e {
+        F::Rational(_) | F::Irrational(_) => true,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod test_unicode_fmt {
     use super::atom::Expr;
@@ -297,6 +342,7 @@ mod test_unicode_fmt {
     #[test]
     fn basic() {
         let fmt_res = vec![
+            (e!(a + b), "a + b"),
             (e!(a + b * c), "a + b·c"),
             (e!(2 * x * y), "2x·y"),
             (e!(2 * x ^ 3), "2x^3"),
@@ -317,6 +363,13 @@ mod test_unicode_fmt {
             (e!((1 + x) ^ 2), "(1 + x)^2"),
             (e!(2 * pi), "2π"),
             (e!(3 + 1 / 6 * pi), "3 + π/6"),
+            (e!(sin(x) ^ 3 * tan(x)), "sin^3(x)tan(x)"),
+            (e!(sin(x) ^ (x + y) * tan(x)), "sin(x)^(x + y) · tan(x)"),
+            (e!(sin(x) ^ x * tan(x)), "sin(x)^x · tan(x)"),
+            (e!(3 * sin(x) ^ pi * cos(x) ^ 3), "3sin^π(x)cos^3(x)"),
+            (e!(sin(x) * sin(x)), "sin^2(x)"),
+            (e!(x ^ y ^ z), "(x^y)^z"),
+            (e!(x ^ (y ^ z)), "x^(y^z)"),
         ];
 
         for (e, res) in fmt_res {

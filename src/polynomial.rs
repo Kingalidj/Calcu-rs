@@ -182,7 +182,7 @@ impl<'a> MonomialView<'a> {
             A::Irrational(_) | A::Rational(_) | A::Var(_) | A::Sum(_) => (),
             A::Prod(Prod { args }) => {
                 for a in args {
-                    if !a.as_monomial(self.vars).check() {
+                    if !a.as_monomial_view(self.vars).check() {
                         return false;
                     }
                 }
@@ -221,7 +221,7 @@ impl<'a> MonomialView<'a> {
                 let mut coeff = Expr::one();
                 let mut degree = VarPow::default();
                 for a in args {
-                    let (c, d) = a.as_monomial(self.vars).coeff()?;
+                    let (c, d) = a.as_monomial_view(self.vars).coeff()?;
                     coeff *= c;
                     degree.merge(d)
                 }
@@ -231,7 +231,7 @@ impl<'a> MonomialView<'a> {
                 match pow.exponent().atom() {
                     // TODO: negative exponent?
                     A::Rational(r) if r.is_int() && r >= &Rational::ONE => {
-                        let (c, mut d) = pow.base().as_monomial(self.vars).coeff()?;
+                        let (c, mut d) = pow.base().as_monomial_view(self.vars).coeff()?;
                         d.pow(&r.to_int().unwrap());
                         return Some((Expr::pow(c, pow.exponent()), d));
                         //if self.vars.has(pow.base()) {
@@ -278,13 +278,13 @@ impl<'a> PolynomialView<'a> {
             }
 
             for a in args {
-                if !a.as_monomial(self.vars).check() {
+                if !a.as_monomial_view(self.vars).check() {
                     return false;
                 }
             }
             true
         } else {
-            self.poly.as_monomial(self.vars).check()
+            self.poly.as_monomial_view(self.vars).check()
         }
     }
 
@@ -341,7 +341,7 @@ impl<'a> PolynomialView<'a> {
             }
 
             for a in args {
-                match a.as_monomial(self.vars).coeff() {
+                match a.as_monomial_view(self.vars).coeff() {
                     Some((c, d)) => {
                         coeffs
                             .entry(d)
@@ -354,7 +354,7 @@ impl<'a> PolynomialView<'a> {
             //coeffs.iter_mut().for_each(|(_, c)| *c = c.reduce());
             coeffs
         } else {
-            if let Some((c, d)) = self.poly.as_monomial(self.vars).coeff() {
+            if let Some((c, d)) = self.poly.as_monomial_view(self.vars).coeff() {
                 coeffs.insert(d, c);
             }
             coeffs
@@ -374,7 +374,7 @@ impl<'a> PolynomialView<'a> {
             sum
         } else {
             // self.poly != A::Sum(_)
-            if self.poly.as_monomial(self.vars).check() {
+            if self.poly.as_monomial_view(self.vars).check() {
                 return None;
             } else {
                 return Some(self.poly.clone());
@@ -387,7 +387,7 @@ impl<'a> PolynomialView<'a> {
 
         let mut res = GPE::default();
         for a in &sum.args {
-            let (mc, mv) = a.as_monomial(self.vars).coeff()?;
+            let (mc, mv) = a.as_monomial_view(self.vars).coeff()?;
             res.add(mc, mv);
         }
         Some(res.into_expr())
@@ -429,27 +429,30 @@ mod monomial_uv {
     fn check() {
         let x = &VarSet::from(e!(x));
         let xy = &VarSet::from([e!(x), e!(y)]);
-        assert!(e!(x).as_monomial(x).check());
-        assert!(e!(x ^ 1).as_monomial(x).check());
-        assert!(e!(x * y).as_monomial(x).check());
-        assert!(e!(2 * x).as_monomial(x).check());
-        assert!(e!(x * (1 + 2)).as_monomial(x).check());
-        assert!(e!(2 * x ^ 3).as_monomial(x).check());
-        assert!(!e!(x + 1).as_monomial(x).check());
-        assert!(!e!((x + 1) * (x + 3)).as_monomial(x).check());
-        assert!(!e!(x * (x + 3)).as_monomial(x).check());
-        assert!(e!(a * x ^ 2 * y ^ 2).as_monomial(xy).check());
-        assert!(!e!(a * (x ^ 2 + y ^ 2)).as_monomial(xy).check());
+        assert!(e!(x).as_monomial_view(x).check());
+        assert!(e!(x ^ 1).as_monomial_view(x).check());
+        assert!(e!(x * y).as_monomial_view(x).check());
+        assert!(e!(2 * x).as_monomial_view(x).check());
+        assert!(e!(x * (1 + 2)).as_monomial_view(x).check());
+        assert!(e!(2 * x ^ 3).as_monomial_view(x).check());
+        assert!(!e!(x + 1).as_monomial_view(x).check());
+        assert!(!e!((x + 1) * (x + 3)).as_monomial_view(x).check());
+        assert!(!e!(x * (x + 3)).as_monomial_view(x).check());
+        assert!(e!(a * x ^ 2 * y ^ 2).as_monomial_view(xy).check());
+        assert!(!e!(a * (x ^ 2 + y ^ 2)).as_monomial_view(xy).check());
     }
 
     #[test]
     fn degree() {
         let x = &VarSet::from([e!(x)]);
-        assert_eq!(e!(x ^ 3).as_monomial(x).degree(), Some(3.into()));
-        assert_eq!(e!(x ^ 3 * x ^ 4).as_monomial(x).degree(), Some(7.into()));
+        assert_eq!(e!(x ^ 3).as_monomial_view(x).degree(), Some(3.into()));
+        assert_eq!(
+            e!(x ^ 3 * x ^ 4).as_monomial_view(x).degree(),
+            Some(7.into())
+        );
         assert_eq!(
             e!(3 * w * x ^ 2 * y ^ 3 * z ^ 4)
-                .as_monomial(&[e!(x), e!(z)].into())
+                .as_monomial_view(&[e!(x), e!(z)].into())
                 .degree(),
             Some(6.into())
         )
@@ -459,11 +462,11 @@ mod monomial_uv {
     fn coeff() {
         let x = &VarSet::from([e!(x)]);
         assert_eq!(
-            e!(a ^ 2 * x * b * x ^ 2).as_monomial(x).coeff(),
+            e!(a ^ 2 * x * b * x ^ 2).as_monomial_view(x).coeff(),
             Some((e!(a ^ 2 * b), [(e!(x), 3.into())].into()))
         );
         assert_eq!(
-            e!(a ^ 2 * x ^ 2 * x ^ 4).as_monomial(x).degree(),
+            e!(a ^ 2 * x ^ 2 * x ^ 4).as_monomial_view(x).degree(),
             Some(6.into())
         )
     }
@@ -477,7 +480,7 @@ mod polynomial_uv {
 
     macro_rules! p {
         ($expr:expr, $vars:expr) => {
-            $expr.as_polynomial(&$vars.into())
+            $expr.as_polynomial_view(&$vars.into())
         };
     }
 
@@ -566,7 +569,7 @@ mod polynomial_uv {
     fn basic() {
         let u = e!(a * (x ^ 2 + 1) ^ 2 + (x ^ 2 + 1));
         let vars = VarSet::from(e!(x ^ 2 + 1));
-        let poly = u.as_polynomial(&vars);
+        let poly = u.as_polynomial_view(&vars);
         assert!(poly.check());
         assert_eq!(poly.degree(), Some(2.into()));
         assert_eq!(poly.coeffs_of_deg(&e!(x ^ 2 + 1), &Int::ONE), None);
@@ -580,7 +583,7 @@ mod polynomial_uv {
     fn collect_terms() {
         let expr = e!(2 * a * x * y + 3 * b * x * y + 4 * a * x + 5 * b * x);
         assert_eq!(
-            expr.as_polynomial(&[e!(x), e!(y)].into())
+            expr.as_polynomial_view(&[e!(x), e!(y)].into())
                 .collect_terms()
                 .unwrap(),
             e!((2 * a + 3 * b) * x * y + (4 * a + 5 * b) * x)
