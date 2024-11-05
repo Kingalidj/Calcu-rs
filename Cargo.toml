@@ -9,7 +9,7 @@ bitflags = "2.6.0"
 malachite = "0.4.15"
 fxhash = "0.2.1"
 ref-cast = "1.0.23"
-num = "0.4.3"
+num = { version="0.4.3", features=["serde"] }
 log = "0.4.22"
 env_logger = "0.11.5"
 ordered-float = "4.2.2"
@@ -17,6 +17,14 @@ quanta = "0.12.3"
 paste = "1.0.15"
 num-integer = "0.1.46"
 derive_more = { version="1.0.0", features=["from", "into", "debug", "display", "add", "mul", "sum", "add_assign", "mul_assign", "is_variant", "unwrap", "try_unwrap"] }
+serde = { version="1.0.214", features=["derive", "rc"] }
+num-bigint = { version="0.4.6", features=["serde"] }
+serde_json = "1.0.132"
+trace = "0.1.7"
+
+[features]
+#default = ["default_debug"]
+default_debug = []
 
 [lints.clippy]
 upper_case_acronyms = "allow"

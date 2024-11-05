@@ -2,12 +2,14 @@ use crate::{
     fmt_ast,
     polynomial::{MonomialView, PolynomialView, VarSet},
     rational::{Int, Rational},
+    transforms::Step,
     utils::{self, log_macros::*, HashSet},
 };
-use std::{borrow::Borrow, cmp, fmt, ops, slice};
+use std::{borrow::Borrow, cmp, fmt, hash, ops, slice};
 
 use derive_more::{Debug, Display, From, Into, IsVariant, TryUnwrap, Unwrap};
 use paste::paste;
+use serde::{Deserialize, Serialize};
 
 //pub(crate) type PTR<T> = std::sync::Arc<T>;
 pub(crate) type PTR<T> = std::rc::Rc<T>;
@@ -19,12 +21,13 @@ struct Derivative {
     degree: u64,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Display, Debug, From)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Display, Debug, From, Serialize, Deserialize)]
 #[from(&str, String)]
 pub struct Var(pub(crate) PTR<str>);
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[derive(Debug, From, IsVariant, Unwrap, TryUnwrap)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, From, IsVariant, Unwrap, TryUnwrap, Serialize, Deserialize
+)]
 #[unwrap(ref)]
 #[try_unwrap(ref)]
 pub enum Atom {
@@ -138,7 +141,7 @@ impl Atom {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Display, From)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Display, From, Serialize, Deserialize)]
 #[from(forward)]
 pub enum Real {
     #[debug("{_0}")]
@@ -175,7 +178,9 @@ impl From<Real> for Atom {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Display)]
+#[derive(
+    Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Display, Serialize, Deserialize,
+)]
 pub enum Irrational {
     #[debug("e")]
     #[display("𝓮")]
@@ -185,8 +190,7 @@ pub enum Irrational {
     PI,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[derive(Debug, Display, Unwrap, TryUnwrap)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Display, Unwrap, TryUnwrap, Serialize, Deserialize)]
 #[unwrap(ref)]
 #[try_unwrap(ref)]
 #[display("{}({_0})", self.name())]
@@ -279,7 +283,8 @@ impl Func {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "default_debug", derive(Debug))]
 pub struct Sum {
     pub args: Vec<Expr>,
 }
@@ -323,6 +328,7 @@ impl Sum {
     }
 }
 
+#[cfg(not(feature = "default_debug"))]
 impl fmt::Debug for Sum {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.args.is_empty() {
@@ -339,10 +345,12 @@ impl fmt::Debug for Sum {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "default_debug", derive(Debug))]
 pub struct Prod {
     pub args: Vec<Expr>,
 }
+#[cfg(not(feature = "default_debug"))]
 impl fmt::Debug for Prod {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.args.is_empty() {
@@ -398,7 +406,8 @@ impl Prod {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "default_debug", derive(Debug))]
 pub struct Pow {
     /// [base, exponent]
     pub(crate) args: [Expr; 2],
@@ -414,17 +423,28 @@ impl Pow {
     }
 }
 
+#[cfg(not(feature = "default_debug"))]
 impl fmt::Debug for Pow {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}^{:?}", self.args[0], self.args[1])
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
-#[derive(Debug, Display, From)]
+#[derive(Clone, Debug, Display, Serialize, Deserialize)]
 #[debug("{:?}", self.atom())]
 #[display("{}", fmt_ast::FmtAtom::from(self.atom()))]
-pub struct Expr(PTR<Atom>);
+pub struct Expr {
+    pub(crate) atom: PTR<Atom>,
+    pub(crate) expls: Vec<Step>,
+}
+
+impl hash::Hash for Expr {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        // Only hash the `id` field
+        self.atom.hash(state);
+    }
+}
+
 
 fn expr_as_cmp_slice<'a>(e: &'a Expr) -> &[Expr] {
     match e.atom() {
@@ -448,10 +468,19 @@ impl cmp::PartialOrd for Expr {
         Some(self.cmp(other))
     }
 }
+impl cmp::Eq for Expr {}
+impl cmp::PartialEq for Expr {
+    fn eq(&self, other: &Self) -> bool {
+        self.atom == other.atom
+    }
+}
 
 impl<T: Into<Atom>> From<T> for Expr {
-    fn from(value: T) -> Self {
-        Expr(PTR::new(value.into()))
+    fn from(atom: T) -> Self {
+        Self {
+            atom: PTR::from(atom.into()),
+            expls: vec![],
+        }
     }
 }
 
@@ -459,7 +488,7 @@ impl ops::Deref for Expr {
     type Target = Atom;
 
     fn deref(&self) -> &Self::Target {
-        self.0.deref()
+        self.atom.deref()
     }
 }
 
@@ -489,7 +518,10 @@ impl Expr {
     }
 
     fn from_atom(a: Atom) -> Expr {
-        Self(PTR::from(a))
+        Self {
+            atom: PTR::from(a),
+            expls: vec![],
+        }
     }
 
     pub fn undef() -> Expr {
@@ -533,7 +565,7 @@ impl Expr {
         ops::Deref::deref(self)
     }
     pub fn atom_mut(&mut self) -> &mut Atom {
-        PTR::make_mut(&mut self.0)
+        PTR::make_mut(&mut self.atom)
     }
 
     pub fn rational<T: Into<Rational>>(r: T) -> Expr {
@@ -573,6 +605,30 @@ impl Expr {
     #[inline(always)]
     pub fn as_polynomial_view<'a>(&'a self, vars: &'a VarSet) -> PolynomialView<'a> {
         PolynomialView::new(self, vars)
+    }
+
+    pub fn explain(mut self, from: Option<Self>, explanation: impl AsRef<str>) -> Self {
+        if Some(&self) == from.as_ref() {
+            self
+        } else {
+            let step = Step {
+                to: self.clone(),
+                from,
+                explanation: explanation.as_ref().to_string(),
+            };
+            self.expls.push(step);
+            self
+        }
+    }
+
+    pub fn steps(&self) -> &Vec<Step> {
+        &self.expls
+    }
+
+    pub fn show_steps(&self) {
+        println!("{}:", self);
+        println!("{:?}", self.steps());
+        self.iter_args().for_each(Self::show_steps);
     }
 
     pub fn numerator(&self) -> Expr {
@@ -739,7 +795,6 @@ impl Expr {
         self.iter_args().for_each(|e| cost += e.cost());
         cost
     }
-
 }
 
 #[derive(Debug)]

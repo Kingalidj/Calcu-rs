@@ -1,18 +1,17 @@
-use std::{cmp::Ordering, ops};
+use std::{cmp::Ordering, ops, str::FromStr};
 
 use calcurs_macros::arith_ops;
 use derive_more::{
     Add, AddAssign, Debug, Display, Div, DivAssign, From, Into, Mul, MulAssign, Sub, SubAssign,
 };
+use serde::{Deserialize, Serialize};
 
 use malachite::{
     self as mal,
     num::{arithmetic::traits as marith, conversion::traits as mconv},
 };
 
-#[derive(
-    Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Display, From, Into
-)]
+#[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Display, From, Into)]
 #[arith_ops(ref, self.0)]
 #[from(i32, u32, i64, u64)]
 #[into(mal::Rational)]
@@ -202,9 +201,7 @@ impl TryFrom<Rational> for Int {
     }
 }
 
-#[derive(
-    Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Display, From
-)]
+#[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Display, From)]
 #[arith_ops(ref, self.0)]
 #[from(i64, i32, u64, u32, Int)]
 #[debug("{}", self.0)]
@@ -360,6 +357,41 @@ impl Rational {
         } else {
             Some(pow)
         }
+    }
+}
+
+impl Serialize for Int {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.0.to_string())
+    }
+}
+impl<'de> Deserialize<'de> for Int {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(Self(mal::Integer::from_str(&s).unwrap()))
+    }
+}
+impl Serialize for Rational {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.0.to_string())
+    }
+}
+impl<'de> Deserialize<'de> for Rational {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(Self(mal::Rational::from_str(&s).unwrap()))
     }
 }
 

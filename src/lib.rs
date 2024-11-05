@@ -2,12 +2,13 @@
 
 pub extern crate self as calcu_rs;
 
-mod algos;
-mod atom;
+pub mod algos;
+pub mod atom;
 mod fmt_ast;
 mod polynomial;
 mod rational;
 mod rubi;
+mod transforms;
 mod utils;
 
 pub use atom::{Expr, SymbolicExpr};
