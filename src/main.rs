@@ -19,14 +19,31 @@ fn main() {
 
     let start = Instant::now();
 
-    let a = e!(y^2 * 2*(-y*2 + x));
+    let mut a = e!((x^2-1)/(x+1));
+
+    // (x^2-1)/(x+1) = x
+
+
     println!("{a}");
 
+    a.clear_explanation();
     let eclass = a.simplify();
 
     for e in &eclass {
-        println!("{}: {e}", ExprCost::cost(&e));
+        println!("{}: {e}", ExprCost::cost(e));
     }
+    
+
+    println!("\nstep-by-step:\n{:?}", eclass[0].clone().steps());
+
+    //let e = e!((x^2 - 1)/(x+1)).expand().rationalize().cancel();
+    //println!("{}", e);
+
+    //let a = e!(12);
+    //let b = e!(43);
+    //let c = a / b;
+
+    //println!("{:?}", c.steps());
     
 
 

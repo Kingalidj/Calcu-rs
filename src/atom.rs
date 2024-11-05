@@ -1,9 +1,5 @@
 use crate::{
-    fmt_ast,
-    polynomial::{MonomialView, PolynomialView, VarSet},
-    rational::{Int, Rational},
-    transforms::Step,
-    utils::{self, log_macros::*, HashSet},
+    fmt_ast, polynomial::{MonomialView, PolynomialView, VarSet}, rational::{Int, Rational}, transforms::TransformStep, utils::{self, log_macros::*, HashSet}
 };
 use std::{borrow::Borrow, cmp, fmt, hash, ops, slice};
 
@@ -54,6 +50,12 @@ pub enum Atom {
     #[from]
     #[debug("{_0:?}")]
     Func(Func),
+}
+
+impl fmt::Display for Atom {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", fmt_ast::FmtAtom::from(self))
+    }
 }
 
 impl Atom {
@@ -430,17 +432,24 @@ impl fmt::Debug for Pow {
     }
 }
 
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+pub(crate) struct Explanation {
+    pub(crate) explanation: PTR<str>,
+    pub(crate) refs: Vec<Expr>,
+}
+
+const RECORD_STEPS: bool = false;
+
 #[derive(Clone, Debug, Display, Serialize, Deserialize)]
 #[debug("{:?}", self.atom())]
 #[display("{}", fmt_ast::FmtAtom::from(self.atom()))]
 pub struct Expr {
     pub(crate) atom: PTR<Atom>,
-    pub(crate) expls: Vec<Step>,
+    pub(crate) expl: Option<Explanation>,
 }
 
 impl hash::Hash for Expr {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        // Only hash the `id` field
         self.atom.hash(state);
     }
 }
@@ -477,10 +486,7 @@ impl cmp::PartialEq for Expr {
 
 impl<T: Into<Atom>> From<T> for Expr {
     fn from(atom: T) -> Self {
-        Self {
-            atom: PTR::from(atom.into()),
-            expls: vec![],
-        }
+        Self::from_atom(atom.into())
     }
 }
 
@@ -520,7 +526,7 @@ impl Expr {
     fn from_atom(a: Atom) -> Expr {
         Self {
             atom: PTR::from(a),
-            expls: vec![],
+            expl: Default::default(),
         }
     }
 
@@ -605,30 +611,6 @@ impl Expr {
     #[inline(always)]
     pub fn as_polynomial_view<'a>(&'a self, vars: &'a VarSet) -> PolynomialView<'a> {
         PolynomialView::new(self, vars)
-    }
-
-    pub fn explain(mut self, from: Option<Self>, explanation: impl AsRef<str>) -> Self {
-        if Some(&self) == from.as_ref() {
-            self
-        } else {
-            let step = Step {
-                to: self.clone(),
-                from,
-                explanation: explanation.as_ref().to_string(),
-            };
-            self.expls.push(step);
-            self
-        }
-    }
-
-    pub fn steps(&self) -> &Vec<Step> {
-        &self.expls
-    }
-
-    pub fn show_steps(&self) {
-        println!("{}:", self);
-        println!("{:?}", self.steps());
-        self.iter_args().for_each(Self::show_steps);
     }
 
     pub fn numerator(&self) -> Expr {
@@ -795,6 +777,61 @@ impl Expr {
         self.iter_args().for_each(|e| cost += e.cost());
         cost
     }
+
+    pub fn steps(self) -> TransformStep {
+        if let Some(expl) = self.expl {
+            TransformStep {
+                explanation: expl.explanation,
+                refs: expl.refs,
+                current: self.atom,
+            }
+        } else {
+            TransformStep {
+                explanation: "".into(),
+                refs: vec![],
+                current: self.atom,
+            }
+        }
+    }
+
+    pub(crate) fn explain(mut self, explanation: impl AsRef<str>, refs: &[&Expr]) -> Self {
+        if !RECORD_STEPS {
+            return self;
+        }
+
+        let mut refs: Vec<_> = refs.iter().copied().cloned().collect();
+
+        let mut expl_needed = false;
+        for prev in &refs {
+            if !(prev.is_atom() || prev == &self) {
+                expl_needed = true;
+            }
+        }
+
+        if !expl_needed {
+            return self;
+        }
+
+        if self.expl.is_none() {
+            self.expl = Some(Explanation {
+                explanation: explanation.as_ref().into(),
+                refs: refs.into(),
+            });
+            self
+        } else {
+            let mut next = self.clone();
+            refs.push(self);
+            next.expl = Some(Explanation {
+                explanation: explanation.as_ref().into(),
+                refs,
+            });
+            next
+        }
+    }
+
+    pub fn clear_explanation(&mut self) {
+        self.expl = None;
+    }
 }
 
 #[derive(Debug)]
@@ -886,7 +923,7 @@ impl SymbolicExpr for Expr {
             A::Prod(prod) => prod.reduce(),
             A::Pow(pow) => pow.reduce(),
             A::Func(func) => func.reduce(),
-        }
+        }.explain("reduce", &[self])
     }
 
     fn args(&self) -> &[Expr] {

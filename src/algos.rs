@@ -6,7 +6,7 @@ trace::init_depth_var!();
 
 
 use crate::{
-    atom::{Atom, Expr, Func, Pow, Prod, Real, Sum, SymbolicExpr, Var, PTR}, rational::{Int, Rational}, transforms::Step, utils::{log_macros::*, HashMap, HashSet}
+    atom::{Atom, Expr, Func, Pow, Prod, Real, Sum, SymbolicExpr}, rational::{Int, Rational}, utils::HashSet
 };
 
 use derive_more::{From, Into};
@@ -22,6 +22,10 @@ impl Sum {
         let rhs = rhs.flatten();
         match rhs.atom() {
             &A::ZERO => (),
+            A::Undef => {
+                self.args.clear();
+                self.args.push(rhs.clone());
+            }
             A::Sum(sum) => {
                 sum.args.iter().for_each(|a| self.add_rhs(a));
             }
@@ -40,7 +44,14 @@ impl Sum {
                     //    self.args.push_front(rhs.clone())
                     //}
             }
-            _ => self.args.push(rhs.clone()),
+            A::Irrational(_) | A::Func(_) | A::Var(_) | A::Prod(_) | A::Pow(_) => {
+                if let Some(arg) = self.args.iter_mut().find(|a| a.term().is_some_and(|t| Some(t) == rhs.term())) {
+                    *arg = (arg.r#const().unwrap() + rhs.r#const().unwrap()) * arg.term().unwrap()
+                } else {
+                    self.args.push(rhs.clone())
+                }
+            }
+            //_ => self.args.push(rhs.clone()),
         }
     }
 
@@ -583,13 +594,13 @@ impl Sum {
                     sum.add_rhs(rhs);
                     A::Sum(sum).into()
                 }
-            }
+            }.explain("add", &[lhs, rhs])
         }
         pub fn sub(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {
             let (lhs, rhs) = (lhs.borrow(), rhs.borrow());
             let min_one = Expr::from(-1);
             let min_rhs = Expr::mul(min_one, rhs);
-            Expr::add(lhs, min_rhs)
+            Expr::add(lhs, min_rhs).explain("sub", &[lhs, rhs])
         }
         pub fn mul(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {
             use Atom as A;
@@ -611,13 +622,14 @@ impl Sum {
                     }
                     //Expr::prod([lhs, rhs]),
                 }
-            }
+            }.explain("mul", &[lhs, rhs])
             //Expr::prod([lhs.borrow(), rhs.borrow()])
         }
         pub fn div(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {
+            let (lhs, rhs) = (lhs.borrow(), rhs.borrow());
             let min_one = Expr::from(-1);
             let inv_rhs = Expr::pow(rhs, &min_one);
-            Expr::mul(lhs, &inv_rhs)
+            Expr::mul(lhs, &inv_rhs).explain("div", &[lhs, rhs])
         }
 
         pub fn mul_raw(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {
@@ -668,7 +680,7 @@ impl Sum {
                 //    }
                 //}
                 _ => Expr::pow_raw(base, exponent),
-            }
+            }.explain("pow", &[base, exponent])
         }
 
         pub fn derivative<T: Borrow<Self>>(&self, x: T) -> Self {
@@ -764,8 +776,9 @@ impl Sum {
 
         let mut steps = 0;
         while let Some(expr) = todo.pop() {
-            for (op, _) in &operations {
+            for (op, name) in &operations {
                 let e = op(&expr);
+                println!("{name}: {expr} -> {e}");
 
                 if !eclass.contains(&e) {
                     todo.push(e.clone());
@@ -774,7 +787,7 @@ impl Sum {
 
             }
             steps += 1;
-            if steps > 1000 {
+            if steps > 10 {
                 break
             }
         };
@@ -787,7 +800,6 @@ impl Sum {
 
     pub fn expand(&self) -> Self {
         use Atom as A;
-        let from = self.clone();
         let expanded = self.clone().map_args(|a| *a = a.expand());
         match expanded.atom() {
             A::Var(_) | A::Undef | A::Rational(_) => expanded.clone(),
@@ -795,13 +807,11 @@ impl Sum {
             A::Prod(prod) => prod.distribute(),
             A::Pow(pow) => pow.expand(),
             _ => expanded.clone(),
-        }
-        .explain(Some(from), "expand")
+        }.explain("expand", &[self])
     }
 
     pub fn expand_main_op(&self) -> Self {
         use Atom as A;
-        let from = self.clone();
         match self.atom() {
             A::Prod(prod) => prod.distribute(),
             A::Pow(pow) => pow.expand_pow_rec(false),
@@ -809,7 +819,6 @@ impl Sum {
             A::Irrational(_) | A::Undef | A::Rational(_) | A::Var(_) | A::Sum(_) => self.clone(),
             A::Func(_) => self.clone(),
         }
-        .explain(Some(from), "expand main op")
     }
 
     pub fn expand_exponential(&self) -> Self {
@@ -872,7 +881,6 @@ impl Sum {
 
     pub fn rationalize(&self) -> Expr {
         use Atom as A;
-        let from = self.clone();
         match self.atom() {
             A::Prod(_) => self.clone().map_args(|a| *a = a.rationalize()),
             A::Sum(Sum { args }) => args
@@ -881,20 +889,21 @@ impl Sum {
                 .fold(Expr::zero(), |sum, r| Self::rationalize_add(&sum, &r)),
             A::Pow(pow) => Expr::pow(pow.base().rationalize(), pow.exponent()),
             _ => self.clone(),
-        }
-        .explain(Some(from), "rationalize")
+        }.explain("rationalize", &[self])
     }
 
+    /// a/b + c/d -> (ad + cb) / (bd)
     fn rationalize_add(lhs: &Self, rhs: &Self) -> Expr {
-        let ln = lhs.numerator();
-        let ld = lhs.denominator();
-        let rn = rhs.numerator();
-        let rd = rhs.denominator();
-        if ld.atom() == &Atom::ONE && rd.atom() == &Atom::ONE {
+        let a = lhs.numerator();
+        let b = lhs.denominator();
+        let c = rhs.numerator();
+        let d = rhs.denominator();
+        let bd = &b * &d;
+        if bd.is_one() {
             lhs + rhs
         } else {
-            Self::rationalize_add(&(ln * &rd), &(rn * &ld)) / (ld * rd)
-        }
+            Self::rationalize_add(&(&a * &d), &(&c * &b)) / bd
+        }.explain(format!("rationalize add: [{a}]/[{b}] + [{c}]/[{d}]"), &[lhs, rhs])
     }
 
     /// divide lhs and rhs by their common factor and
@@ -1017,13 +1026,12 @@ impl Sum {
 
     pub fn factor_out(&self) -> Expr {
         use Atom as A;
-        let from = self.clone();
         match self.atom() {
             A::Prod(Prod { args }) => args
                 .iter()
                 .map(|a| a.factor_out())
-                .fold(Expr::one(), |prod, rhs| prod * rhs).explain(None, "prod factor"),
-            A::Pow(pow) => Expr::pow(pow.base().factor_out(), pow.exponent()).explain(None, "pow factor"),
+                .fold(Expr::one(), |prod, rhs| prod * rhs),
+            A::Pow(pow) => Expr::pow(pow.base().factor_out(), pow.exponent()),
             A::Sum(Sum { args }) => {
                 let s = args
                     .iter()
@@ -1037,11 +1045,10 @@ impl Sum {
                     f * (a_div_f + b_div_f)
                 } else {
                     s
-                }.explain(None, "sum factor")
+                }
             }
             _ => self.clone(),
-        }
-        .explain(Some(from), "factor out")
+        }.explain("factor out", &[self])
     }
 
     pub fn separate_factors(&self, x: &Self) -> (Expr, Expr) {
@@ -1075,7 +1082,7 @@ impl Sum {
         let d = self.denominator();
         let numer = n.factor_out();
         let denom = d.factor_out();
-        numer / denom
+        (numer / denom).explain("cancel", &[self, &n, &d])
     }
 
     pub fn substitude(&self, from: &Expr, to: &Expr) -> Self {
@@ -1500,6 +1507,7 @@ mod test {
             (e!(a / b), e!(a * b ^ (2 - 3))),
             (e!((x ^ (1 / 2) ^ (1 / 2)) ^ 8), e!(x ^ 2)),
             (e!(x + x), e!(2 * x)),
+            (e!(2*x + y + x), e!(3*x + y)),
             (e!(sin(0)), e!(0)),
             (e!(sin(-x)), e!(-1 * sin(x))),
             (e!(cos(-x)), e!(cos(x))),

@@ -219,7 +219,11 @@ impl Rational {
     }
 
     pub fn numer(&self) -> Int {
-        Int(mal::Integer::from(self.0.numerator_ref().clone()))
+        let sign = match self.is_neg() {
+            true => Int::MINUS_ONE,
+            false => Int::ONE,
+        };
+        sign * Int(mal::Integer::from(self.0.numerator_ref().clone()))
     }
 
     pub fn to_int(&self) -> Option<Int> {
