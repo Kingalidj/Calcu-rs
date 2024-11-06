@@ -174,7 +174,8 @@ impl Sum {
                     //} else if lhs.base() == rhs.base() {
                     //    let e = (lhs.exponent() + rhs.exponent()).reduce();
                     //    Sum { args: vec![Expr::pow(lhs.base(), e).reduce()] }
-        } else if lhs.term() == rhs.term() && lhs.term().is_some() {
+        } else if lhs.term().is_some_and(|term| Some(term) == rhs.term()) {
+        //} else if lhs.term() == rhs.term() && lhs.term().is_some() {
             let e = (lhs.r#const().unwrap() + rhs.r#const().unwrap()).reduce();
             Sum {
                 args: vec![(e * lhs.term().unwrap()).reduce()],

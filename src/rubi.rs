@@ -5,6 +5,7 @@ use crate::rational::Rational;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Hash)]
 pub(crate) enum WlfrmAtom {
+    None,
     Bool(bool),
     Expr(Expr),
 }
@@ -85,7 +86,7 @@ macro_rules! expr {
     ($e:expr) => {{
         match $e {
             WlfrmAtom::Expr(e) => e,
-            e => error_msg!("expected a symbol expression, found {:?}", e),
+            e => error_msg!("expected a symbolic expression, found {:?}", e),
         }
     }};
     ($e:expr $(, $es:expr)+) => {{
@@ -273,6 +274,11 @@ impl WlfrmBuiltins {
     //Tanh,
     //ArcTanh,
 
+    Sqrt(arg: WArgs) {
+        let e = expr!(arg!(arg));
+        Expr::sqrt(e)
+    }
+
     Log(args: WArgs) {
         if args.len() == 1 {
             let e = expr!(arg!(args));
@@ -334,7 +340,11 @@ impl WlfrmBuiltins {
     //FactorInteger,
     //FactorSquareFreeList,
 
-    //Derivative,
+    Derivative(args: WArgs) {
+        let [f, x] = args!(args, 2);
+        let [f, x] = expr!(f, x);
+        f.derivative(x)
+    }
     //SinhIntegral,
     //SinIntegral,
     //CoshIntegral,
@@ -347,7 +357,10 @@ impl WlfrmBuiltins {
     //ReplacePart,
     //TrigExpand,
     //Flatten,
-    //Expand,
+    Expand(arg: WArgs) {
+        let e = expr!(arg!(arg));
+        e.expand()
+    }
     //FunctionExpand,
     //TrigToExp,
     //FullSimplify,
@@ -432,7 +445,6 @@ impl WlfrmBuiltins {
     //Order,
     //ClearAll,
     //Unevaluated,
-    //Sqrt,
     //HypergeometricPFQ,
     //Refine,
     //Reap,

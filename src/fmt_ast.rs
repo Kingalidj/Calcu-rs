@@ -55,7 +55,7 @@ impl From<&Atom> for FmtAtom {
                     .fold(FmtAtom::ZERO, |prod, r| prod + r)
             }
             Atom::Pow(pow) => {
-                if pow.exponent().atom() == &Atom::MINUS_ONE {
+                if pow.exponent().atom().is_min_one() {
                     let n = Atom::ONE;
                     FmtAtom::Fraction(Self::from(&n).into(), Self::from(pow.base().atom()).into())
                 } else {

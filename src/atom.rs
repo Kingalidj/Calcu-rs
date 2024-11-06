@@ -54,7 +54,7 @@ pub enum Atom {
 
 impl fmt::Display for Atom {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", fmt_ast::FmtAtom::from(self))
+        write!(f, "{}", self.fmt_ast())
     }
 }
 
@@ -140,6 +140,10 @@ impl Atom {
 
     pub fn for_each_arg<'a>(&'a self, func: impl FnMut(&'a Expr)) {
         self.args().iter().for_each(func)
+    }
+
+    pub fn fmt_ast(&self) -> fmt_ast::FmtAtom {
+        fmt_ast::FmtAtom::from(self)
     }
 }
 
@@ -442,7 +446,7 @@ const RECORD_STEPS: bool = false;
 
 #[derive(Clone, Debug, Display, Serialize, Deserialize)]
 #[debug("{:?}", self.atom())]
-#[display("{}", fmt_ast::FmtAtom::from(self.atom()))]
+#[display("{}", self.fmt_ast())]
 pub struct Expr {
     pub(crate) atom: PTR<Atom>,
     pub(crate) expl: Option<Explanation>,

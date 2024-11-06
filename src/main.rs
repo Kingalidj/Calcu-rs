@@ -1,8 +1,6 @@
 use std::{hash::{DefaultHasher, Hasher}, time::Instant};
 
-use calcu_rs::prelude::*;
-
-use calcu_rs::{expr as e, SymbolicExpr, algos::{ExprCost, CostFn}};
+use calcu_rs::{expr as e};
 
 fn calculate_hash<T: std::hash::Hash>(t: &T) -> u64 {
     let mut hasher = DefaultHasher::new();
@@ -19,22 +17,24 @@ fn main() {
 
     let start = Instant::now();
 
-    let mut a = e!((x^2-1)/(x+1));
+    //let mut a = e!((x^2-1)/(x+1));
+    //println!("{}", a);
 
     // (x^2-1)/(x+1) = x
 
+    println!("{}", e!(2/3 * x));
 
-    println!("{a}");
+    //println!("{a}");
 
-    a.clear_explanation();
-    let eclass = a.simplify();
+    //a.clear_explanation();
+    //let eclass = a.simplify();
 
-    for e in &eclass {
-        println!("{}: {e}", ExprCost::cost(e));
-    }
-    
+    //for e in &eclass {
+    //    println!("{}: {e}", ExprCost::cost(e));
+    //}
+    //
 
-    println!("\nstep-by-step:\n{:?}", eclass[0].clone().steps());
+    //println!("\nstep-by-step:\n{:?}", eclass[0].clone().steps());
 
     //let e = e!((x^2 - 1)/(x+1)).expand().rationalize().cancel();
     //println!("{}", e);
