@@ -14,13 +14,12 @@ pub struct TransformStep {
 
 impl fmt::Debug for TransformStep {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-
         for prev in &self.refs {
             fmt::Debug::fmt(&(*prev).clone().steps(), f)?;
         }
 
         if self.explanation.is_empty() {
-            return Ok(())
+            return Ok(());
         }
 
         write!(f, "{}: [", self.explanation)?;
@@ -38,8 +37,6 @@ impl fmt::Debug for TransformStep {
         Ok(())
     }
 }
-
-
 
 //#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Hash, Serialize, Deserialize)]
 //pub struct Step {

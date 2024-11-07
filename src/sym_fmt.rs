@@ -134,6 +134,257 @@ impl ops::Div for FmtAtom {
         self * one_div_rhs
     }
 }
+
+pub trait SymbolicFormatter {
+    /// x [-] y
+    fn symbl_sub(f: &mut fmt::Formatter<'_>) -> fmt::Result;
+    /// x [+] y
+    fn symbl_add(f: &mut fmt::Formatter<'_>) -> fmt::Result;
+    /// x [*] y
+    fn symbl_mul(f: &mut fmt::Formatter<'_>) -> fmt::Result;
+    /// x [/] y
+    fn symbl_div(f: &mut fmt::Formatter<'_>) -> fmt::Result;
+    /// x[^]y
+    fn symbl_pow(f: &mut fmt::Formatter<'_>) -> fmt::Result;
+    /// e.g x[ ]+[ ]y
+    fn space(f: &mut fmt::Formatter<'_>) -> fmt::Result;
+    /// (a[,] b[,] ...)
+    fn comma(f: &mut fmt::Formatter<'_>) -> fmt::Result;
+
+    /// [(] ... )
+    fn lparen(f: &mut fmt::Formatter<'_>) -> fmt::Result;
+    /// ( ... [)]
+    fn rparen(f: &mut fmt::Formatter<'_>) -> fmt::Result;
+
+    fn undef(f: &mut fmt::Formatter<'_>) -> fmt::Result;
+
+    fn rational(r: &Rational, f: &mut fmt::Formatter<'_>) -> fmt::Result;
+
+    fn irrational(i: &Irrational, f: &mut fmt::Formatter<'_>) -> fmt::Result;
+
+    fn var(v: &str, f: &mut fmt::Formatter<'_>) -> fmt::Result;
+
+    fn sum(args: &VecDeque<FmtAtom>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut args = args.iter();
+
+        if let Some(a) = args.next() {
+            Self::atom(a, f)?;
+        }
+        for a in args {
+            match &a {
+                FmtAtom::UnrySub(e) => {
+                    Self::space(f)?;
+                    Self::symbl_sub(f)?;
+                    Self::space(f)?;
+                    Self::fmt_w_prec(sum_prec(), e, f)?;
+                }
+                _ => {
+                    Self::space(f)?;
+                    Self::symbl_add(f)?;
+                    Self::space(f)?;
+                    Self::fmt_w_prec(sum_prec(), a, f)?;
+                }
+            };
+        }
+
+        Ok(())
+    }
+
+    fn prod(args: &VecDeque<FmtAtom>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use FmtAtom as F;
+        let mut args = args.iter().peekable();
+
+        let mut prev: Option<&FmtAtom> = None;
+        while let Some(curr) = args.next() {
+            let next = args.peek();
+            match (prev, &curr, next) {
+                (Some(a), b, _) if implicit_postfix_mul(a) && implicit_prefix_mul(b) => {
+                    Self::fmt_w_prec(prod_prec(), b, f)?;
+                }
+                (Some(F::Sum(_)), F::Sum(_), _) => {
+                    Self::fmt_w_prec(prod_prec(), curr, f)?;
+                }
+                (Some(F::Func(..)), F::Func(..), _) => {
+                    Self::fmt_w_prec(prod_prec(), curr, f)?;
+                }
+                (Some(_), F::Fraction(n, d), _) => {
+                    Self::frac(n, d, f)?;
+                }
+                (Some(p), curr, _) if p.is_func_pow_number() && curr.is_func_pow_number() => {
+                    Self::fmt_w_prec(prod_prec(), curr, f)?;
+                }
+                (Some(F::Pow(..)), _, _) => {
+                    Self::space(f)?;
+                    Self::symbl_mul(f)?;
+                    Self::space(f)?;
+                    Self::fmt_w_prec(prod_prec(), curr, f)?;
+                }
+                _ => {
+                    if prev.is_some() {
+                        Self::symbl_mul(f)?;
+                    }
+                    Self::fmt_w_prec(prod_prec(), curr, f)?;
+                }
+            };
+            prev = Some(curr);
+        }
+
+        Ok(())
+    }
+
+    fn pow(b: &FmtAtom, e: &FmtAtom, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use FmtAtom as F;
+        match (b, e) {
+            (F::Func(func, args), e) if e.is_number() => {
+                Self::var(&func.name(), f)?;
+                Self::symbl_pow(f)?;
+                Self::atom(e, f)?;
+                return Self::func_args(args, f)
+            }
+            _ => (),
+        }
+        Self::fmt_w_prec(pow_prec() + 1, b, f)?;
+        Self::symbl_pow(f)?;
+        Self::fmt_w_prec(pow_prec() + 1, e, f)
+    }
+
+    /// [n/d]
+    #[inline(always)]
+    fn frac(n: &FmtAtom, d: &FmtAtom, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Self::fmt_w_prec(prod_prec(), n, f)?;
+        Self::symbl_div(f)?;
+        Self::fmt_w_prec(pow_prec(), d, f)
+    }
+
+    /// [-x]
+    #[inline(always)]
+    fn unry_sub(x: &FmtAtom, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Self::symbl_sub(f)?;
+        Self::atom(x, f)
+    }
+
+    fn func_args(args: &[FmtAtom], f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Self::lparen(f)?;
+        let mut args = args.iter();
+        if let Some(a) = args.next() {
+            Self::atom(a, f)?;
+        }
+        for a in args {
+            Self::comma(f)?;
+            Self::space(f)?;
+            Self::atom(a, f)?;
+        }
+        Self::rparen(f)
+    }
+
+    #[inline(always)]
+    fn func(func: &atom::Func, args: &[FmtAtom], f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Self::var(&func.name(), f)?;
+        Self::func_args(args, f)
+    }
+
+    fn fmt_w_prec(prec: u32, e: &FmtAtom, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if prec <= e.prec() {
+            Self::atom(e, f)
+        } else {
+            Self::lparen(f)?;
+            Self::atom(e, f)?;
+            Self::rparen(f)
+        }
+    }
+
+    fn atom(a: &FmtAtom, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use FmtAtom as FA;
+        match a {
+            FA::Undef => Self::undef(f),
+            FA::Rational(r) => Self::rational(r, f),
+            FA::Irrational(i) => Self::irrational(i, f),
+            FA::Var(v) => Self::var(v, f),
+            FA::Sum(sum) => Self::sum(sum, f),
+            FA::Prod(prod) => Self::prod(prod, f),
+            FA::Pow(b, e) => Self::pow(b, e, f),
+            FA::Func(func, args) => Self::func(func, args, f),
+            FA::Fraction(n, d) => Self::frac(n, d, f),
+            FA::UnrySub(x) => Self::unry_sub(x, f),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct UnicodeFmt;
+
+impl SymbolicFormatter for UnicodeFmt {
+    #[inline]
+    fn symbl_sub(f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", unicode::sub())
+    }
+
+    #[inline]
+    fn symbl_add(f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", unicode::add())
+    }
+
+    #[inline]
+    fn symbl_mul(f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", unicode::mul())
+    }
+
+    #[inline]
+    fn symbl_div(f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", unicode::frac_slash())
+    }
+
+    #[inline]
+    fn symbl_pow(f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", unicode::pow())
+    }
+
+    #[inline]
+    fn space(f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, " ")
+    }
+
+    #[inline]
+    fn comma(f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, ",")
+    }
+
+    #[inline]
+    fn lparen(f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "(")
+    }
+
+    #[inline]
+    fn rparen(f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, ")")
+    }
+
+    #[inline]
+    fn undef(f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", unicode::undef())
+    }
+
+    #[inline]
+    fn rational(r: &Rational, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{r}")
+    }
+
+    #[inline]
+    fn irrational(i: &Irrational, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{i}")
+    }
+
+    #[inline]
+    fn var(v: &str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{v}")
+    }
+
+    #[inline]
+    fn unry_sub(x: &FmtAtom, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}{x}", unicode::unry_sub())
+    }
+}
+
 impl FmtAtom {
     pub fn pow(self, exp: Self) -> Self {
         FmtAtom::Pow(self.into(), exp.into())
@@ -170,88 +421,6 @@ impl FmtAtom {
         }
     }
 
-    fn fmt_w_prec(prec_in: u32, e: &Self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if prec_in <= e.prec() {
-            write!(f, "{e}")
-        } else {
-            write!(f, "({e})")
-        }
-    }
-
-    pub fn fmt_sum(args: &VecDeque<FmtAtom>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut args = args.iter();
-
-        if let Some(a) = args.next() {
-            write!(f, "{a}")?;
-        }
-        for a in args {
-            match &a {
-                FmtAtom::UnrySub(e) => {
-                    write!(f, " {} ", unicode::sub())?;
-                    Self::fmt_w_prec(sum_prec(), e, f)?;
-                }
-                _ => {
-                    write!(f, " {} ", unicode::add())?;
-                    Self::fmt_w_prec(sum_prec(), a, f)?;
-                }
-            };
-        }
-
-        Ok(())
-    }
-
-    pub fn fmt_prod(args: &VecDeque<FmtAtom>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use FmtAtom as F;
-        let mut args = args.iter().peekable();
-
-        let mut prev: Option<&Self> = None;
-        while let Some(curr) = args.next() {
-            let next = args.peek();
-            match (prev, &curr, next) {
-                (Some(a), b, _) if implicit_postfix_mul(a) && implicit_prefix_mul(b) => {
-                    //next.is_some_and(|v| v.is_var()) => {
-                    Self::fmt_w_prec(prod_prec(), b, f)?;
-                }
-                (Some(F::Sum(_)), F::Sum(_), _) => {
-                    //| (Some(F::Rational(_)), F::Var(_) | F::Irrational(_) | F::Sum(_) | F::Func(_, _) | F::Pow(_, _), _,) => {
-                    Self::fmt_w_prec(prod_prec(), curr, f)?;
-                }
-                (Some(F::Func(..)), F::Func(..), _) => {
-                    Self::fmt_w_prec(prod_prec(), curr, f)?;
-                }
-                (Some(_), F::Fraction(n, d), _) => {
-                    Self::fmt_frac(n, d, f)?;
-                }
-                (Some(p), curr, _) if p.is_func_pow_number() && curr.is_func_pow_number() => {
-                    Self::fmt_w_prec(prod_prec(), curr, f)?;
-                }
-                (Some(F::Pow(..)), _, _) => {
-                    write!(f, " {} ", unicode::mul())?;
-                    Self::fmt_w_prec(prod_prec(), curr, f)?;
-                }
-                //(_, a, Some(F::Inverse(_))) => {
-                //    Self::fmt_w_prec(pow_prec(), a, f)?;
-                //    prev = Some(a);
-                //}
-                _ => {
-                    if prev.is_some() {
-                        write!(f, "{}", unicode::mul())?;
-                    }
-                    Self::fmt_w_prec(prod_prec(), curr, f)?;
-                }
-            };
-            prev = Some(curr);
-        }
-
-        Ok(())
-    }
-
-    pub fn fmt_frac(n: &FmtAtom, d: &FmtAtom, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        Self::fmt_w_prec(prod_prec(), n, f)?;
-        write!(f, "{}", unicode::frac_slash())?;
-        Self::fmt_w_prec(pow_prec(), d, f)
-    }
-
     fn is_number(&self) -> bool {
         self.is_rational() || self.is_irrational()
     }
@@ -262,53 +431,11 @@ impl FmtAtom {
             _ => false,
         }
     }
-
-    pub fn fmt_pow(b: &FmtAtom, e: &FmtAtom, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use FmtAtom as F;
-        match (b, e) {
-            (F::Func(func, args), e) if e.is_number() => {
-                write!(f, "{}{}{}", func.name(), unicode::pow(), e)?;
-                return Self::fmt_func_args(args, f);
-            }
-            _ => (),
-        }
-        Self::fmt_w_prec(pow_prec() + 1, b, f)?;
-        write!(f, "{}", unicode::pow())?;
-        Self::fmt_w_prec(pow_prec() + 1, e, f)
-    }
-
-    fn fmt_func_args(args: &[Self], f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "(")?;
-        let mut args = args.iter();
-        if let Some(a) = args.next() {
-            write!(f, "{a}")?;
-        }
-        for a in args {
-            write!(f, ", {a}")?;
-        }
-        write!(f, ")")
-    }
-
-    pub fn fmt_func(func: &atom::Func, args: &[Self], f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", func.name())?;
-        Self::fmt_func_args(args, f)
-    }
 }
 
 impl fmt::Display for FmtAtom {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            FmtAtom::Undef => write!(f, "{}", unicode::undef()),
-            FmtAtom::Rational(r) => write!(f, "{r}"),
-            FmtAtom::Irrational(i) => write!(f, "{i}"),
-            FmtAtom::Var(v) => write!(f, "{v}"),
-            FmtAtom::Sum(args) => FmtAtom::fmt_sum(args, f),
-            FmtAtom::Prod(args) => FmtAtom::fmt_prod(args, f),
-            FmtAtom::Pow(b, e) => FmtAtom::fmt_pow(b, e, f),
-            FmtAtom::Func(n, args) => FmtAtom::fmt_func(n, args, f),
-            FmtAtom::UnrySub(e) => write!(f, "{}{e}", unicode::unry_sub()),
-            FmtAtom::Fraction(n, d) => FmtAtom::fmt_frac(n, d, f),
-        }
+        UnicodeFmt::atom(self, f)
     }
 }
 

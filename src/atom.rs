@@ -1,5 +1,9 @@
 use crate::{
-    fmt_ast, polynomial::{MonomialView, PolynomialView, VarSet}, rational::{Int, Rational}, transforms::TransformStep, utils::{self, log_macros::*, HashSet}
+    polynomial::{MonomialView, PolynomialView, VarSet},
+    rational::{Int, Rational},
+    sym_fmt,
+    transforms::TransformStep,
+    utils::{self, log_macros::*, HashSet},
 };
 use std::{borrow::Borrow, cmp, fmt, hash, ops, slice};
 
@@ -17,12 +21,26 @@ struct Derivative {
     degree: u64,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Display, Debug, From, Serialize, Deserialize)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Display, Debug, From, Serialize, Deserialize,
+)]
 #[from(&str, String)]
 pub struct Var(pub(crate) PTR<str>);
 
 #[derive(
-    Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, From, IsVariant, Unwrap, TryUnwrap, Serialize, Deserialize
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Debug,
+    From,
+    IsVariant,
+    Unwrap,
+    TryUnwrap,
+    Serialize,
+    Deserialize,
 )]
 #[unwrap(ref)]
 #[try_unwrap(ref)]
@@ -142,12 +160,14 @@ impl Atom {
         self.args().iter().for_each(func)
     }
 
-    pub fn fmt_ast(&self) -> fmt_ast::FmtAtom {
-        fmt_ast::FmtAtom::from(self)
+    pub fn fmt_ast(&self) -> sym_fmt::FmtAtom {
+        sym_fmt::FmtAtom::from(self)
     }
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Display, From, Serialize, Deserialize)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Display, From, Serialize, Deserialize,
+)]
 #[from(forward)]
 pub enum Real {
     #[debug("{_0}")]
@@ -196,7 +216,20 @@ pub enum Irrational {
     PI,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Display, Unwrap, TryUnwrap, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Debug,
+    Display,
+    Unwrap,
+    TryUnwrap,
+    Serialize,
+    Deserialize,
+)]
 #[unwrap(ref)]
 #[try_unwrap(ref)]
 #[display("{}({_0})", self.name())]
@@ -457,7 +490,6 @@ impl hash::Hash for Expr {
         self.atom.hash(state);
     }
 }
-
 
 fn expr_as_cmp_slice<'a>(e: &'a Expr) -> &[Expr] {
     match e.atom() {
@@ -927,7 +959,8 @@ impl SymbolicExpr for Expr {
             A::Prod(prod) => prod.reduce(),
             A::Pow(pow) => pow.reduce(),
             A::Func(func) => func.reduce(),
-        }.explain("reduce", &[self])
+        }
+        .explain("reduce", &[self])
     }
 
     fn args(&self) -> &[Expr] {

@@ -1,12 +1,9 @@
 use std::{borrow::Borrow, cmp, ops, slice};
 
-use trace::trace;
-
-trace::init_depth_var!();
-
-
 use crate::{
-    atom::{Atom, Expr, Func, Pow, Prod, Real, Sum, SymbolicExpr}, rational::{Int, Rational}, utils::HashSet
+    atom::{Atom, Expr, Func, Pow, Prod, Real, Sum, SymbolicExpr},
+    rational::{Int, Rational},
+    utils::HashSet,
 };
 
 use derive_more::{From, Into};
@@ -38,20 +35,23 @@ impl Sum {
                     }
                 }
                 self.args.push(rhs.clone())
-                    //if let Some(A::Rational(r2)) = self.first() {
-                    //    self.args[0] = Atom::Rational(r.clone() + r2).into();
-                    //} else {
-                    //    self.args.push_front(rhs.clone())
-                    //}
+                //if let Some(A::Rational(r2)) = self.first() {
+                //    self.args[0] = Atom::Rational(r.clone() + r2).into();
+                //} else {
+                //    self.args.push_front(rhs.clone())
+                //}
             }
             A::Irrational(_) | A::Func(_) | A::Var(_) | A::Prod(_) | A::Pow(_) => {
-                if let Some(arg) = self.args.iter_mut().find(|a| a.term().is_some_and(|t| Some(t) == rhs.term())) {
+                if let Some(arg) = self
+                    .args
+                    .iter_mut()
+                    .find(|a| a.term().is_some_and(|t| Some(t) == rhs.term()))
+                {
                     *arg = (arg.r#const().unwrap() + rhs.r#const().unwrap()) * arg.term().unwrap()
                 } else {
                     self.args.push(rhs.clone())
                 }
-            }
-            //_ => self.args.push(rhs.clone()),
+            } //_ => self.args.push(rhs.clone()),
         }
     }
 
@@ -161,28 +161,28 @@ impl Sum {
                 //return SmallVec::from([Sum::reduce_mul(lhs, rhs)]);
                 //Sum::reduce_mul(&lhs, &rhs)
                 Sum::add_sorted(lhs, rhs)
-                    //let mut lhs = lhs;
-                    //let mut rhs = rhs;
-                    //if rhs > lhs {
-                    //    std::mem::swap(&mut lhs, &mut rhs);
-                    //}
+                //let mut lhs = lhs;
+                //let mut rhs = rhs;
+                //if rhs > lhs {
+                //    std::mem::swap(&mut lhs, &mut rhs);
+                //}
 
-                    //let mut res = Sum::zero();
-                    //res.add_rhs(lhs);
-                    //res.add_rhs(rhs);
-                    //res
-                    //} else if lhs.base() == rhs.base() {
-                    //    let e = (lhs.exponent() + rhs.exponent()).reduce();
-                    //    Sum { args: vec![Expr::pow(lhs.base(), e).reduce()] }
-        } else if lhs.term().is_some_and(|term| Some(term) == rhs.term()) {
-        //} else if lhs.term() == rhs.term() && lhs.term().is_some() {
-            let e = (lhs.r#const().unwrap() + rhs.r#const().unwrap()).reduce();
-            Sum {
-                args: vec![(e * lhs.term().unwrap()).reduce()],
+                //let mut res = Sum::zero();
+                //res.add_rhs(lhs);
+                //res.add_rhs(rhs);
+                //res
+                //} else if lhs.base() == rhs.base() {
+                //    let e = (lhs.exponent() + rhs.exponent()).reduce();
+                //    Sum { args: vec![Expr::pow(lhs.base(), e).reduce()] }
+            } else if lhs.term().is_some_and(|term| Some(term) == rhs.term()) {
+                //} else if lhs.term() == rhs.term() && lhs.term().is_some() {
+                let e = (lhs.r#const().unwrap() + rhs.r#const().unwrap()).reduce();
+                Sum {
+                    args: vec![(e * lhs.term().unwrap()).reduce()],
+                }
+            } else {
+                Sum::add_sorted(lhs, rhs)
             }
-        } else {
-            Sum::add_sorted(lhs, rhs)
-        }
         } else {
             let lhs = args.first().unwrap().flatten();
             let rhs = Sum::reduce_rec(&args[1..]);
@@ -195,581 +195,581 @@ impl Sum {
         };
         res
     }
+}
+impl Prod {
+    pub fn mul_rhs_raw(&mut self, rhs: &Expr) {
+        use Atom as A;
+
+        let rhs = rhs.flatten();
+        if let Atom::Undef = rhs.atom() {
+            self.args.clear();
+            self.args.push(Expr::undef());
+            return;
+        }
+
+        match self.first() {
+            Some(A::Undef | &A::ZERO) => return,
+            Some(_) | None => (),
+        }
+
+        match rhs.atom() {
+            &A::ONE => (),
+            A::Undef | &A::ZERO => {
+                self.args.clear();
+                self.args.push(rhs.clone())
+            }
+            A::Prod(prod) => {
+                prod.args.iter().for_each(|a| self.mul_rhs(a));
+            }
+            _ => self.args.push(rhs.clone()),
+        }
     }
-    impl Prod {
-        pub fn mul_rhs_raw(&mut self, rhs: &Expr) {
-            use Atom as A;
+    pub fn mul_rhs(&mut self, rhs: &Expr) {
+        use Atom as A;
 
-            let rhs = rhs.flatten();
-            if let Atom::Undef = rhs.atom() {
+        let rhs = rhs.flatten();
+        if let Atom::Undef = rhs.atom() {
+            self.args.clear();
+            self.args.push(Expr::undef());
+            return;
+        }
+
+        match self.first() {
+            Some(A::Undef | &A::ZERO) => return,
+            Some(_) | None => (),
+        }
+
+        match rhs.atom() {
+            &A::ONE => (),
+            A::Undef | &A::ZERO => {
                 self.args.clear();
-                self.args.push(Expr::undef());
-                return;
+                self.args.push(rhs.clone())
             }
-
-            match self.first() {
-                Some(A::Undef | &A::ZERO) => return,
-                Some(_) | None => (),
+            A::Prod(prod) => {
+                prod.args.iter().for_each(|a| self.mul_rhs(a));
             }
-
-            match rhs.atom() {
-                &A::ONE => (),
-                A::Undef | &A::ZERO => {
-                    self.args.clear();
-                    self.args.push(rhs.clone())
-                }
-                A::Prod(prod) => {
-                    prod.args.iter().for_each(|a| self.mul_rhs(a));
-                }
-                _ => self.args.push(rhs.clone()),
-            }
-        }
-        pub fn mul_rhs(&mut self, rhs: &Expr) {
-            use Atom as A;
-
-            let rhs = rhs.flatten();
-            if let Atom::Undef = rhs.atom() {
-                self.args.clear();
-                self.args.push(Expr::undef());
-                return;
-            }
-
-            match self.first() {
-                Some(A::Undef | &A::ZERO) => return,
-                Some(_) | None => (),
-            }
-
-            match rhs.atom() {
-                &A::ONE => (),
-                A::Undef | &A::ZERO => {
-                    self.args.clear();
-                    self.args.push(rhs.clone())
-                }
-                A::Prod(prod) => {
-                    prod.args.iter().for_each(|a| self.mul_rhs(a));
-                }
-                //A::Rational(r) => {
-                //    if let Some(A::Rational(r2)) = self.first() {
-                //        self.args[0] = A::Rational(r.clone() * r2).into();
-                //    } else {
-                //        self.args.push(rhs.clone())
-                //    }
-                //}
-                A::Rational(r1) => {
-                    for a in &mut self.args {
-                        if let A::Rational(r2) = a.atom() {
-                            *a = A::Rational(r1.clone() * r2).into();
-                            return;
-                        }
-                    }
-                    self.args.push(rhs.clone())
-                }
-                A::Irrational(_) | A::Func(_) | A::Var(_) | A::Sum(_) | A::Pow(_) => {
-                    if let Some(arg) = self.args.iter_mut().find(|a| a.base() == rhs.base()) {
-                        *arg = Expr::pow(arg.base(), arg.exponent() + rhs.exponent())
-                    } else {
-                        self.args.push(rhs.clone())
-                    }
-                }
-            }
-        }
-
-        fn cmp_args(lhs: &Expr, rhs: &Expr) -> cmp::Ordering {
-            lhs.cmp(rhs)
-        }
-
-        fn mul_sorted(lhs: &Expr, rhs: &Expr) -> Prod {
-            let mut lhs = lhs;
-            let mut rhs = rhs;
-            if Self::cmp_args(lhs, rhs).is_ge() {
-                std::mem::swap(&mut lhs, &mut rhs)
-            }
-            let mut mul = Prod::one();
-            mul.mul_rhs(&lhs);
-            mul.mul_rhs(&rhs);
-            mul
-        }
-
-        fn expand_mul(lhs: &Expr, rhs: &Expr) -> Expr {
-            use Atom as A;
-            match (lhs.atom(), rhs.atom()) {
-                (A::Prod(_), A::Prod(_)) => {
-                    let mut res = Prod::one();
-                    res.mul_rhs(lhs);
-                    res.mul_rhs(rhs);
-                    A::Prod(res).into()
-                }
-                (A::Sum(sum), _) => {
-                    let mut res = Sum::zero();
-                    for term in &sum.args {
-                        let term_prod = Self::expand_mul(term, rhs);
-                        res.add_rhs(&term_prod)
-                    }
-                    A::Sum(res).into()
-                }
-                (_, A::Sum(sum)) => {
-                    let mut res = Sum::zero();
-                    for term in &sum.args {
-                        let term_prod = Self::expand_mul(lhs, term);
-                        res.add_rhs(&term_prod)
-                    }
-                    A::Sum(res).into()
-                }
-                _ => Expr::mul(lhs, rhs),
-            }
-        }
-
-        fn distribute_first(&self) -> Expr {
-            // prod = a * sum * b
-            let sum_indx = if let Some(indx) = self
-                .args
-                .iter()
-                .position(|a| matches!(a.atom(), Atom::Sum(_)))
-                {
-                    indx
-                } else {
-                    return Atom::Prod(self.clone()).into();
-                };
-
-            let mut a = Prod::one();
-            let mut b = Prod::one();
-            let sum = self.args[sum_indx].clone();
-
-            for (i, arg) in self.args.iter().enumerate() {
-                if i < sum_indx {
-                    a.args.push(arg.clone())
-                } else if i > sum_indx {
-                    b.args.push(arg.clone())
-                }
-            }
-
-            let (lhs, rhs): (Expr, Expr) = (Atom::Prod(a).into(), Atom::Prod(b).into());
-            let mut res = Sum::zero();
-
-            for term in sum.args() {
-                res.add_rhs(&(lhs.clone() * term * rhs.clone()));
-            }
-
-            Atom::Sum(res).into()
-        }
-
-        fn distribute(&self) -> Expr {
-            if self.args.is_empty() {
-                return Expr::one();
-            } else if self.args.len() == 1 {
-                return self.args[0].clone();
-            }
-
-            self.args
-                .iter()
-                .fold(Atom::Prod(Prod::one()).into(), |l, r| {
-                    Self::expand_mul(&l, r)
-                })
-        }
-
-        fn flat_merge(lhs: &Expr, mut rhs: Prod) -> Prod {
-            let lhs = lhs.flatten();
-            match lhs.atom() {
-                Atom::Prod(prod) => {
-                    let mut prod = prod.clone();
-                    rhs.args.into_iter().for_each(|a| {
-                        prod.mul_rhs(&a);
-                    });
-                    prod
-                }
-                &Atom::ONE => rhs,
-                &Atom::ZERO => {
-                    rhs.args = vec![Expr::zero()];
-                    rhs
-                }
-                _ => {
-                    let mut res = vec![lhs.clone()];
-                    res.append(&mut rhs.args);
-                    rhs.args = res;
-                    rhs
-                }
-            }
-            //if let Atom::Prod(prod) = lhs.atom() {
-            //    let mut prod = prod.clone();
-            //    rhs.args.into_iter().for_each(|a| {
-            //        prod.mul_rhs(&a);
-            //    });
-            //    //vec![Atom::Prod(prod).into()]
-            //    prod
-            //} else {
-            //    let mut res = vec![lhs];
-            //    res.extend(rhs.args);
-            //    rhs.args = res;
-            //    rhs
+            //A::Rational(r) => {
+            //    if let Some(A::Rational(r2)) = self.first() {
+            //        self.args[0] = A::Rational(r.clone() * r2).into();
+            //    } else {
+            //        self.args.push(rhs.clone())
+            //    }
             //}
-        }
-
-        fn merge_args(p: &[Expr], q: &[Expr]) -> Prod {
-            if p.is_empty() {
-                Prod { args: q.to_vec() }
-            } else if q.is_empty() {
-                Prod { args: p.to_vec() }
-            } else {
-                let p1 = p.first().unwrap();
-                let q1 = q.first().unwrap();
-                let p_rest = &p[1..];
-                let q_rest = &q[1..];
-                let h = Prod::reduce_rec(&[p1.clone(), q1.clone()]).args;
-                if h.is_empty() {
-                    Prod::merge_args(p_rest, q_rest)
-                } else if h.len() == 1 {
-                    Prod::flat_merge(&h[0], Prod::merge_args(p_rest, q_rest))
-                } else {
-                    let rhs = if p1 == &h[0] && q1 == &h[1] {
-                        Prod::merge_args(p_rest, q)
-                    } else if q1 == &h[0] && p1 == &h[1] {
-                        //println!("h: {h:?}, p1: {p1:?}, q1: {q1:?}");
-                        //assert!(q1 == &h[0], "{:?} != {:?}", q1, h[0]);
-                        Prod::merge_args(p, q_rest)
-                    } else {
-                        panic!("Illegal reduction: {q:?} * {p:?} -> h")
-                    };
-
-                    Prod::flat_merge(&h[0], rhs)
+            A::Rational(r1) => {
+                for a in &mut self.args {
+                    if let A::Rational(r2) = a.atom() {
+                        *a = A::Rational(r1.clone() * r2).into();
+                        return;
+                    }
                 }
+                self.args.push(rhs.clone())
             }
-        }
-
-        pub(crate) fn reduce_rec(args: &[Expr]) -> Prod {
-            if args.len() < 2 {
-                //return args.into_iter().cloned().collect();
-                Prod {
-                    args: args.to_vec(),
-                }
-            } else if args.len() == 2 {
-                let lhs = args[0].flatten();
-                let rhs = args[1].flatten();
-                if let (Atom::Prod(p1), Atom::Prod(p2)) = (lhs.atom(), rhs.atom()) {
-                    Prod::merge_args(&p1.args, &p2.args)
-                } else if let Atom::Prod(p) = lhs.atom() {
-                    Prod::merge_args(&p.args, slice::from_ref(rhs))
-                } else if let Atom::Prod(p) = rhs.atom() {
-                    Prod::merge_args(slice::from_ref(lhs), &p.args)
-                } else if lhs.is_const() || rhs.is_const() {
-                    let res = Prod::mul_sorted(lhs, rhs);
-
-                    // numbers if present always at the lhs
-                    assert!(
-                        (res.n_args() < 2
-                         || (res.args[0].is_number()
-                             || res.args[1].is_number() && res.args[0].is_number())),
-                             );
-
-                    res
-                } else if lhs.base() == rhs.base() {
-                    let e = (lhs.exponent() + rhs.exponent()).reduce();
-                    Prod {
-                        args: vec![Expr::pow(lhs.base(), e).reduce()],
-                    }
+            A::Irrational(_) | A::Func(_) | A::Var(_) | A::Sum(_) | A::Pow(_) => {
+                if let Some(arg) = self.args.iter_mut().find(|a| a.base() == rhs.base()) {
+                    *arg = Expr::pow(arg.base(), arg.exponent() + rhs.exponent())
                 } else {
-                    let mut lhs = lhs.clone();
-                    let mut rhs = rhs.clone();
-                    if rhs < lhs {
-                        std::mem::swap(&mut lhs, &mut rhs);
-                    }
-
-                    Prod {
-                        args: vec![lhs, rhs],
-                    }
-                }
-            } else {
-                let lhs = args.first().unwrap().flatten();
-                let rhs = Prod::reduce_rec(&args[1..]);
-
-                if let Atom::Prod(p) = lhs.atom() {
-                    Prod::merge_args(&p.args, &rhs.args)
-                } else {
-                    Prod::merge_args(slice::from_ref(lhs), &rhs.args)
+                    self.args.push(rhs.clone())
                 }
             }
         }
     }
 
-    impl Pow {
-        pub fn expand_pow_rec(&self, recurse: bool) -> Expr {
-            use Atom as A;
-            let expand_pow = |lhs: &Expr, rhs: &Expr| -> Expr {
-                if recurse {
-                    Expr::pow(lhs, rhs).expand()
-                } else {
-                    Expr::pow(lhs, rhs)
-                }
-            };
-            let expand_mul = |lhs: &Expr, rhs: &Expr| -> Expr {
-                if recurse {
-                    Expr::mul(lhs, rhs).expand()
-                } else {
-                    Expr::mul(lhs, rhs)
-                }
-            };
+    fn cmp_args(lhs: &Expr, rhs: &Expr) -> cmp::Ordering {
+        lhs.cmp(rhs)
+    }
 
-            let (base, e) = match (self.base().atom(), self.exponent().atom()) {
-                (_, A::Rational(r)) if r.is_one() => {
-                    return self.base().clone();
-                }
-                (A::Sum(sum), A::Rational(r))
-                    if r.is_int() && r > &Rational::ONE && sum.args.len() > 1 =>
-                    {
-                        (sum, r.numer().clone())
-                    }
-                (A::Sum(sum), A::Rational(r)) if r > &Rational::ONE && sum.args.len() > 1 => {
-                    let (div, rem) = r.div_rem();
-                    return expand_mul(
-                        &expand_pow(self.base(), &Expr::from(div)),
-                        &expand_pow(self.base(), &Expr::from(rem)),
-                        );
-                }
-                (A::Prod(_), _) => {
-                    return self
-                        .base()
-                        .clone()
-                        .map_args(|a| *a = expand_pow(a, self.exponent()));
-                    //return args
-                    //    .iter()
-                    //    .map(|a| expand_pow(a, self.exponent()))
-                    //    .fold(Expr::one(), |prod, rhs| prod * rhs)
-                }
-                _ => {
-                    return A::Pow(self.clone()).into();
-                }
-            };
-
-            // (a + b)^exp
-            let exp = Expr::from(e.clone());
-            let (a, b) = base.as_binary_sum();
-            //let mut args = base.args.clone();
-            //let a = args.pop_front().unwrap();
-            //let b = A::Sum(Sum { args }).into();
-
-            let mut res = Sum::zero();
-            for k in Int::range_inclusive(Int::ZERO, e.clone()) {
-                let rhs = if k == Int::ZERO {
-                    // 1 * a^exp
-                    expand_pow(&a, &exp)
-                } else if k == e {
-                    // 1 * b^k
-                    expand_pow(&b, &Expr::from(k.clone()))
-                } else {
-                    // a^k + b^(exp-k)
-                    let c = Int::binomial_coeff(&e, &k);
-                    let k_e = Expr::from(k.clone());
-
-                    expand_mul(
-                        &Expr::from(c),
-                        &expand_mul(
-                            &expand_pow(&a, &k_e),
-                            &expand_pow(&b, &Expr::from(e.clone() - &k)),
-                            ),
-                            )
-                };
-                res.add_rhs(&rhs);
-            }
-
-            Atom::Sum(res).into()
+    fn mul_sorted(lhs: &Expr, rhs: &Expr) -> Prod {
+        let mut lhs = lhs;
+        let mut rhs = rhs;
+        if Self::cmp_args(lhs, rhs).is_ge() {
+            std::mem::swap(&mut lhs, &mut rhs)
         }
+        let mut mul = Prod::one();
+        mul.mul_rhs(&lhs);
+        mul.mul_rhs(&rhs);
+        mul
+    }
 
-        pub fn expand(&self) -> Expr {
-            self.expand_pow_rec(true)
+    fn expand_mul(lhs: &Expr, rhs: &Expr) -> Expr {
+        use Atom as A;
+        match (lhs.atom(), rhs.atom()) {
+            (A::Prod(_), A::Prod(_)) => {
+                let mut res = Prod::one();
+                res.mul_rhs(lhs);
+                res.mul_rhs(rhs);
+                A::Prod(res).into()
+            }
+            (A::Sum(sum), _) => {
+                let mut res = Sum::zero();
+                for term in &sum.args {
+                    let term_prod = Self::expand_mul(term, rhs);
+                    res.add_rhs(&term_prod)
+                }
+                A::Sum(res).into()
+            }
+            (_, A::Sum(sum)) => {
+                let mut res = Sum::zero();
+                for term in &sum.args {
+                    let term_prod = Self::expand_mul(lhs, term);
+                    res.add_rhs(&term_prod)
+                }
+                A::Sum(res).into()
+            }
+            _ => Expr::mul(lhs, rhs),
         }
     }
 
-    // operations
-    impl Expr {
-        pub fn add(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {
-            use Atom as A;
-            let (lhs, rhs): (&Expr, &Expr) = (lhs.borrow().flatten(), rhs.borrow().flatten());
-            match (lhs.atom(), rhs.atom()) {
-                (A::Undef, _) => A::Undef.into(),
-                (_, A::Undef) => A::Undef.into(),
-                (&A::ZERO, _) => rhs.clone(),
-                (_, &A::ZERO) => lhs.clone(),
-                (A::Rational(r1), A::Rational(r2)) => A::Rational(r1.clone() + r2).into(),
-                (_, _) => {
-                    let mut sum = Sum::zero();
-                    sum.add_rhs(lhs);
-                    sum.add_rhs(rhs);
-                    A::Sum(sum).into()
-                }
-            }.explain("add", &[lhs, rhs])
-        }
-        pub fn sub(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {
-            let (lhs, rhs) = (lhs.borrow(), rhs.borrow());
-            let min_one = Expr::from(-1);
-            let min_rhs = Expr::mul(min_one, rhs);
-            Expr::add(lhs, min_rhs).explain("sub", &[lhs, rhs])
-        }
-        pub fn mul(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {
-            use Atom as A;
-            let (lhs, rhs): (&Expr, &Expr) = (lhs.borrow(), rhs.borrow());
-            match (lhs.atom(), rhs.atom()) {
-                (A::Undef, _) | (_, A::Undef) => A::Undef.into(),
-                (&A::ZERO, _) | (_, &A::ZERO) => Expr::zero(),
-                (&A::ONE, _) => rhs.clone(),
-                (_, &A::ONE) => lhs.clone(),
-                (A::Rational(r1), A::Rational(r2)) => A::Rational(r1.clone() * r2).into(),
-                (_, _) => {
-                    if lhs.base() == rhs.base() {
-                        Expr::pow(lhs.base(), lhs.exponent() + rhs.exponent())
-                    } else {
-                        let mut prod = Prod::one();
-                        prod.mul_rhs(lhs);
-                        prod.mul_rhs(rhs);
-                        A::Prod(prod).into()
-                    }
-                    //Expr::prod([lhs, rhs]),
-                }
-            }.explain("mul", &[lhs, rhs])
-            //Expr::prod([lhs.borrow(), rhs.borrow()])
-        }
-        pub fn div(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {
-            let (lhs, rhs) = (lhs.borrow(), rhs.borrow());
-            let min_one = Expr::from(-1);
-            let inv_rhs = Expr::pow(rhs, &min_one);
-            Expr::mul(lhs, &inv_rhs).explain("div", &[lhs, rhs])
+    fn distribute_first(&self) -> Expr {
+        // prod = a * sum * b
+        let sum_indx = if let Some(indx) = self
+            .args
+            .iter()
+            .position(|a| matches!(a.atom(), Atom::Sum(_)))
+        {
+            indx
+        } else {
+            return Atom::Prod(self.clone()).into();
+        };
+
+        let mut a = Prod::one();
+        let mut b = Prod::one();
+        let sum = self.args[sum_indx].clone();
+
+        for (i, arg) in self.args.iter().enumerate() {
+            if i < sum_indx {
+                a.args.push(arg.clone())
+            } else if i > sum_indx {
+                b.args.push(arg.clone())
+            }
         }
 
-        pub fn mul_raw(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {
-            let (lhs, rhs) = (lhs.borrow(), rhs.borrow());
+        let (lhs, rhs): (Expr, Expr) = (Atom::Prod(a).into(), Atom::Prod(b).into());
+        let mut res = Sum::zero();
 
-            let mut prod = Prod::one();
-            prod.mul_rhs_raw(lhs);
-            prod.mul_rhs_raw(rhs);
-            Atom::Prod(prod).into()
+        for term in sum.args() {
+            res.add_rhs(&(lhs.clone() * term * rhs.clone()));
         }
-        pub fn div_raw(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {
-            let min_one = Expr::min_one();
-            let one_div_rhs = Expr::pow_raw(rhs, min_one);
-            Expr::mul_raw(lhs, one_div_rhs)
+
+        Atom::Sum(res).into()
+    }
+
+    fn distribute(&self) -> Expr {
+        if self.args.is_empty() {
+            return Expr::one();
+        } else if self.args.len() == 1 {
+            return self.args[0].clone();
         }
-        pub fn pow_raw(base: impl Borrow<Expr>, exponent: impl Borrow<Expr>) -> Expr {
-            Atom::Pow(Pow {
-                args: [base.borrow().clone(), exponent.borrow().clone()],
+
+        self.args
+            .iter()
+            .fold(Atom::Prod(Prod::one()).into(), |l, r| {
+                Self::expand_mul(&l, r)
             })
-            .into()
-        }
+    }
 
-        pub fn pow(base: impl Borrow<Expr>, exponent: impl Borrow<Expr>) -> Expr {
-            use Atom as A;
-            let (base, exponent) = (base.borrow(), exponent.borrow());
-            match (base.atom(), exponent.atom()) {
-                (A::Undef, _) | (_, A::Undef) | (&A::ZERO, &A::ZERO) => Expr::undef(),
-                (&A::ZERO, A::Rational(r)) if r.is_neg() => Expr::undef(),
-                (&A::ONE, _) => Expr::one(),
-                (_, &A::ONE) => base.clone(),
-                (_, &A::ZERO) => Expr::one(),
-                (A::Rational(b), A::Rational(e)) if b.is_int() && e.is_int() => {
-                    let (pow, rem) = b.clone().pow(e.clone());
-                    assert!(rem.is_zero());
-                    Expr::from(pow)
-                }
-                (A::Pow(pow), A::Rational(e)) if e.is_int() => {
-                    Expr::pow(pow.base(), exponent * pow.exponent())
-                }
-
-                //(A::Pow(pow), A::Rational(e2)) if e2.is_int() => {
-                //    println!("pow: {base:?}, {exponent:?}");
-                //    match pow.exponent().atom() {
-                //        A::Rational(e1) => {
-                //            Expr::pow(base, Expr::from(e1.clone() * e2))
-                //        }
-                //        _ => Expr::raw_pow(base, exponent),
-                //    }
-                //}
-                _ => Expr::pow_raw(base, exponent),
-            }.explain("pow", &[base, exponent])
-        }
-
-        pub fn derivative<T: Borrow<Self>>(&self, x: T) -> Self {
-            use Atom as A;
-            let x = x.borrow();
-
-            if self == x && !self.is_const() {
-                return Expr::one();
+    fn flat_merge(lhs: &Expr, mut rhs: Prod) -> Prod {
+        let lhs = lhs.flatten();
+        match lhs.atom() {
+            Atom::Prod(prod) => {
+                let mut prod = prod.clone();
+                rhs.args.into_iter().for_each(|a| {
+                    prod.mul_rhs(&a);
+                });
+                prod
             }
+            &Atom::ONE => rhs,
+            &Atom::ZERO => {
+                rhs.args = vec![Expr::zero()];
+                rhs
+            }
+            _ => {
+                let mut res = vec![lhs.clone()];
+                res.append(&mut rhs.args);
+                rhs.args = res;
+                rhs
+            }
+        }
+        //if let Atom::Prod(prod) = lhs.atom() {
+        //    let mut prod = prod.clone();
+        //    rhs.args.into_iter().for_each(|a| {
+        //        prod.mul_rhs(&a);
+        //    });
+        //    //vec![Atom::Prod(prod).into()]
+        //    prod
+        //} else {
+        //    let mut res = vec![lhs];
+        //    res.extend(rhs.args);
+        //    rhs.args = res;
+        //    rhs
+        //}
+    }
 
-            match self.atom() {
-                A::Undef => self.clone(),
-                A::Irrational(_) | A::Rational(_) => Expr::zero(),
-                A::Sum(Sum { args }) => {
-                    let mut res = Sum::zero();
-                    args.iter()
-                        .map(|a| a.derivative(x))
-                        .for_each(|a| res.add_rhs(&a));
-                    Atom::Sum(res).into()
-                }
-                A::Prod(prod) => {
-                    if prod.args.is_empty() {
-                        return Expr::zero();
-                    } else if prod.args.len() == 1 {
-                        return prod.args.first().unwrap().derivative(x);
-                    }
-                    // prod = term * args
-                    //let mut args = args.clone();
-                    //let term = args.pop_front().unwrap();
-                    //let rest = Atom::Prod(Prod { args }).into();
-                    let (term, rest) = prod.as_binary_mul();
+    fn merge_args(p: &[Expr], q: &[Expr]) -> Prod {
+        if p.is_empty() {
+            Prod { args: q.to_vec() }
+        } else if q.is_empty() {
+            Prod { args: p.to_vec() }
+        } else {
+            let p1 = p.first().unwrap();
+            let q1 = q.first().unwrap();
+            let p_rest = &p[1..];
+            let q_rest = &q[1..];
+            let h = Prod::reduce_rec(&[p1.clone(), q1.clone()]).args;
+            if h.is_empty() {
+                Prod::merge_args(p_rest, q_rest)
+            } else if h.len() == 1 {
+                Prod::flat_merge(&h[0], Prod::merge_args(p_rest, q_rest))
+            } else {
+                let rhs = if p1 == &h[0] && q1 == &h[1] {
+                    Prod::merge_args(p_rest, q)
+                } else if q1 == &h[0] && p1 == &h[1] {
+                    //println!("h: {h:?}, p1: {p1:?}, q1: {q1:?}");
+                    //assert!(q1 == &h[0], "{:?} != {:?}", q1, h[0]);
+                    Prod::merge_args(p, q_rest)
+                } else {
+                    panic!("Illegal reduction: {q:?} * {p:?} -> h")
+                };
 
-                    // d(a * b)/dx = da/dx * b + a * db/dx
-                    term.derivative(x) * &rest + term * rest.derivative(x)
-                }
-                A::Pow(pow) => {
-                    let v = pow.base();
-                    let w = pow.exponent();
-                    // d(v^w)/dx = w * v^(w - 1) * dv/dx + dw/dx * v^w * ln(v)
-                    w * Expr::pow(v, w - Expr::one()) * v.derivative(x)
-                        + w.derivative(x) * Expr::pow(v, w) * Expr::ln(v)
-                }
-                A::Var(_) => {
-                    if self.free_of(x) {
-                        Expr::zero()
-                    } else {
-                        // TODO: d(f)/d(x^2)
-                        todo!()
-                    }
-                }
-                A::Func(f) => f.derivative(x),
+                Prod::flat_merge(&h[0], rhs)
             }
         }
     }
 
-    pub trait CostFn {
-        fn cost(e: &Expr) -> usize;
-    }
+    pub(crate) fn reduce_rec(args: &[Expr]) -> Prod {
+        if args.len() < 2 {
+            //return args.into_iter().cloned().collect();
+            Prod {
+                args: args.to_vec(),
+            }
+        } else if args.len() == 2 {
+            let lhs = args[0].flatten();
+            let rhs = args[1].flatten();
+            if let (Atom::Prod(p1), Atom::Prod(p2)) = (lhs.atom(), rhs.atom()) {
+                Prod::merge_args(&p1.args, &p2.args)
+            } else if let Atom::Prod(p) = lhs.atom() {
+                Prod::merge_args(&p.args, slice::from_ref(rhs))
+            } else if let Atom::Prod(p) = rhs.atom() {
+                Prod::merge_args(slice::from_ref(lhs), &p.args)
+            } else if lhs.is_const() || rhs.is_const() {
+                let res = Prod::mul_sorted(lhs, rhs);
 
+                // numbers if present always at the lhs
+                assert!(
+                    (res.n_args() < 2
+                        || (res.args[0].is_number()
+                            || res.args[1].is_number() && res.args[0].is_number())),
+                );
 
-    pub struct ExprCost;
-    impl CostFn for ExprCost {
-        fn cost(e: &Expr) -> usize {
-            let mut cost = 1;
-            e.iter_args().for_each(|a| cost += Self::cost(a));
-            cost
+                res
+            } else if lhs.base() == rhs.base() {
+                let e = (lhs.exponent() + rhs.exponent()).reduce();
+                Prod {
+                    args: vec![Expr::pow(lhs.base(), e).reduce()],
+                }
+            } else {
+                let mut lhs = lhs.clone();
+                let mut rhs = rhs.clone();
+                if rhs < lhs {
+                    std::mem::swap(&mut lhs, &mut rhs);
+                }
+
+                Prod {
+                    args: vec![lhs, rhs],
+                }
+            }
+        } else {
+            let lhs = args.first().unwrap().flatten();
+            let rhs = Prod::reduce_rec(&args[1..]);
+
+            if let Atom::Prod(p) = lhs.atom() {
+                Prod::merge_args(&p.args, &rhs.args)
+            } else {
+                Prod::merge_args(slice::from_ref(lhs), &rhs.args)
+            }
         }
     }
+}
 
-    impl Expr {
+impl Pow {
+    pub fn expand_pow_rec(&self, recurse: bool) -> Expr {
+        use Atom as A;
+        let expand_pow = |lhs: &Expr, rhs: &Expr| -> Expr {
+            if recurse {
+                Expr::pow(lhs, rhs).expand()
+            } else {
+                Expr::pow(lhs, rhs)
+            }
+        };
+        let expand_mul = |lhs: &Expr, rhs: &Expr| -> Expr {
+            if recurse {
+                Expr::mul(lhs, rhs).expand()
+            } else {
+                Expr::mul(lhs, rhs)
+            }
+        };
 
-        pub fn simplify(&self) -> Vec::<Self> {
+        let (base, e) = match (self.base().atom(), self.exponent().atom()) {
+            (_, A::Rational(r)) if r.is_one() => {
+                return self.base().clone();
+            }
+            (A::Sum(sum), A::Rational(r))
+                if r.is_int() && r > &Rational::ONE && sum.args.len() > 1 =>
+            {
+                (sum, r.numer().clone())
+            }
+            (A::Sum(sum), A::Rational(r)) if r > &Rational::ONE && sum.args.len() > 1 => {
+                let (div, rem) = r.div_rem();
+                return expand_mul(
+                    &expand_pow(self.base(), &Expr::from(div)),
+                    &expand_pow(self.base(), &Expr::from(rem)),
+                );
+            }
+            (A::Prod(_), _) => {
+                return self
+                    .base()
+                    .clone()
+                    .map_args(|a| *a = expand_pow(a, self.exponent()));
+                //return args
+                //    .iter()
+                //    .map(|a| expand_pow(a, self.exponent()))
+                //    .fold(Expr::one(), |prod, rhs| prod * rhs)
+            }
+            _ => {
+                return A::Pow(self.clone()).into();
+            }
+        };
 
-            let operations: Vec<(fn(&Expr) -> Expr, &'static str)> = vec![
-                (Self::reduce, "reduce"),
-                (Self::expand, "expand"),
-                //(Self::expand_main_op, "expand_main_op"),
-                (Self::expand_exponential, "expand_exponential"),
-                (Self::expand_trig, "expand_trig"),
-                (Self::expand_ln, "expand_ln"),
-                //(Self::distribute, "distribute"),
-                (Self::rationalize, "rationalize"),
-                (Self::factor_out, "factor_out"),
-                (Self::cancel, "cancel"),
-            ];
+        // (a + b)^exp
+        let exp = Expr::from(e.clone());
+        let (a, b) = base.as_binary_sum();
+        //let mut args = base.args.clone();
+        //let a = args.pop_front().unwrap();
+        //let b = A::Sum(Sum { args }).into();
+
+        let mut res = Sum::zero();
+        for k in Int::range_inclusive(Int::ZERO, e.clone()) {
+            let rhs = if k == Int::ZERO {
+                // 1 * a^exp
+                expand_pow(&a, &exp)
+            } else if k == e {
+                // 1 * b^k
+                expand_pow(&b, &Expr::from(k.clone()))
+            } else {
+                // a^k + b^(exp-k)
+                let c = Int::binomial_coeff(&e, &k);
+                let k_e = Expr::from(k.clone());
+
+                expand_mul(
+                    &Expr::from(c),
+                    &expand_mul(
+                        &expand_pow(&a, &k_e),
+                        &expand_pow(&b, &Expr::from(e.clone() - &k)),
+                    ),
+                )
+            };
+            res.add_rhs(&rhs);
+        }
+
+        Atom::Sum(res).into()
+    }
+
+    pub fn expand(&self) -> Expr {
+        self.expand_pow_rec(true)
+    }
+}
+
+// operations
+impl Expr {
+    pub fn add(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {
+        use Atom as A;
+        let (lhs, rhs): (&Expr, &Expr) = (lhs.borrow().flatten(), rhs.borrow().flatten());
+        match (lhs.atom(), rhs.atom()) {
+            (A::Undef, _) => A::Undef.into(),
+            (_, A::Undef) => A::Undef.into(),
+            (&A::ZERO, _) => rhs.clone(),
+            (_, &A::ZERO) => lhs.clone(),
+            (A::Rational(r1), A::Rational(r2)) => A::Rational(r1.clone() + r2).into(),
+            (_, _) => {
+                let mut sum = Sum::zero();
+                sum.add_rhs(lhs);
+                sum.add_rhs(rhs);
+                A::Sum(sum).into()
+            }
+        }
+        .explain("add", &[lhs, rhs])
+    }
+    pub fn sub(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {
+        let (lhs, rhs) = (lhs.borrow(), rhs.borrow());
+        let min_one = Expr::from(-1);
+        let min_rhs = Expr::mul(min_one, rhs);
+        Expr::add(lhs, min_rhs).explain("sub", &[lhs, rhs])
+    }
+    pub fn mul(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {
+        use Atom as A;
+        let (lhs, rhs): (&Expr, &Expr) = (lhs.borrow(), rhs.borrow());
+        match (lhs.atom(), rhs.atom()) {
+            (A::Undef, _) | (_, A::Undef) => A::Undef.into(),
+            (&A::ZERO, _) | (_, &A::ZERO) => Expr::zero(),
+            (&A::ONE, _) => rhs.clone(),
+            (_, &A::ONE) => lhs.clone(),
+            (A::Rational(r1), A::Rational(r2)) => A::Rational(r1.clone() * r2).into(),
+            (_, _) => {
+                if lhs.base() == rhs.base() {
+                    Expr::pow(lhs.base(), lhs.exponent() + rhs.exponent())
+                } else {
+                    let mut prod = Prod::one();
+                    prod.mul_rhs(lhs);
+                    prod.mul_rhs(rhs);
+                    A::Prod(prod).into()
+                }
+                //Expr::prod([lhs, rhs]),
+            }
+        }
+        .explain("mul", &[lhs, rhs])
+        //Expr::prod([lhs.borrow(), rhs.borrow()])
+    }
+    pub fn div(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {
+        let (lhs, rhs) = (lhs.borrow(), rhs.borrow());
+        let min_one = Expr::from(-1);
+        let inv_rhs = Expr::pow(rhs, &min_one);
+        Expr::mul(lhs, &inv_rhs).explain("div", &[lhs, rhs])
+    }
+
+    pub fn mul_raw(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {
+        let (lhs, rhs) = (lhs.borrow(), rhs.borrow());
+
+        let mut prod = Prod::one();
+        prod.mul_rhs_raw(lhs);
+        prod.mul_rhs_raw(rhs);
+        Atom::Prod(prod).into()
+    }
+    pub fn div_raw(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {
+        let min_one = Expr::min_one();
+        let one_div_rhs = Expr::pow_raw(rhs, min_one);
+        Expr::mul_raw(lhs, one_div_rhs)
+    }
+    pub fn pow_raw(base: impl Borrow<Expr>, exponent: impl Borrow<Expr>) -> Expr {
+        Atom::Pow(Pow {
+            args: [base.borrow().clone(), exponent.borrow().clone()],
+        })
+        .into()
+    }
+
+    pub fn pow(base: impl Borrow<Expr>, exponent: impl Borrow<Expr>) -> Expr {
+        use Atom as A;
+        let (base, exponent) = (base.borrow(), exponent.borrow());
+        match (base.atom(), exponent.atom()) {
+            (A::Undef, _) | (_, A::Undef) | (&A::ZERO, &A::ZERO) => Expr::undef(),
+            (&A::ZERO, A::Rational(r)) if r.is_neg() => Expr::undef(),
+            (&A::ONE, _) => Expr::one(),
+            (_, &A::ONE) => base.clone(),
+            (_, &A::ZERO) => Expr::one(),
+            (A::Rational(b), A::Rational(e)) if b.is_int() && e.is_int() => {
+                let (pow, rem) = b.clone().pow(e.clone());
+                assert!(rem.is_zero());
+                Expr::from(pow)
+            }
+            (A::Pow(pow), A::Rational(e)) if e.is_int() => {
+                Expr::pow(pow.base(), exponent * pow.exponent())
+            }
+
+            //(A::Pow(pow), A::Rational(e2)) if e2.is_int() => {
+            //    println!("pow: {base:?}, {exponent:?}");
+            //    match pow.exponent().atom() {
+            //        A::Rational(e1) => {
+            //            Expr::pow(base, Expr::from(e1.clone() * e2))
+            //        }
+            //        _ => Expr::raw_pow(base, exponent),
+            //    }
+            //}
+            _ => Expr::pow_raw(base, exponent),
+        }
+        .explain("pow", &[base, exponent])
+    }
+
+    pub fn derivative<T: Borrow<Self>>(&self, x: T) -> Self {
+        use Atom as A;
+        let x = x.borrow();
+
+        if self == x && !self.is_const() {
+            return Expr::one();
+        }
+
+        match self.atom() {
+            A::Undef => self.clone(),
+            A::Irrational(_) | A::Rational(_) => Expr::zero(),
+            A::Sum(Sum { args }) => {
+                let mut res = Sum::zero();
+                args.iter()
+                    .map(|a| a.derivative(x))
+                    .for_each(|a| res.add_rhs(&a));
+                Atom::Sum(res).into()
+            }
+            A::Prod(prod) => {
+                if prod.args.is_empty() {
+                    return Expr::zero();
+                } else if prod.args.len() == 1 {
+                    return prod.args.first().unwrap().derivative(x);
+                }
+                // prod = term * args
+                //let mut args = args.clone();
+                //let term = args.pop_front().unwrap();
+                //let rest = Atom::Prod(Prod { args }).into();
+                let (term, rest) = prod.as_binary_mul();
+
+                // d(a * b)/dx = da/dx * b + a * db/dx
+                term.derivative(x) * &rest + term * rest.derivative(x)
+            }
+            A::Pow(pow) => {
+                let v = pow.base();
+                let w = pow.exponent();
+                // d(v^w)/dx = w * v^(w - 1) * dv/dx + dw/dx * v^w * ln(v)
+                w * Expr::pow(v, w - Expr::one()) * v.derivative(x)
+                    + w.derivative(x) * Expr::pow(v, w) * Expr::ln(v)
+            }
+            A::Var(_) => {
+                if self.free_of(x) {
+                    Expr::zero()
+                } else {
+                    // TODO: d(f)/d(x^2)
+                    todo!()
+                }
+            }
+            A::Func(f) => f.derivative(x),
+        }
+    }
+}
+
+pub trait CostFn {
+    fn cost(e: &Expr) -> usize;
+}
+
+pub struct ExprCost;
+impl CostFn for ExprCost {
+    fn cost(e: &Expr) -> usize {
+        let mut cost = 1;
+        e.iter_args().for_each(|a| cost += Self::cost(a));
+        cost
+    }
+}
+
+impl Expr {
+    pub fn simplify(&self) -> Vec<Self> {
+        let operations: Vec<(fn(&Expr) -> Expr, &'static str)> = vec![
+            (Self::reduce, "reduce"),
+            (Self::expand, "expand"),
+            //(Self::expand_main_op, "expand_main_op"),
+            (Self::expand_exponential, "expand_exponential"),
+            (Self::expand_trig, "expand_trig"),
+            (Self::expand_ln, "expand_ln"),
+            //(Self::distribute, "distribute"),
+            (Self::rationalize, "rationalize"),
+            (Self::factor_out, "factor_out"),
+            (Self::cancel, "cancel"),
+        ];
 
         if self.is_irreducible() {
-            return vec![]
+            return vec![];
         }
 
         let mut todo = vec![self.clone()];
@@ -784,14 +784,13 @@ impl Sum {
                 if !eclass.contains(&e) {
                     todo.push(e.clone());
                     eclass.insert(e);
-                } 
-
+                }
             }
             steps += 1;
             if steps > 10 {
-                break
+                break;
             }
-        };
+        }
 
         let mut eclass: Vec<_> = eclass.into_iter().collect();
         eclass.sort_by_key(ExprCost::cost);
@@ -808,7 +807,8 @@ impl Sum {
             A::Prod(prod) => prod.distribute(),
             A::Pow(pow) => pow.expand(),
             _ => expanded.clone(),
-        }.explain("expand", &[self])
+        }
+        .explain("expand", &[self])
     }
 
     pub fn expand_main_op(&self) -> Self {
@@ -890,7 +890,8 @@ impl Sum {
                 .fold(Expr::zero(), |sum, r| Self::rationalize_add(&sum, &r)),
             A::Pow(pow) => Expr::pow(pow.base().rationalize(), pow.exponent()),
             _ => self.clone(),
-        }.explain("rationalize", &[self])
+        }
+        .explain("rationalize", &[self])
     }
 
     /// a/b + c/d -> (ad + cb) / (bd)
@@ -904,7 +905,11 @@ impl Sum {
             lhs + rhs
         } else {
             Self::rationalize_add(&(&a * &d), &(&c * &b)) / bd
-        }.explain(format!("rationalize add: [{a}]/[{b}] + [{c}]/[{d}]"), &[lhs, rhs])
+        }
+        .explain(
+            format!("rationalize add: [{a}]/[{b}] + [{c}]/[{d}]"),
+            &[lhs, rhs],
+        )
     }
 
     /// divide lhs and rhs by their common factor and
@@ -963,7 +968,7 @@ impl Sum {
                     let res = Self::factorize_common_terms(lhs, rhs);
                     // println!("end factor: ({}, ({}, {}))", res.0, res.1.0, res.1.1);
                     //return Self::factorize_common_terms(lhs, rhs);
-                    return res
+                    return res;
                 }
                 /*
                 abxy + cdxy, u*x*y*a*c
@@ -1049,7 +1054,8 @@ impl Sum {
                 }
             }
             _ => self.clone(),
-        }.explain("factor out", &[self])
+        }
+        .explain("factor out", &[self])
     }
 
     pub fn separate_factors(&self, x: &Self) -> (Expr, Expr) {
@@ -1508,7 +1514,7 @@ mod test {
             (e!(a / b), e!(a * b ^ (2 - 3))),
             (e!((x ^ (1 / 2) ^ (1 / 2)) ^ 8), e!(x ^ 2)),
             (e!(x + x), e!(2 * x)),
-            (e!(2*x + y + x), e!(3*x + y)),
+            (e!(2 * x + y + x), e!(3 * x + y)),
             (e!(sin(0)), e!(0)),
             (e!(sin(-x)), e!(-1 * sin(x))),
             (e!(cos(-x)), e!(cos(x))),

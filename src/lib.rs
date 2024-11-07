@@ -4,10 +4,10 @@ pub extern crate self as calcu_rs;
 
 pub mod algos;
 pub mod atom;
-pub mod fmt_ast;
 pub mod polynomial;
 pub mod rational;
 pub mod rubi;
+pub mod sym_fmt;
 pub mod transforms;
 pub mod utils;
 

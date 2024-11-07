@@ -1,12 +1,6 @@
-use std::{hash::{DefaultHasher, Hasher}, time::Instant};
+use std::time::Instant;
 
-use calcu_rs::{expr as e};
-
-fn calculate_hash<T: std::hash::Hash>(t: &T) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    t.hash(&mut hasher);
-    hasher.finish()
-}
+use calcu_rs::expr as e;
 
 
 fn main() {
@@ -22,7 +16,7 @@ fn main() {
 
     // (x^2-1)/(x+1) = x
 
-    println!("{}", e!(2/3 * x));
+    println!("{}", e!(2 / 3 * x));
 
     //println!("{a}");
 
@@ -44,8 +38,6 @@ fn main() {
     //let c = a / b;
 
     //println!("{:?}", c.steps());
-    
-
 
     //}
 
