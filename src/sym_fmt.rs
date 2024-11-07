@@ -391,21 +391,21 @@ impl FmtAtom {
     }
 }
 
-const fn sum_prec() -> u32 {
+pub const fn sum_prec() -> u32 {
     1
 }
-const fn prod_prec() -> u32 {
+pub const fn prod_prec() -> u32 {
     2
 }
-const fn pow_prec() -> u32 {
+pub const fn pow_prec() -> u32 {
     3
 }
-const fn atom_prec() -> u32 {
+pub const fn atom_prec() -> u32 {
     4
 }
 
 impl FmtAtom {
-    fn prec(&self) -> u32 {
+    pub fn prec(&self) -> u32 {
         match self {
             FmtAtom::Func(_, _) | FmtAtom::Undef | FmtAtom::Irrational(_) | FmtAtom::Var(_) => {
                 atom_prec()
@@ -421,10 +421,10 @@ impl FmtAtom {
         }
     }
 
-    fn is_number(&self) -> bool {
+    pub fn is_number(&self) -> bool {
         self.is_rational() || self.is_irrational()
     }
-    fn is_func_pow_number(&self) -> bool {
+    pub fn is_func_pow_number(&self) -> bool {
         match self {
             FmtAtom::Func(..) => true,
             FmtAtom::Pow(b, e) if b.is_func() && e.is_number() => true,
@@ -439,7 +439,7 @@ impl fmt::Display for FmtAtom {
     }
 }
 
-fn implicit_prefix_mul(e: &FmtAtom) -> bool {
+pub fn implicit_prefix_mul(e: &FmtAtom) -> bool {
     use FmtAtom as F;
     match e {
         F::Var(_)
@@ -452,7 +452,7 @@ fn implicit_prefix_mul(e: &FmtAtom) -> bool {
     }
 }
 
-fn implicit_postfix_mul(e: &FmtAtom) -> bool {
+pub fn implicit_postfix_mul(e: &FmtAtom) -> bool {
     use FmtAtom as F;
     match e {
         F::Rational(_) | F::Irrational(_) => true,
