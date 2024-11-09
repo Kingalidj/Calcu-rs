@@ -26,7 +26,6 @@ impl Sum {
             A::Sum(sum) => {
                 sum.args.iter().for_each(|a| self.add_rhs(a));
             }
-            // sum all rationals in the first element
             A::Rational(r1) => {
                 for a in &mut self.args {
                     if let A::Rational(r2) = a.atom() {
@@ -47,7 +46,7 @@ impl Sum {
                     .iter_mut()
                     .find(|a| a.term().is_some_and(|t| Some(t) == rhs.term()))
                 {
-                    *arg = (arg.r#const().unwrap() + rhs.r#const().unwrap()) * arg.term().unwrap()
+                    *arg = (arg.coeff() + rhs.coeff()) * arg.term().unwrap()
                 } else {
                     self.args.push(rhs.clone())
                 }
@@ -158,25 +157,10 @@ impl Sum {
             } else if let Atom::Sum(p) = rhs.atom() {
                 Sum::merge_args(slice::from_ref(lhs), &p.args)
             } else if lhs.is_const() || rhs.is_const() {
-                //return SmallVec::from([Sum::reduce_mul(lhs, rhs)]);
-                //Sum::reduce_mul(&lhs, &rhs)
                 Sum::add_sorted(lhs, rhs)
-                //let mut lhs = lhs;
-                //let mut rhs = rhs;
-                //if rhs > lhs {
-                //    std::mem::swap(&mut lhs, &mut rhs);
-                //}
-
-                //let mut res = Sum::zero();
-                //res.add_rhs(lhs);
-                //res.add_rhs(rhs);
-                //res
-                //} else if lhs.base() == rhs.base() {
-                //    let e = (lhs.exponent() + rhs.exponent()).reduce();
-                //    Sum { args: vec![Expr::pow(lhs.base(), e).reduce()] }
             } else if lhs.term().is_some_and(|term| Some(term) == rhs.term()) {
                 //} else if lhs.term() == rhs.term() && lhs.term().is_some() {
-                let e = (lhs.r#const().unwrap() + rhs.r#const().unwrap()).reduce();
+                let e = (lhs.coeff() + rhs.coeff()).reduce();
                 Sum {
                     args: vec![(e * lhs.term().unwrap()).reduce()],
                 }

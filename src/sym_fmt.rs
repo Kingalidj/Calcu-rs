@@ -239,7 +239,7 @@ pub trait SymbolicFormatter {
                 Self::var(&func.name(), f)?;
                 Self::symbl_pow(f)?;
                 Self::atom(e, f)?;
-                return Self::func_args(args, f)
+                return Self::func_args(args, f);
             }
             _ => (),
         }

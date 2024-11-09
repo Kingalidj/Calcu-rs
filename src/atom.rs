@@ -144,6 +144,12 @@ impl Atom {
     pub fn is_const(&self) -> bool {
         self.is_number()
     }
+    pub(crate) fn is_coeff(&self) -> bool {
+        self.is_rational() || self.is_undef()
+    }
+    pub(crate) fn is_term(&self) -> bool {
+        !self.is_coeff()
+    }
 
     pub fn try_unwrap_int(&self) -> Option<Int> {
         match self {
@@ -443,6 +449,22 @@ impl Prod {
             (a, b)
         }
     }
+
+    pub fn term(&self) -> Option<Expr> {
+        let mut terms: Vec<_> = self
+            .iter_args()
+            .filter(|a| !a.is_const())
+            .cloned()
+            .collect();
+
+        if terms.is_empty() {
+            None
+        } else if terms.len() == 1 {
+            Some(terms.remove(0))
+        } else {
+            Some(Self { args: terms }.into())
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -700,38 +722,75 @@ impl Expr {
         self.try_unwrap_func_ref().is_ok_and(Func::is_trig)
     }
 
-    pub fn r#const(&self) -> Option<Expr> {
-        match self.flatten().atom() {
-            Atom::Var(_) | Atom::Sum(_) | Atom::Pow(_) | Atom::Func(_) => Some(Expr::one()),
-            Atom::Prod(Prod { args }) => {
-                if let Some(a) = args.first() {
-                    if a.is_const() {
-                        return Some(a.clone());
-                    }
-                }
-                Some(Expr::one())
-            }
+    //pub fn r#const(&self) -> Expr {
+    //    match self.flatten().atom() {
+    //        Atom::Var(_) | Atom::Sum(_) | Atom::Pow(_) | Atom::Func(_) => Expr::one(),
+    //        Atom::Prod(prod) => prod
+    //            .iter_args()
+    //            .filter(|a| a.is_const())
+    //            .cloned()
+    //            .fold(Expr::one(), |lhs, rhs| lhs * rhs),
+    //        Atom::Undef | Atom::Rational(_) | Atom::Irrational(_) => self.clone(),
+    //    }
+    //}
 
-            Atom::Undef | Atom::Rational(_) | Atom::Irrational(_) => None,
+    pub fn coeff(&self) -> Expr {
+        match self.flatten().atom() {
+            Atom::Irrational(_) | Atom::Var(_) | Atom::Sum(_) | Atom::Pow(_) | Atom::Func(_) => Expr::one(),
+            Atom::Prod(prod) => prod
+                .iter_args()
+                .filter(|a| a.is_coeff())
+                .cloned()
+                .fold(Expr::one(), |lhs, rhs| lhs * rhs),
+            Atom::Undef | Atom::Rational(_) => self.clone(),
+        }
+    }
+    pub fn term(&self) -> Option<Expr> {
+        match self.flatten().atom() {
+            Atom::Irrational(_) | Atom::Var(_) | Atom::Sum(_) | Atom::Pow(_) | Atom::Func(_) => Some(self.clone()),
+            Atom::Prod(prod) => {
+                let mut terms: Vec<_> = prod
+                    .iter_args()
+                    .filter(|a| a.is_term())
+                    .cloned()
+                    .collect();
+
+                if terms.is_empty() {
+                    None
+                } else if terms.len() == 1 {
+                    Some(terms.remove(0))
+                } else {
+                    Some(Prod { args: terms }.into())
+                }
+            }
+            Atom::Undef | Atom::Rational(_) => None,
         }
     }
 
+    /*
     pub fn term(&self) -> Option<Expr> {
-        match self.atom() {
+        match self.flatten().atom() {
             Atom::Prod(prod) => {
-                if let Some(a) = prod.args.first() {
-                    if a.is_const() {
-                        let (_, c) = prod.as_binary_mul();
-                        return Some(c);
-                    }
+                let mut terms: Vec<_> = prod
+                    .iter_args()
+                    .filter(|a| !a.is_const())
+                    .cloned()
+                    .collect();
+
+                if terms.is_empty() {
+                    None
+                } else if terms.len() == 1 {
+                    Some(terms.remove(0))
+                } else {
+                    Some(Prod { args: terms }.into())
                 }
-                Some(self.clone())
             }
             Atom::Var(_) | Atom::Sum(_) | Atom::Pow(_) | Atom::Func(_) => Some(self.clone()),
 
             Atom::Undef | Atom::Rational(_) | Atom::Irrational(_) => None,
         }
     }
+    */
 
     pub fn variables(&self) -> HashSet<Expr> {
         let mut vars = Default::default();
@@ -1209,8 +1268,8 @@ mod test {
     fn term_const() {
         eq!(e!(2 * y).term(), Some(e!(y)));
         eq!(e!(x * y).term(), Some(e!(x * y)));
-        eq!(e!(x).r#const(), Some(e!(1)));
-        eq!(e!(2 * x).r#const(), Some(e!(2)));
-        eq!(e!(y * x).r#const(), Some(e!(1)));
+        eq!(e!(x).coeff(), e!(1));
+        eq!(e!(2 * x).coeff(), e!(2));
+        eq!(e!(y * x).coeff(), e!(1));
     }
 }

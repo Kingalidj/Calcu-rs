@@ -2,7 +2,6 @@ use std::time::Instant;
 
 use calcu_rs::expr as e;
 
-
 fn main() {
     env_logger::builder()
         .filter_level(log::LevelFilter::Info)
@@ -16,7 +15,7 @@ fn main() {
 
     // (x^2-1)/(x+1) = x
 
-    println!("{}", e!(2 / 3 * x));
+    println!("{}", e!(exp(1) - exp(1)));
 
     //println!("{a}");
 
