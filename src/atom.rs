@@ -328,10 +328,25 @@ impl Func {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "default_debug", derive(Debug))]
 pub struct Sum {
     pub args: Vec<Expr>,
+}
+
+impl Eq for Sum {}
+impl PartialEq for Sum {
+    fn eq(&self, other: &Self) -> bool {
+        if self.n_args() != other.n_args() {
+            return false
+        }
+
+        let mut largs = self.args.clone();
+        largs.sort();
+        let mut rargs = other.args.clone();
+        rargs.sort();
+        largs == rargs
+    }
 }
 
 impl Sum {
@@ -342,7 +357,7 @@ impl Sum {
     }
 
     pub fn is_zero(&self) -> bool {
-        self.args.is_empty()
+        self.args.is_empty() || (self.args.len() == 1 && self.args[0].is_zero())
     }
 
     pub fn is_undef(&self) -> bool {
@@ -390,11 +405,27 @@ impl fmt::Debug for Sum {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "default_debug", derive(Debug))]
 pub struct Prod {
     pub args: Vec<Expr>,
 }
+
+impl Eq for Prod {}
+impl PartialEq for Prod {
+    fn eq(&self, other: &Self) -> bool {
+        if self.n_args() != other.n_args() {
+            return false
+        }
+
+        let mut largs = self.args.clone();
+        largs.sort();
+        let mut rargs = other.args.clone();
+        rargs.sort();
+        largs == rargs
+    }
+}
+
 #[cfg(not(feature = "default_debug"))]
 impl fmt::Debug for Prod {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -420,7 +451,7 @@ impl Prod {
     }
 
     pub fn is_one(&self) -> bool {
-        self.args.is_empty()
+        self.args.is_empty() || (self.args.len() == 1 && self.args[0].is_one())
     }
 
     pub fn is_undef(&self) -> bool {
@@ -736,7 +767,9 @@ impl Expr {
 
     pub fn coeff(&self) -> Expr {
         match self.flatten().atom() {
-            Atom::Irrational(_) | Atom::Var(_) | Atom::Sum(_) | Atom::Pow(_) | Atom::Func(_) => Expr::one(),
+            Atom::Irrational(_) | Atom::Var(_) | Atom::Sum(_) | Atom::Pow(_) | Atom::Func(_) => {
+                Expr::one()
+            }
             Atom::Prod(prod) => prod
                 .iter_args()
                 .filter(|a| a.is_coeff())
@@ -747,13 +780,11 @@ impl Expr {
     }
     pub fn term(&self) -> Option<Expr> {
         match self.flatten().atom() {
-            Atom::Irrational(_) | Atom::Var(_) | Atom::Sum(_) | Atom::Pow(_) | Atom::Func(_) => Some(self.clone()),
+            Atom::Irrational(_) | Atom::Var(_) | Atom::Sum(_) | Atom::Pow(_) | Atom::Func(_) => {
+                Some(self.clone())
+            }
             Atom::Prod(prod) => {
-                let mut terms: Vec<_> = prod
-                    .iter_args()
-                    .filter(|a| a.is_term())
-                    .cloned()
-                    .collect();
+                let mut terms: Vec<_> = prod.iter_args().filter(|a| a.is_term()).cloned().collect();
 
                 if terms.is_empty() {
                     None

@@ -15,7 +15,7 @@ fn main() {
 
     // (x^2-1)/(x+1) = x
 
-    println!("{}", e!(exp(1) - exp(1)));
+    println!("{}", e!(x*y) == e!(y*x));
 
     //println!("{a}");
 

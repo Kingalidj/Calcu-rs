@@ -17,8 +17,12 @@ impl Sum {
         }
 
         let rhs = rhs.flatten();
+
+        if rhs.is_zero() {
+            return
+        } 
+
         match rhs.atom() {
-            &A::ZERO => (),
             A::Undef => {
                 self.args.clear();
                 self.args.push(rhs.clone());
@@ -218,9 +222,8 @@ impl Prod {
             return;
         }
 
-        match self.first() {
-            Some(A::Undef | &A::ZERO) => return,
-            Some(_) | None => (),
+        if self.first().is_some_and(|a| a.is_zero() || a.is_undef()) {
+            return;
         }
 
         match rhs.atom() {
@@ -232,13 +235,6 @@ impl Prod {
             A::Prod(prod) => {
                 prod.args.iter().for_each(|a| self.mul_rhs(a));
             }
-            //A::Rational(r) => {
-            //    if let Some(A::Rational(r2)) = self.first() {
-            //        self.args[0] = A::Rational(r.clone() * r2).into();
-            //    } else {
-            //        self.args.push(rhs.clone())
-            //    }
-            //}
             A::Rational(r1) => {
                 for a in &mut self.args {
                     if let A::Rational(r2) = a.atom() {
@@ -248,12 +244,36 @@ impl Prod {
                 }
                 self.args.push(rhs.clone())
             }
-            A::Irrational(_) | A::Func(_) | A::Var(_) | A::Sum(_) | A::Pow(_) => {
-                if let Some(arg) = self.args.iter_mut().find(|a| a.base() == rhs.base()) {
-                    *arg = Expr::pow(arg.base(), arg.exponent() + rhs.exponent())
+            A::Pow(pow) => {
+                if pow.base().is_prod() {
+                    let rhs_terms = pow.base().args();
+                    let expon = pow.exponent();
+
+                    let mut remainder = vec![];
+
+                    for term in rhs_terms {
+                        if let Some(arg) = self.args.iter_mut().find(|a| &a.base() == term) {
+                            *arg = Expr::pow(arg.base(), arg.exponent() + expon)
+                        } else {
+                            remainder.push(term.clone())
+                        }
+                    }
+
+                    if remainder.len() == 1 {
+                        let rem = Expr::pow(remainder.remove(0), expon);
+                        self.args.push(rem)
+                    } else if remainder.len() > 1 {
+                        let rem = Expr::pow(&Prod { args: remainder }.into(), expon);
+                        self.args.push(rem)
+                    }
+                } else if let Some(arg) = self.args.iter_mut().find(|a| &a.base() == pow.base()) {
+                    *arg = Expr::pow(arg.base(), arg.exponent() + pow.exponent())
                 } else {
                     self.args.push(rhs.clone())
                 }
+            }
+            A::Irrational(_) | A::Func(_) | A::Var(_) | A::Sum(_) => {
+                self.args.push(rhs.clone())
             }
         }
     }
@@ -591,11 +611,31 @@ impl Expr {
     pub fn mul(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {
         use Atom as A;
         let (lhs, rhs): (&Expr, &Expr) = (lhs.borrow(), rhs.borrow());
+
+        if lhs.is_undef() || rhs.is_undef() {
+            return Expr::undef();
+        } else if lhs.is_zero() || rhs.is_zero() {
+            return Expr::zero();
+        } else if lhs.is_one() {
+            rhs.clone()
+        } else if rhs.is_one() {
+            lhs.clone()
+        } else if let (Ok(r1), Ok(r2)) =
+            (lhs.try_unwrap_rational_ref(), rhs.try_unwrap_rational_ref())
+        {
+            (r1.clone() * r2).into()
+        } else if lhs.base() == rhs.base() {
+            Expr::pow(lhs.base(), lhs.exponent() + rhs.exponent())
+        } else {
+            let mut prod = Prod::one();
+            prod.mul_rhs(lhs);
+            prod.mul_rhs(rhs);
+            A::Prod(prod).into()
+        }
+        .explain("mul", &[lhs, rhs])
+
+        /*
         match (lhs.atom(), rhs.atom()) {
-            (A::Undef, _) | (_, A::Undef) => A::Undef.into(),
-            (&A::ZERO, _) | (_, &A::ZERO) => Expr::zero(),
-            (&A::ONE, _) => rhs.clone(),
-            (_, &A::ONE) => lhs.clone(),
             (A::Rational(r1), A::Rational(r2)) => A::Rational(r1.clone() * r2).into(),
             (_, _) => {
                 if lhs.base() == rhs.base() {
@@ -609,14 +649,36 @@ impl Expr {
                 //Expr::prod([lhs, rhs]),
             }
         }
-        .explain("mul", &[lhs, rhs])
+        */
         //Expr::prod([lhs.borrow(), rhs.borrow()])
     }
     pub fn div(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {
         let (lhs, rhs) = (lhs.borrow(), rhs.borrow());
-        let min_one = Expr::from(-1);
-        let inv_rhs = Expr::pow(rhs, &min_one);
-        Expr::mul(lhs, &inv_rhs).explain("div", &[lhs, rhs])
+
+        if lhs.is_undef() || rhs.is_undef() {
+            Expr::undef()
+        } else if lhs == rhs {
+            Expr::one()
+        } else {
+            let min_one = Expr::from(-1);
+            let inv_rhs = Expr::pow(rhs, &min_one);
+            Expr::mul(lhs, &inv_rhs)
+        }
+        .explain("div", &[lhs, rhs])
+
+        /*
+        match (lhs.atom(), rhs.atom()) {
+            (_, Atom::Pow(pow)) if pow.exponent().is_neg() => {
+                let rhs = Expr::pow(pow.base(), Expr::min_one() * pow.exponent());
+                lhs * rhs
+            }
+            _ => {
+                let min_one = Expr::from(-1);
+                let inv_rhs = Expr::pow(rhs, &min_one);
+                Expr::mul(lhs, &inv_rhs)
+            }
+        }.explain("div", &[lhs, rhs])
+        */
     }
 
     pub fn mul_raw(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {

@@ -1,8 +1,11 @@
 use proc_macro2::{Ident, Span, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
-use std::fmt::Write;
 use syn::{
-    parenthesized, parse::{self, discouraged::Speculative, Parse, ParseStream}, parse_macro_input, punctuated::{self as punc, Punctuated}, token, Attribute, Token
+    parenthesized,
+    parse::{self, discouraged::Speculative, Parse, ParseStream},
+    parse_macro_input,
+    punctuated::{self as punc, Punctuated},
+    token, Attribute, Token,
 };
 
 mod rubi;
@@ -96,7 +99,8 @@ impl Expr {
             } else if s.peek(token::Paren) {
                 let content;
                 let _: token::Paren = parenthesized!(content in s);
-                let args: Punctuated<Expr, Token![,]> = content.parse_terminated(Expr::parse, Token![,])?;
+                let args: Punctuated<Expr, Token![,]> =
+                    content.parse_terminated(Expr::parse, Token![,])?;
                 Ok(Expr::Func(id, args.into_iter().collect()))
             } else {
                 Ok(Expr::Symbol(sid.to_string()))
@@ -268,7 +272,10 @@ impl Parse for ArithOpsArgs {
 }
 
 #[proc_macro_attribute]
-pub fn arith_ops(attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+pub fn arith_ops(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
     let item = parse_macro_input!(item as syn::ItemStruct);
 
     let mut attribs = quote! {
@@ -281,8 +288,8 @@ pub fn arith_ops(attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -
     };
 
     if !attr.is_empty() {
-        let args: ArithOpsArgs = match syn::parse(attr){
-            Ok(id) => id, 
+        let args: ArithOpsArgs = match syn::parse(attr) {
+            Ok(id) => id,
             Err(e) => return e.into_compile_error().into(),
         };
 
@@ -341,4 +348,3 @@ pub fn arith_ops(attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -
 
     attribs.into()
 }
-

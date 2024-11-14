@@ -11,6 +11,8 @@ use logos::{Logos, Source};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
+use derive_more::Debug;
+
 type F64 = OrderedFloat<f64>;
 
 const INTEGRATION_RULES: &'static str = include_str!("rubi.data");
@@ -251,11 +253,11 @@ struct Pattern {
 impl fmt::Debug for Pattern {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(_) = &self.cond {
-            write!(f, "Cond[")?;
+            write!(f, "(")?;
         }
         write!(f, "{:?}", self.pat)?;
         if let Some(cond) = &self.cond {
-            write!(f, " , {cond:?}]")?;
+            write!(f, "/;  {cond:?})")?;
         }
         Ok(())
     }
@@ -438,32 +440,52 @@ impl fmt::Debug for Scope {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
 enum SymExpr {
+    #[debug("{_0}")]
     Ident(String),
+    #[debug("({_0} /; {_1:?})")]
     IdentRestr(String, Vec<SymExpr>),
+    #[debug("{}", _0.as_slice().join("::"))]
     IdentField(Vec<String>),
+    #[debug("{_0}")]
     Pat(String),
+    #[debug("({_0}.)")]
     PatOpt(String),
+    #[debug("({_0}:{_1:?})")]
     PatRestr(String, Vec<SymExpr>),
+    #[debug("{_0}")]
     Integer(u64),
+    #[debug("{_0}")]
     Float(F64),
+    #[debug("\"{_0}\"")]
     Str(String),
+    #[debug("#{}", _0.map(|i| i.to_string()).unwrap_or_default())]
     Slot(Option<u64>),
 
+    #[debug("{_0:?}[{_1:?}, {_2:?}]")]
     BinOp(OpKind, Box<Self>, Box<Self>),
+    #[debug("{_0:?}[{_1:?}]")]
     UnryOp(OpKind, Box<Self>),
 
+    #[debug("{{{_0:?}}}")]
     List(List),
+    #[debug("{_0:?}[[{_1:?}]]")]
     Part(Box<SymExpr>, Vec<SymExpr>),
+    #[debug("{_0:?}")]
     FuncDef(FuncDef),
+    #[debug("{_0:?}")]
     FuncCall(FuncCall),
+    #[debug("{_0:?}[_1:?]")]
     Call(Box<SymExpr>, Vec<SymExpr>),
 
+    #[debug("{_0:?}")]
     Scope(Scope),
+    #[debug("MatchQ[{_0:?}, {_1:?}]")]
     MatchQ(Box<SymExpr>, Pattern),
     // a /. b -> c
     //ReplaceAll(Box<SymExpr>, Box<SymExpr>, Box<SymExpr>),
+    #[debug("Compnd[{_0:?}]")]
     Compnd(Vec<SymExpr>),
 }
 
@@ -509,6 +531,7 @@ impl SymExpr {
     }
 }
 
+/*
 impl fmt::Debug for SymExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use SymExpr as S;
@@ -538,6 +561,7 @@ impl fmt::Debug for SymExpr {
         }
     }
 }
+*/
 
 impl SymExpr {
     fn binary(op: &Wolfram, lhs: Self, rhs: Self) -> Self {
@@ -558,25 +582,25 @@ impl SymExpr {
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 struct WolframContext {
     exprs: Vec<SymExpr>,
-    func_defs: HashMap<String, HashSet<FuncDef>>,
-    func_calls: HashMap<String, HashSet<FuncCall>>,
+    func_defs: HashMap<String, Vec<FuncDef>>,
+    func_calls: HashMap<String, Vec<FuncCall>>,
 }
 
 impl WolframContext {
-
     fn push_expr(&mut self, e: SymExpr) {
         self.exprs.push(e);
     }
 
-    fn func_defs(&self) -> Vec<String> {
-        self.func_defs.keys().cloned().collect()
+    fn func_defs(&self) -> Vec<(String, Vec<FuncDef>)> {
+        //self.func_defs.keys().cloned().collect()
+        self.func_defs.iter().map(|(a, b)| (a.clone(), b.iter().cloned().collect())).collect()
     }
 
     fn func_call(&mut self, fc: &FuncCall) {
         self.func_calls
             .entry(fc.name.clone())
             .and_modify(|calls| {
-                calls.insert(fc.clone());
+                calls.push(fc.clone());
             })
             .or_insert([fc.clone()].into_iter().collect());
     }
@@ -584,7 +608,7 @@ impl WolframContext {
         self.func_defs
             .entry(fd.call.name.clone())
             .and_modify(|calls| {
-                calls.insert(fd.clone());
+                calls.push(fd.clone());
             })
             .or_insert([fd.clone()].into_iter().collect());
     }
@@ -608,15 +632,20 @@ impl WolframContext {
             _ => (),
         }
     }
-
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
-struct File { name: String, cntxt: WolframContext }
+struct File {
+    name: String,
+    cntxt: WolframContext,
+}
 
 impl From<(String, WolframContext)> for File {
     fn from(value: (String, WolframContext)) -> Self {
-        File { name: value.0, cntxt: value.1 }
+        File {
+            name: value.0,
+            cntxt: value.1,
+        }
     }
 }
 
@@ -652,15 +681,15 @@ impl WolframFiles {
         self.current_cntxt().register_expr(e)
     }
 
-    fn func_defs_glob(&self) -> HashSet<String> {
+    fn func_defs_glob(&self) -> HashMap<String, Vec<FuncDef>> {
         self.func_defs_from(0..self.files.len())
     }
 
-    fn func_defs_from(&self, span: ops::Range<usize>) -> HashSet<String> {
-        let mut func_defs = HashSet::new();
+    fn func_defs_from(&self, span: ops::Range<usize>) -> HashMap<String, Vec<FuncDef>> {
+        let mut func_defs = HashMap::new();
         for i in span {
             for def in self.files[i].cntxt.func_defs() {
-                func_defs.insert(def);
+                func_defs.insert(def.0, def.1);
             }
         }
         func_defs
@@ -676,7 +705,7 @@ impl WolframFiles {
         for i in span {
             let f = &self.files[i];
             for call in f.cntxt.func_calls() {
-                if !glob_defs.contains(&call) {
+                if !glob_defs.contains_key(&call) {
                     builtins.insert(call);
                 }
             }
@@ -768,7 +797,6 @@ impl Parser {
     }
 
     fn peek(&mut self) -> Option<&Wolfram> {
-
         self.token_iter.peek().map(|(t, _)| t)
     }
 
@@ -900,7 +928,7 @@ fn parse_call(name: String, t: &mut Parser) -> SymExpr {
     let call = FuncCall { name, args };
     if t.check(&W::Def) {
         let fd = SymExpr::FuncDef(parse_func_def(call, t));
-        t.glob_cntxt.register_expr(&fd);
+        //t.glob_cntxt.register_expr(&fd);
         fd
     } else {
         //t.cntxt.func_call(&call);
@@ -1177,5 +1205,15 @@ pub fn load_rubi() {
         //assert_tok!(t, &Wolfram::NL);
     }
 
-    assert!(false, "{:?}", t.glob_cntxt.builtin_fns_glob());
+    let mut buf = String::new();
+    let defs = t.glob_cntxt.func_defs_from(0..1);
+
+    for def in defs {
+        buf += &format!("DEFINE {}:\n", def.0);
+        for func in def.1 {
+            buf += &format!("{:?}\n", func);
+        }
+    }
+    println!("{buf}");
+    //assert!(false, "{buf}");
 }

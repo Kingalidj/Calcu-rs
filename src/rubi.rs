@@ -333,7 +333,13 @@ impl WlfrmBuiltins {
 
     //Floor,
     //Abs,
-    //Not,
+    Not(arg: WArgs) {
+        let e = arg!(arg);
+        match e {
+            WlfrmAtom::Bool(b) => !b,
+            _ => todo!(),
+            }
+    }
     //Zeta,
 
     //Factor,
