@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use calcu_rs::expr as e;
+use calcu_rs::{SymbolicExpr, expr as e};
 
 fn main() {
     env_logger::builder()
@@ -15,7 +15,10 @@ fn main() {
 
     // (x^2-1)/(x+1) = x
 
-    println!("{}", e!(x*y) == e!(y*x));
+    let e = e!(sin(x)^3 + cos(x + pi/6)^3 - sin(x + pi/3)^3 + 3*sin(3*x)/4);
+
+    println!("{e}");
+    println!("{}", e.simplify_trig().reduce());
 
     //println!("{a}");
 

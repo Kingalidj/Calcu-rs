@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 calcurs_macros = { path = "macros" }
-bitflags = "2.6.0"
+# bitflags = "2.6.0"
 malachite = "0.4.15"
 fxhash = "0.2.1"
 # ref-cast = "1.0.23"

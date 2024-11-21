@@ -144,12 +144,24 @@ impl Atom {
     pub fn is_const(&self) -> bool {
         self.is_number()
     }
-    pub(crate) fn is_coeff(&self) -> bool {
-        self.is_rational() || self.is_undef()
+    pub fn is_sin(&self) -> bool {
+        match self {
+            Atom::Func(f) => f.is_sin(),
+            _ => false,
+        }
     }
-    pub(crate) fn is_term(&self) -> bool {
-        !self.is_coeff()
+    pub fn is_cos(&self) -> bool {
+        match self {
+            Atom::Func(f) => f.is_cos(),
+            _ => false,
+        }
     }
+    //pub(crate) fn is_coeff(&self) -> bool {
+    //    self.is_rational() || self.is_undef()
+    //}
+    //pub(crate) fn is_term(&self) -> bool {
+    //    !self.is_coeff()
+    //}
 
     pub fn try_unwrap_int(&self) -> Option<Int> {
         match self {
@@ -235,18 +247,31 @@ pub enum Irrational {
     TryUnwrap,
     Serialize,
     Deserialize,
+    IsVariant,
 )]
 #[unwrap(ref)]
 #[try_unwrap(ref)]
 #[display("{}({_0})", self.name())]
 pub enum Func {
     Sin(Expr),
-    Cos(Expr),
-    Tan(Expr),
-    Sec(Expr),
     ArcSin(Expr),
+
+    Cos(Expr),
     ArcCos(Expr),
+
+    Tan(Expr),
     ArcTan(Expr),
+
+    Sec(Expr),
+    ArcSec(Expr),
+
+    Cot(Expr),
+    ArcCot(Expr),
+
+    // 1 / sin(x)
+    Csc(Expr),
+    ArcCsc(Expr),
+
     //Exp(Expr),
     #[display("{}{_1}", self.name())]
     Log(Real, Expr),
@@ -260,12 +285,17 @@ impl Func {
     pub fn is_trig(&self) -> bool {
         match self {
             Func::Sin(_)
-            | Func::Cos(_)
-            | Func::Tan(_)
-            | Func::Sec(_)
             | Func::ArcSin(_)
+            | Func::Cos(_)
             | Func::ArcCos(_)
-            | Func::ArcTan(_) => true,
+            | Func::Tan(_)
+            | Func::ArcTan(_)
+            | Func::Sec(_) 
+            | Func::ArcSec(_) 
+            | Func::Cot(_)
+            | Func::ArcCot(_) 
+            | Func::Csc(_)
+            | Func::ArcCsc(_) => true,
             _ => false,
         }
     }
@@ -284,12 +314,17 @@ impl Func {
     pub fn name(&self) -> String {
         match self {
             Func::Sin(_) => "sin",
-            Func::Cos(_) => "cos",
-            Func::Tan(_) => "tan",
-            Func::Sec(_) => "sec",
             Func::ArcSin(_) => "arcsin",
+            Func::Cos(_) => "cos",
             Func::ArcCos(_) => "arccos",
+            Func::Tan(_) => "tan",
             Func::ArcTan(_) => "arctan",
+            Func::Sec(_) => "sec",
+            Func::ArcSec(_) => "arcsec",
+            Func::Cot(_) => "cot",
+            Func::ArcCot(_) => "arccot",
+            Func::Csc(_) => "csc",
+            Func::ArcCsc(_) => "arccsc",
             //Func::Exp(_) => "exp",
             Func::Log(Real::Irrational(Irrational::E), _) => "ln".into(),
             Func::Log(Real::Rational(r), _) if r == &Rational::from(10) => "log".into(),
@@ -322,6 +357,11 @@ impl Func {
             F::ArcSin(f) => d(f) * E::pow(e(1) - E::pow(f, e(2)), r(-1, 2)),
             F::ArcCos(f) => d(f) * e(-1) * E::pow(e(1) - E::pow(f, e(2)), r(-1, 2)),
             F::ArcTan(f) => d(f) * E::pow(e(1) + E::pow(f, e(2)), e(-1)),
+            F::ArcSec(f) => d(&E::arc_cos(e(1) / f)),
+            F::Cot(f) => d(f) * e(-1) * E::pow(E::csc(f), e(2)),
+            F::ArcCot(f) => e(-1) * d(f) / (E::pow(f, e(2)) + e(1)),
+            F::Csc(f) => d(f) * e(-1) * E::cot(f) * E::csc(f),
+            F::ArcCsc(f) => e(-1) * d(f) / (E::sqrt(e(1) - e(1)/E::pow(f, e(2))) * E::pow(f, e(2))),
             F::Log(base, f) => d(f) * E::pow(f * E::ln(E::from(base.clone())), e(-1)),
             //F::Exp(f) => E::exp(f) * d(f),
         }
@@ -338,7 +378,7 @@ impl Eq for Sum {}
 impl PartialEq for Sum {
     fn eq(&self, other: &Self) -> bool {
         if self.n_args() != other.n_args() {
-            return false
+            return false;
         }
 
         let mut largs = self.args.clone();
@@ -415,7 +455,7 @@ impl Eq for Prod {}
 impl PartialEq for Prod {
     fn eq(&self, other: &Self) -> bool {
         if self.n_args() != other.n_args() {
-            return false
+            return false;
         }
 
         let mut largs = self.args.clone();
@@ -668,12 +708,17 @@ impl Expr {
     }
 
     func_atom!(cos);
-    func_atom!(sin);
-    func_atom!(tan);
-    func_atom!(sec);
-    func_atom!(arc_sin);
     func_atom!(arc_cos);
+    func_atom!(sin);
+    func_atom!(arc_sin);
+    func_atom!(tan);
     func_atom!(arc_tan);
+    func_atom!(sec);
+    func_atom!(arc_sec);
+    func_atom!(cot);
+    func_atom!(arc_cot);
+    func_atom!(csc);
+    func_atom!(arc_csc);
 
     pub fn exp(e: impl Borrow<Expr>) -> Expr {
         Expr::pow(Expr::e(), e)
@@ -753,6 +798,22 @@ impl Expr {
         self.try_unwrap_func_ref().is_ok_and(Func::is_trig)
     }
 
+    pub fn try_as_div(&self) -> Option<(Expr, Expr)> {
+        if self.is_pow() && self.exponent().is_min_one() {
+            Some((Expr::min_one(), self.base().clone()))
+        } else if self.is_prod() {
+            Some(self.iter_args().map(|a| match a.exponent().is_neg() {
+                true => Err(Expr::pow(a.base(), Expr::min_one() * a.exponent())),
+                false => Ok(a),
+            }).fold((Expr::one(), Expr::one()), |(n, d), rhs| match rhs {
+                Ok(numer) => (n * numer, d),
+                Err(denom) => (n, d * denom),
+            }))
+        } else {
+            None
+        }
+    }
+
     //pub fn r#const(&self) -> Expr {
     //    match self.flatten().atom() {
     //        Atom::Var(_) | Atom::Sum(_) | Atom::Pow(_) | Atom::Func(_) => Expr::one(),
@@ -765,26 +826,39 @@ impl Expr {
     //    }
     //}
 
-    pub fn coeff(&self) -> Expr {
+    pub fn rational_coeff(&self) -> Option<Rational> {
+        if self.is_undef() {
+            return None;
+        }
+
         match self.flatten().atom() {
             Atom::Irrational(_) | Atom::Var(_) | Atom::Sum(_) | Atom::Pow(_) | Atom::Func(_) => {
-                Expr::one()
+                Some(Rational::ONE)
             }
             Atom::Prod(prod) => prod
                 .iter_args()
-                .filter(|a| a.is_coeff())
-                .cloned()
-                .fold(Expr::one(), |lhs, rhs| lhs * rhs),
-            Atom::Undef | Atom::Rational(_) => self.clone(),
+                .filter_map(|a| a.try_unwrap_rational_ref().ok())
+                .fold(Rational::ONE, |lhs, rhs| lhs * rhs)
+                .into(),
+            Atom::Rational(r) => Some(r.clone()),
+            Atom::Undef => None,
         }
     }
-    pub fn term(&self) -> Option<Expr> {
+    pub fn non_rational_term(&self) -> Option<Expr> {
+        if self.is_undef() {
+            return None;
+        }
+
         match self.flatten().atom() {
             Atom::Irrational(_) | Atom::Var(_) | Atom::Sum(_) | Atom::Pow(_) | Atom::Func(_) => {
                 Some(self.clone())
             }
             Atom::Prod(prod) => {
-                let mut terms: Vec<_> = prod.iter_args().filter(|a| a.is_term()).cloned().collect();
+                let mut terms: Vec<_> = prod
+                    .iter_args()
+                    .filter(|a| !a.is_rational())
+                    .cloned()
+                    .collect();
 
                 if terms.is_empty() {
                     None
@@ -1148,29 +1222,36 @@ impl SymbolicExpr for Func {
         //let mut e = self.clone();
         let e = self.clone().map_args(|a| *a = a.reduce());
         match e {
-            // sin(0) => 0
-            F::Sin(x) if x.is_zero() => x.clone(),
+            F::Sin(x) => {
+                if x.is_zero() {
+                    return Expr::zero()
+                }
 
-            F::Sin(x)
-                if x.is_prod()
-                    && x.n_args() != 0
-                    && x.args()[0].is_rational_and(|r| r.is_int() && r.is_neg()) =>
-            {
-                let (n, x) = x.atom().clone().unwrap_prod().as_binary_mul();
-                debug_assert!(n.is_int() && n.is_neg());
-                let n = n.atom().unwrap_int();
-                Expr::min_one() * Expr::sin(Expr::from(n.abs()) * x)
+                if let Some(c) = x.rational_coeff() {
+                    if c.is_min_one() {
+                        return Expr::min_one() * Expr::sin(x.non_rational_term().unwrap())
+                    } else if c.is_neg() {
+                        return Expr::min_one() * Expr::sin(Expr::min_one() * x)
+                    }
+                } 
+                
+                Expr::sin(x)
             }
 
-            F::Cos(x)
-                if x.is_prod()
-                    && x.n_args() != 0
-                    && x.args()[0].is_rational_and(|r| r.is_int() && r.is_neg()) =>
-            {
-                let (n, x) = x.atom().clone().unwrap_prod().as_binary_mul();
-                debug_assert!(n.is_int() && n.is_neg());
-                let n = n.atom().unwrap_int();
-                Expr::cos(Expr::from(n.abs()) * x)
+            F::Cos(x) => {
+                if x.is_zero() {
+                    return Expr::one()
+                }
+
+                if let Some(c) = x.rational_coeff() {
+                    if c.is_min_one() {
+                        return Expr::cos(x.non_rational_term().unwrap())
+                    } else if c.is_neg() {
+                        return Expr::cos(Expr::min_one() * x)
+                    }
+                } 
+                
+                Expr::cos(x)
             }
             // sin(pi/6) => 1/2
             // sin(pi/4) => 1/sqrt(2)
@@ -1190,9 +1271,14 @@ impl SymbolicExpr for Func {
             | F::Cos(x)
             | F::Tan(x)
             | F::Sec(x)
+            | F::Cot(x)
+            | F::Csc(x)
             | F::ArcSin(x)
             | F::ArcCos(x)
             | F::ArcTan(x)
+            | F::ArcSec(x)
+            | F::ArcCot(x)
+            | F::ArcCsc(x)
             | F::Log(_, x) => slice::from_mut(x),
         }
     }
@@ -1204,9 +1290,14 @@ impl SymbolicExpr for Func {
             | F::Cos(x)
             | F::Tan(x)
             | F::Sec(x)
+            | F::Cot(x)
+            | F::Csc(x)
             | F::ArcSin(x)
             | F::ArcCos(x)
             | F::ArcTan(x)
+            | F::ArcSec(x)
+            | F::ArcCot(x)
+            | F::ArcCsc(x)
             | F::Log(_, x) => slice::from_ref(x),
         }
     }
@@ -1297,10 +1388,10 @@ mod test {
 
     #[test]
     fn term_const() {
-        eq!(e!(2 * y).term(), Some(e!(y)));
-        eq!(e!(x * y).term(), Some(e!(x * y)));
-        eq!(e!(x).coeff(), e!(1));
-        eq!(e!(2 * x).coeff(), e!(2));
-        eq!(e!(y * x).coeff(), e!(1));
+        eq!(e!(2 * y).non_rational_term(), Some(e!(y)));
+        eq!(e!(x * y).non_rational_term(), Some(e!(x * y)));
+        eq!(e!(x).rational_coeff(), Some(Rational::ONE));
+        eq!(e!(2 * x).rational_coeff(), Some(Rational::TWO));
+        eq!(e!(y * x).rational_coeff(), Some(Rational::ONE));
     }
 }

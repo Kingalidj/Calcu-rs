@@ -165,6 +165,14 @@ impl Int {
         //num_prime::nt_funcs::factorize(self.0);
         todo!()
     }
+
+    pub fn pow(&self, expon: &Self) -> Option<Self> {
+        if let Ok(n) = u64::try_from(&expon.0) {
+            Some(Self(marith::Pow::pow(self.0.clone(), n)))
+        } else {
+            None
+        }
+    }
 }
 
 impl num::One for Int {
@@ -268,6 +276,9 @@ impl Rational {
             false
         }
     }
+    pub fn is_odd(&self) -> bool {
+        self.is_int() && !self.is_even()
+    }
 
     /// none if [self] is zero
     #[inline(always)]
@@ -288,6 +299,10 @@ impl Rational {
 
     pub fn abs(self) -> Self {
         Self(marith::Abs::abs(self.0))
+    }
+
+    pub fn floor(self) -> Int {
+        Int(marith::Floor::floor(self.0))
     }
 
     pub fn div_rem(&self) -> (Self, Self) {
@@ -360,6 +375,15 @@ impl Rational {
             None
         } else {
             Some(pow)
+        }
+    }
+
+    pub fn int_gcd(&self, rhs: &Self) -> Option<Rational> {
+        if self.denom() == rhs.denom() {
+            let n_gcd = Rational::from(self.numer().gcd(&rhs.numer()));
+            Some(n_gcd / Rational::from(self.denom()))
+        } else {
+            None
         }
     }
 }
