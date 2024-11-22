@@ -1,9 +1,8 @@
 use crate::{
     polynomial::{MonomialView, PolynomialView, VarSet},
-    rational::{Int, Rational},
+    rational::Rational,
     sym_fmt,
-    transforms::TransformStep,
-    utils::{self, log_macros::*, HashSet},
+    utils::{log_macros::*, HashSet},
 };
 use std::{borrow::Borrow, cmp, fmt, hash, ops, slice};
 
@@ -25,29 +24,18 @@ struct Derivative {
     Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Display, Debug, From, Serialize, Deserialize,
 )]
 #[from(&str, String)]
+#[debug("{_0}")]
 pub struct Var(pub(crate) PTR<str>);
 
 #[derive(
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Debug,
-    From,
-    IsVariant,
-    Unwrap,
-    TryUnwrap,
-    Serialize,
-    Deserialize,
+    Clone, PartialEq, Eq, Hash, Debug, From, IsVariant, Unwrap, TryUnwrap, Serialize, Deserialize,
 )]
 #[unwrap(ref)]
 #[try_unwrap(ref)]
 pub enum Atom {
     #[debug("undef")]
     Undef,
-    #[from(i32, i64, u32, u64, Int, Rational)]
+    #[from(i32, i64, u32, u64, i128, Rational)]
     #[debug("{_0:?}")]
     Rational(Rational),
     #[from]
@@ -126,13 +114,9 @@ impl Atom {
     }
     pub fn is_irreducible(&self) -> bool {
         match self {
-            Atom::Undef
-            | Atom::Rational(_)
-            | Atom::Irrational(_)
-            | Atom::Var(_)
-            | Atom::Func(_) => true,
+            Atom::Undef | Atom::Rational(_) | Atom::Irrational(_) | Atom::Var(_) => true,
 
-            Atom::Sum(_) | Atom::Prod(_) | Atom::Pow(_) => false,
+            Atom::Func(_) | Atom::Sum(_) | Atom::Prod(_) | Atom::Pow(_) => false,
         }
     }
     pub fn is_rational_and(&self, cond: impl Fn(&Rational) -> bool) -> bool {
@@ -163,15 +147,22 @@ impl Atom {
     //    !self.is_coeff()
     //}
 
-    pub fn try_unwrap_int(&self) -> Option<Int> {
+    pub fn try_unwrap_int(&self) -> Option<i128> {
         match self {
-            Atom::Rational(r) if r.is_int() && r.is_neg() => Some(Int::MINUS_ONE * r.numer()),
-            Atom::Rational(r) if r.is_int() => Some(r.numer()),
+            Atom::Rational(r) if r.is_int() => Some(r.numer().into()),
             _ => None,
         }
     }
-    pub fn unwrap_int(&self) -> Int {
+    pub fn unwrap_int(&self) -> i128 {
         self.try_unwrap_int().unwrap()
+    }
+
+    pub fn try_as_real(&self) -> Option<Real> {
+        match self {
+            Atom::Rational(r) => Some(Real::Rational(*r)),
+            Atom::Irrational(i) => Some(Real::Irrational(*i)),
+            _ => None,
+        }
     }
 
     pub fn for_each_arg<'a>(&'a self, func: impl FnMut(&'a Expr)) {
@@ -183,9 +174,101 @@ impl Atom {
     }
 }
 
-#[derive(
-    Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Display, From, Serialize, Deserialize,
-)]
+impl PartialOrd for Atom {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+fn cmp_slice_rev(lhs: &[Expr], rhs: &[Expr]) -> cmp::Ordering {
+    let args = lhs.iter().rev().zip(rhs.iter().rev());
+
+    for (l, r) in args {
+        if !l.cmp(r).is_eq() {
+            return l.cmp(r)
+        }
+    }
+
+    lhs.len().cmp(&rhs.len())
+}
+fn cmp_slice(lhs: &[Expr], rhs: &[Expr]) -> cmp::Ordering {
+    let args = lhs.iter().zip(rhs.iter());
+
+    for (l, r) in args {
+        if !l.cmp(r).is_eq() {
+            return l.cmp(r)
+        }
+    }
+
+    lhs.len().cmp(&rhs.len())
+}
+
+impl Ord for Atom {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        use Atom as A;
+        let (lhs, rhs) = (self, other);
+
+        let (r1, r2) = (lhs.try_as_real(), rhs.try_as_real());
+        if let (Some(l), Some(r)) = (&r1, &r2) {
+            return l.cmp(r);
+        } else if r1.is_some() {
+            return cmp::Ordering::Less
+        } else if r2.is_some() {
+            return cmp::Ordering::Greater
+        }
+
+        match (lhs, rhs) {
+            (A::Var(l), A::Var(r)) => l.cmp(r),
+            (A::Prod(_), A::Prod(_)) | (A::Sum(_), A::Sum(_)) => {
+                cmp_slice_rev(lhs.args(), rhs.args())
+            }
+            (A::Pow(p1), A::Pow(p2)) => {
+                if p1.base() != p2.base() {
+                    p1.base().cmp(p2.base())
+                } else {
+                    p1.exponent().cmp(p2.exponent())
+                }
+            }
+            (A::Func(f1), A::Func(f2)) => {
+                let (n1, n2) = (f1.name(), f2.name());
+                if n1 != n2 {
+                    n1.cmp(&n2)
+                } else {
+                    cmp_slice(f1.args(), f2.args())
+                }
+            }
+            (A::Prod(_) | A::Sum(_), _) => {
+                if lhs.n_args() == 0 {
+                    cmp::Ordering::Less
+                } else if lhs.args().last().unwrap().atom() != rhs {
+                    lhs.args().last().unwrap().atom().cmp(rhs)
+                } else {
+                    cmp::Ordering::Greater
+                }
+            }
+            (A::Pow(p), _) => {
+                if p.base().atom() != rhs {
+                    p.base().atom().cmp(rhs)
+                } else {
+                    p.exponent().atom().cmp(&A::ONE)
+                }
+            }
+            (A::Func(f), A::Var(v)) => {
+                let n = f.name();
+                if n == *v.0 {
+                    cmp::Ordering::Greater
+                } else {
+                    n.as_str().cmp(&v.0)
+                }
+            }
+            (_, _) => {
+                rhs.cmp(lhs).reverse()
+            }
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Display, From, Serialize, Deserialize)]
 #[from(forward)]
 pub enum Real {
     #[debug("{_0}")]
@@ -194,9 +277,28 @@ pub enum Real {
     Irrational(Irrational),
 }
 
+impl PartialOrd for Real {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for Real {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        use ordered_float::OrderedFloat;
+        OrderedFloat(self.f64_approx()).cmp(&OrderedFloat(other.f64_approx()))
+    }
+}
+
 impl Real {
     pub const E: Real = Real::Irrational(Irrational::E);
     pub const PI: Real = Real::Irrational(Irrational::PI);
+
+    pub fn f64_approx(&self) -> f64 {
+        match self {
+            Real::Rational(r) => r.f64_approx(),
+            Real::Irrational(i) => i.f64_approx(),
+        }
+    }
 }
 
 impl PartialEq<Atom> for Real {
@@ -232,6 +334,15 @@ pub enum Irrational {
     #[debug("pi")]
     #[display("{}", unicode::pi())]
     PI,
+}
+
+impl Irrational {
+    pub fn f64_approx(&self) -> f64 {
+        match self {
+            Irrational::E => std::f64::consts::E,
+            Irrational::PI => std::f64::consts::PI,
+        }
+    }
 }
 
 #[derive(
@@ -290,10 +401,10 @@ impl Func {
             | Func::ArcCos(_)
             | Func::Tan(_)
             | Func::ArcTan(_)
-            | Func::Sec(_) 
-            | Func::ArcSec(_) 
+            | Func::Sec(_)
+            | Func::ArcSec(_)
             | Func::Cot(_)
-            | Func::ArcCot(_) 
+            | Func::ArcCot(_)
             | Func::Csc(_)
             | Func::ArcCsc(_) => true,
             _ => false,
@@ -361,7 +472,9 @@ impl Func {
             F::Cot(f) => d(f) * e(-1) * E::pow(E::csc(f), e(2)),
             F::ArcCot(f) => e(-1) * d(f) / (E::pow(f, e(2)) + e(1)),
             F::Csc(f) => d(f) * e(-1) * E::cot(f) * E::csc(f),
-            F::ArcCsc(f) => e(-1) * d(f) / (E::sqrt(e(1) - e(1)/E::pow(f, e(2))) * E::pow(f, e(2))),
+            F::ArcCsc(f) => {
+                e(-1) * d(f) / (E::sqrt(e(1) - e(1) / E::pow(f, e(2))) * E::pow(f, e(2)))
+            }
             F::Log(base, f) => d(f) * E::pow(f * E::ln(E::from(base.clone())), e(-1)),
             //F::Exp(f) => E::exp(f) * d(f),
         }
@@ -369,9 +482,28 @@ impl Func {
 }
 
 #[derive(Clone, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "default_debug", derive(Debug))]
 pub struct Sum {
     pub args: Vec<Expr>,
+}
+
+impl fmt::Debug for Sum {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.n_args() == 0 {
+            return write!(f, "Sum[]");
+        } else if self.n_args() == 1 {
+            return write!(f, "Sum[{:?}]", self.args[0]);
+        }
+        let mut args = self.args.iter();
+
+        if let Some(a) = args.next() {
+            write!(f, "Sum[{a:?}")?;
+        }
+
+        for a in args {
+            write!(f, ", {a:?}")?;
+        }
+        write!(f, "]")
+    }
 }
 
 impl Eq for Sum {}
@@ -428,27 +560,29 @@ impl Sum {
     }
 }
 
-#[cfg(not(feature = "default_debug"))]
-impl fmt::Debug for Sum {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.args.is_empty() {
-            return write!(f, "(+)");
-        } else if self.args.len() == 1 {
-            return write!(f, "(+{:?})", self.args[0]);
-        }
-        utils::fmt_iter(
-            ["(", " + ", ")"],
-            self.args.iter(),
-            |a, f| write!(f, "{a:?}"),
-            f,
-        )
-    }
-}
-
 #[derive(Clone, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "default_debug", derive(Debug))]
 pub struct Prod {
     pub args: Vec<Expr>,
+}
+
+impl fmt::Debug for Prod {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.n_args() == 0 {
+            return write!(f, "Prod[]");
+        } else if self.n_args() == 1 {
+            return write!(f, "Prod[{:?}]", self.args[0]);
+        }
+        let mut args = self.args.iter();
+
+        if let Some(a) = args.next() {
+            write!(f, "Prod[{a:?}")?;
+        }
+
+        for a in args {
+            write!(f, ", {a:?}")?;
+        }
+        write!(f, "]")
+    }
 }
 
 impl Eq for Prod {}
@@ -466,23 +600,6 @@ impl PartialEq for Prod {
     }
 }
 
-#[cfg(not(feature = "default_debug"))]
-impl fmt::Debug for Prod {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.args.is_empty() {
-            return write!(f, "(*)");
-        } else if self.args.len() == 1 {
-            return write!(f, "(1*{:?})", self.args[0]);
-        }
-        utils::fmt_iter(
-            ["(", " * ", ")"],
-            self.args.iter(),
-            |a, f| write!(f, "{a:?}"),
-            f,
-        )
-    }
-}
-
 impl Prod {
     pub fn one() -> Self {
         Prod {
@@ -496,6 +613,10 @@ impl Prod {
 
     pub fn is_undef(&self) -> bool {
         self.args.first().is_some_and(|e| e.is_undef())
+    }
+
+    pub fn is_zero(&self) -> bool {
+        self.args.first().is_some_and(|e| e.is_zero())
     }
 
     pub fn first(&self) -> Option<&Atom> {
@@ -539,7 +660,6 @@ impl Prod {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "default_debug", derive(Debug))]
 pub struct Pow {
     /// [base, exponent]
     pub(crate) args: [Expr; 2],
@@ -555,7 +675,6 @@ impl Pow {
     }
 }
 
-#[cfg(not(feature = "default_debug"))]
 impl fmt::Debug for Pow {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}^{:?}", self.args[0], self.args[1])
@@ -575,7 +694,7 @@ const RECORD_STEPS: bool = false;
 #[display("{}", self.fmt_ast())]
 pub struct Expr {
     pub(crate) atom: PTR<Atom>,
-    pub(crate) expl: Option<Explanation>,
+    //pub(crate) expl: Option<Explanation>,
 }
 
 impl hash::Hash for Expr {
@@ -593,12 +712,15 @@ fn expr_as_cmp_slice<'a>(e: &'a Expr) -> &[Expr] {
 
 impl cmp::Ord for Expr {
     fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.atom().cmp(other.atom())
+        /*
         if self.is_atom() || other.is_atom() {
             return self.atom().cmp(other.atom());
         }
         let lhs = expr_as_cmp_slice(self);
         let rhs = expr_as_cmp_slice(other);
         Self::cmp_slices(lhs, rhs)
+        */
     }
 }
 impl cmp::PartialOrd for Expr {
@@ -655,7 +777,7 @@ impl Expr {
     fn from_atom(a: Atom) -> Expr {
         Self {
             atom: PTR::from(a),
-            expl: Default::default(),
+            //expl: Default::default(),
         }
     }
 
@@ -752,10 +874,13 @@ impl Expr {
         match self.atom() {
             A::Undef => self.clone(),
             A::Rational(r) => r.numer().into(),
-            A::Pow(pow) => match pow.exponent().atom() {
-                &A::MINUS_ONE => Expr::one(),
-                _ => self.clone(),
-            },
+            A::Pow(pow) => {
+                if pow.exponent().is_min_one() {
+                    Expr::one()
+                } else {
+                    self.clone()
+                }
+            }
             A::Prod(Prod { args }) => args
                 .iter()
                 .map(|a| a.numerator())
@@ -768,10 +893,13 @@ impl Expr {
         match self.atom() {
             A::Undef => self.clone(),
             A::Rational(r) => r.denom().into(),
-            A::Pow(pow) => match pow.exponent().atom() {
-                &A::MINUS_ONE => pow.base().clone(),
-                _ => Expr::one(),
-            },
+            A::Pow(pow) => {
+                if pow.exponent().is_min_one() {
+                    pow.base().clone()
+                } else {
+                    Expr::one()
+                }
+            }
             A::Prod(Prod { args }) => args
                 .iter()
                 .map(|a| a.denominator())
@@ -802,13 +930,17 @@ impl Expr {
         if self.is_pow() && self.exponent().is_min_one() {
             Some((Expr::min_one(), self.base().clone()))
         } else if self.is_prod() {
-            Some(self.iter_args().map(|a| match a.exponent().is_neg() {
-                true => Err(Expr::pow(a.base(), Expr::min_one() * a.exponent())),
-                false => Ok(a),
-            }).fold((Expr::one(), Expr::one()), |(n, d), rhs| match rhs {
-                Ok(numer) => (n * numer, d),
-                Err(denom) => (n, d * denom),
-            }))
+            Some(
+                self.iter_args()
+                    .map(|a| match a.exponent().is_neg() {
+                        true => Err(Expr::pow(a.base(), Expr::min_one() * a.exponent())),
+                        false => Ok(a),
+                    })
+                    .fold((Expr::one(), Expr::one()), |(n, d), rhs| match rhs {
+                        Ok(numer) => (n * numer, d),
+                        Err(denom) => (n, d * denom),
+                    }),
+            )
         } else {
             None
         }
@@ -831,7 +963,7 @@ impl Expr {
             return None;
         }
 
-        match self.flatten().atom() {
+        match self.atom() {
             Atom::Irrational(_) | Atom::Var(_) | Atom::Sum(_) | Atom::Pow(_) | Atom::Func(_) => {
                 Some(Rational::ONE)
             }
@@ -840,8 +972,8 @@ impl Expr {
                 .filter_map(|a| a.try_unwrap_rational_ref().ok())
                 .fold(Rational::ONE, |lhs, rhs| lhs * rhs)
                 .into(),
-            Atom::Rational(r) => Some(r.clone()),
-            Atom::Undef => None,
+            //Atom::Rational(r) => Some(r.clone()),
+            Atom::Rational(_) | Atom::Undef => None,
         }
     }
     pub fn non_rational_term(&self) -> Option<Expr> {
@@ -849,7 +981,7 @@ impl Expr {
             return None;
         }
 
-        match self.flatten().atom() {
+        match self.atom() {
             Atom::Irrational(_) | Atom::Var(_) | Atom::Sum(_) | Atom::Pow(_) | Atom::Func(_) => {
                 Some(self.clone())
             }
@@ -978,22 +1110,7 @@ impl Expr {
         cost
     }
 
-    pub fn steps(self) -> TransformStep {
-        if let Some(expl) = self.expl {
-            TransformStep {
-                explanation: expl.explanation,
-                refs: expl.refs,
-                current: self.atom,
-            }
-        } else {
-            TransformStep {
-                explanation: "".into(),
-                refs: vec![],
-                current: self.atom,
-            }
-        }
-    }
-
+    /*
     pub(crate) fn explain(mut self, explanation: impl AsRef<str>, refs: &[&Expr]) -> Self {
         if !RECORD_STEPS {
             return self;
@@ -1032,6 +1149,7 @@ impl Expr {
     pub fn clear_explanation(&mut self) {
         self.expl = None;
     }
+    */
 }
 
 #[derive(Debug)]
@@ -1124,7 +1242,6 @@ impl SymbolicExpr for Expr {
             A::Pow(pow) => pow.reduce(),
             A::Func(func) => func.reduce(),
         }
-        .explain("reduce", &[self])
     }
 
     fn args(&self) -> &[Expr] {
@@ -1182,12 +1299,23 @@ impl SymbolicExpr for Prod {
 impl SymbolicExpr for Pow {
     fn reduce(&self) -> Expr {
         use Atom as A;
+        if self.base().is_undef()
+            || self.exponent().is_undef()
+            || (self.base().is_zero() && self.exponent().is_zero())
+            || (self.base().is_zero() && self.exponent().is_neg())
+        {
+            return Expr::undef();
+        }
+
+        if self.base().is_one() {
+            return Expr::one();
+        } else if self.exponent().is_one() {
+            return self.base().clone();
+        } else if self.exponent().is_zero() {
+            return Expr::one();
+        }
+
         match (self.base().atom(), self.exponent().atom()) {
-            (A::Undef, _) | (_, A::Undef) | (&A::ZERO, &A::ZERO) => Expr::undef(),
-            (&A::ZERO, A::Rational(r)) if r.is_neg() => Expr::undef(),
-            (&A::ZERO, A::Rational(_)) => Expr::zero(),
-            (&A::ONE, _) => Expr::one(),
-            (_, &A::ONE) => self.base().clone(),
             (A::Rational(b), A::Rational(e)) => {
                 let (res, rem) = b.clone().pow(e.clone());
                 if rem.is_zero() {
@@ -1224,33 +1352,33 @@ impl SymbolicExpr for Func {
         match e {
             F::Sin(x) => {
                 if x.is_zero() {
-                    return Expr::zero()
+                    return Expr::zero();
                 }
 
                 if let Some(c) = x.rational_coeff() {
                     if c.is_min_one() {
-                        return Expr::min_one() * Expr::sin(x.non_rational_term().unwrap())
+                        return Expr::min_one() * Expr::sin(x.non_rational_term().unwrap());
                     } else if c.is_neg() {
-                        return Expr::min_one() * Expr::sin(Expr::min_one() * x)
+                        return Expr::min_one() * Expr::sin(Expr::min_one() * x);
                     }
-                } 
-                
+                }
+
                 Expr::sin(x)
             }
 
             F::Cos(x) => {
                 if x.is_zero() {
-                    return Expr::one()
+                    return Expr::one();
                 }
 
                 if let Some(c) = x.rational_coeff() {
                     if c.is_min_one() {
-                        return Expr::cos(x.non_rational_term().unwrap())
+                        return Expr::cos(x.non_rational_term().unwrap());
                     } else if c.is_neg() {
-                        return Expr::cos(Expr::min_one() * x)
+                        return Expr::cos(Expr::min_one() * x);
                     }
-                } 
-                
+                }
+
                 Expr::cos(x)
             }
             // sin(pi/6) => 1/2
@@ -1373,7 +1501,7 @@ mod test {
         eq!(d(e!(x ^ 2)), e!(2 * x));
         eq!(d(e!(sin(x))), e!(cos(x)));
         eq!(d(e!(exp(x))), e!(exp(x)));
-        eq!(d(e!(x * exp(x))), e!((x + 1) * exp(x)));
+        eq!(d(e!(x * exp(x))), e!(exp(x) * (1 + x)));
         eq!(d(e!(ln(x))), e!(1 / x));
         eq!(d(e!(1 / x)), e!(-1 / x ^ 2));
         eq!(d(e!(tan(x))), e!(sec(x) ^ 2));

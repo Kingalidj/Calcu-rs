@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use calcu_rs::{SymbolicExpr, expr as e};
+use calcu_rs::{expr as e, SymbolicExpr};
 
 fn main() {
     env_logger::builder()
@@ -15,12 +15,27 @@ fn main() {
 
     // (x^2-1)/(x+1) = x
 
-    let e = e!(sin(x)^3 + cos(x + pi/6)^3 - sin(x + pi/3)^3 + 3*sin(3*x)/4);
+    // let e = e!(sin(x) + sin(y) - 2*sin(x/2 + y/2)*cos(x/2 - y/2)).reduce();
+    //rintln!("{e}");
+    //println!("{}", e.simplify_trig().reduce());
+    // let e = e.contract_trig().expand();
+    // println!("{e}");
+    // println!("{}", e.reduce());
 
-    println!("{e}");
-    println!("{}", e.simplify_trig().reduce());
+     println!("{}", e!(add_raw(-x - y, x)).reduce());
+    // println!("{}", e!(mul_raw(sin(x) * sin(y), 1/ sin(x) * 1/ sin(y))).reduce());
+    // println!();
+    // println!();
+    //let n = e.numerator();
+    //println!("{n}");
 
     //println!("{a}");
+     let mut arr = vec![e!(x), e!(y), e!(-x), e!(-y)];
+     arr.sort();
+     println!("{:?}", arr);
+     println!("{}", e!(x) > e!(y));
+     println!("{}", e!(-x) > e!(-y));
+     println!("{}", e!(-x) > e!(y));
 
     //a.clear_explanation();
     //let eclass = a.simplify();

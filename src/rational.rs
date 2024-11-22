@@ -1,16 +1,11 @@
 use std::{cmp::Ordering, ops, str::FromStr};
 
 use calcurs_macros::arith_ops;
-use derive_more::{
-    Add, AddAssign, Debug, Display, Div, DivAssign, From, Into, Mul, MulAssign, Sub, SubAssign,
-};
+use derive_more::{Add, AddAssign, Debug, Display, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
+use ref_cast::RefCast;
 use serde::{Deserialize, Serialize};
 
-use malachite::{
-    self as mal,
-    num::{arithmetic::traits as marith, conversion::traits as mconv},
-};
-
+/*
 #[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Display, From, Into)]
 #[arith_ops(ref, self.0)]
 #[from(i32, u32, i64, u64)]
@@ -199,6 +194,7 @@ impl num::ToPrimitive for Int {
     }
 }
 
+/*
 impl TryFrom<Rational> for Int {
     type Error = ();
     fn try_from(value: Rational) -> Result<Self, Self::Error> {
@@ -208,38 +204,135 @@ impl TryFrom<Rational> for Int {
         }
     }
 }
+*/
+*/
 
-#[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Display, From)]
+//#[derive(Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Display, RefCast)]
+//#[arith_ops(ref, self.0)]
+//#[debug("{}", self.0)]
+//#[repr(transparent)]
+//pub struct Int(i128);
+//
+//impl From<i128> for Int {
+//    fn from(value: i128) -> Self {
+//        Self(value.into())
+//    }
+//}
+//
+//impl From<Int> for Rational {
+//    fn from(value: Int) -> Self {
+//        Self::new_int(value.0)
+//    }
+//}
+//
+//impl ops::Deref for Int {
+//    type Target = i128;
+//
+//    fn deref(&self) -> &Self::Target {
+//        todo!()
+//    }
+//}
+//
+//impl Int {
+//    pub const MINUS_TWO: Self = Int::new(-2);
+//    pub const MINUS_ONE: Self = Int::new(-1);
+//    pub const ZERO: Self = Int::new(0);
+//    pub const ONE: Self = Int::new(1);
+//    pub const TWO: Self = Int::new(2);
+//
+//    pub const fn new(v: i128) -> Self {
+//        Self(v)
+//    }
+//
+//    pub fn binomial_coeff(n: i128, k: i128) -> i128 {
+//        num::integer::binomial(n, k)
+//    }
+//}
+
+pub type Int = i128;
+
+pub fn binomial_coeff(n: Int, k: Int) -> Int {
+    num::integer::binomial(n, k)
+}
+
+/*
+impl From<Int> for Rational {
+    fn from(value: Int) -> Self {
+        Self::new_int(value.0)
+    }
+}
+*/
+
+#[derive(
+    Default,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Debug,
+    Display,
+    Serialize,
+    Deserialize,
+)]
 #[arith_ops(ref, self.0)]
-#[from(i64, i32, u64, u32, Int)]
 #[debug("{}", self.0)]
-pub struct Rational(pub(crate) mal::Rational);
+pub struct Rational(pub(crate) num_rational::Ratio<Int>);
+//pub struct Rational(pub(crate) mal::Rational);
 
 impl Rational {
-    pub const MINUS_TWO: Self = Rational(mal::Rational::const_from_signed(-2));
-    pub const MINUS_ONE: Self = Rational(mal::Rational::const_from_signed(-1));
-    pub const ZERO: Self = Rational(mal::Rational::const_from_signed(0));
-    pub const ONE: Self = Rational(mal::Rational::const_from_signed(1));
-    pub const TWO: Self = Rational(mal::Rational::const_from_signed(2));
+    //pub const MINUS_TWO: Self = Rational(mal::Rational::const_from_signed(-2));
+    //pub const MINUS_ONE: Self = Rational(mal::Rational::const_from_signed(-1));
+    //pub const ZERO: Self = Rational(mal::Rational::const_from_signed(0));
+    //pub const ONE: Self = Rational(mal::Rational::const_from_signed(1));
+    //pub const TWO: Self = Rational(mal::Rational::const_from_signed(2));
 
-    pub const fn new_int(n: i64) -> Self {
-        Rational(mal::Rational::const_from_signed(n))
+    pub const MINUS_TWO: Self = Rational::new_raw(-2, 1);
+    pub const MINUS_ONE: Self = Rational::new_raw(-1, 1);
+    pub const ZERO: Self = Rational::new_raw(0, 1);
+    pub const ONE: Self = Rational::new_raw(1, 1);
+    pub const TWO: Self = Rational::new_raw(2, 1);
+
+    const fn new_raw(n: Int, d: Int) -> Self {
+        Self(num_rational::Ratio::new_raw(n, d))
     }
 
-    pub fn numer(&self) -> Int {
-        let sign = match self.is_neg() {
-            true => Int::MINUS_ONE,
-            false => Int::ONE,
-        };
-        sign * Int(mal::Integer::from(self.0.numerator_ref().clone()))
+    pub fn new(n: impl Into<Int>, d: impl Into<Int>) -> Self {
+        Self(num_rational::Ratio::new(n.into(), d.into()))
+    }
+
+    pub const fn new_int(n: Int) -> Self {
+        //Rational(mal::Rational::const_from_signed(n))
+        Self::new_raw(n, 1)
+    }
+
+    pub const fn numer(&self) -> Int {
+        *self.0.numer()
+        //let sign = match self.is_neg() {
+        //    true => Int::MINUS_ONE,
+        //    false => Int::ONE,
+        //};
+        //sign * Int(mal::Integer::from(self.0.numerator_ref().clone()))
     }
 
     pub fn to_int(&self) -> Option<Int> {
-        Some(Int(mal::Integer::try_from(self.0.clone()).ok()?))
+        if self.0.is_integer() {
+            Some(self.0.to_integer())
+        } else {
+            None
+        }
+        //Some(Int(mal::Integer::try_from(self.0.clone()).ok()?))
     }
 
-    pub fn denom(&self) -> Int {
-        Int(mal::Integer::from(self.0.denominator_ref().clone()))
+    pub fn f64_approx(&self) -> f64 {
+        self.numer() as f64 / self.denom() as f64
+    }
+
+    pub const fn denom(&self) -> Int {
+        *self.0.denom()
+        //Int(mal::Integer::from(self.0.denominator_ref().clone()))
     }
 
     pub fn is_min_two(&self) -> bool {
@@ -258,20 +351,24 @@ impl Rational {
         self == &Self::TWO
     }
     pub fn is_pos(&self) -> bool {
-        matches!(marith::Sign::sign(&self.0), Ordering::Greater)
+        self.numer() > 0
+        //matches!(marith::Sign::sign(&self.0), Ordering::Greater)
     }
     pub fn is_neg(&self) -> bool {
-        matches!(marith::Sign::sign(&self.0), Ordering::Less)
+        self.numer() < 0
+        //matches!(marith::Sign::sign(&self.0), Ordering::Less)
     }
     pub fn is_int(&self) -> bool {
-        mconv::IsInteger::is_integer(&self.0)
+        self.0.is_integer()
+        //mconv::IsInteger::is_integer(&self.0)
     }
     pub fn is_fraction(&self) -> bool {
         !self.is_int()
     }
     pub fn is_even(&self) -> bool {
         if self.is_int() {
-            marith::Parity::even(self.0.numerator_ref())
+            self.numer() % 2 == 0
+            //marith::Parity::even(self.0.numerator_ref())
         } else {
             false
         }
@@ -284,35 +381,35 @@ impl Rational {
     #[inline(always)]
     pub fn inverse(self) -> Option<Self> {
         if self.is_zero() {
+            //None
             None
         } else {
-            let is_neg = self.is_neg();
-            let (num, denom) = self.0.to_numerator_and_denominator();
-            let mut r = mal::Rational::from_naturals(denom, num);
-            // num and denom are unsigned
-            if is_neg {
-                r *= Rational::MINUS_ONE.0;
-            }
-            Some(Self(r))
+            let num = self.numer();
+            let denom = self.denom();
+            Some(Self::from((denom, num)))
         }
     }
 
     pub fn abs(self) -> Self {
-        Self(marith::Abs::abs(self.0))
+        Self(num::traits::abs(self.0))
     }
 
     pub fn floor(self) -> Int {
-        Int(marith::Floor::floor(self.0))
+        *self.0.floor().numer()
     }
 
     pub fn div_rem(&self) -> (Self, Self) {
         let denom = self.denom();
-        let (num, den) = self.0.to_numerator_and_denominator();
-        let (quot, rem) = marith::DivRem::div_rem(num, den);
-        (
-            Self(mal::Rational::from(quot)),
-            (Self(mal::Rational::from(rem)) / Self::from(denom)),
-        )
+        let num = self.numer();
+        //let (num, den) = self.0.to_numerator_and_denominator();
+        let (quot, rem) = num::integer::div_rem(denom, num);
+        //let (quot, rem) = marith::DivRem::div_rem(num, den);
+        (Self::new_int(quot), Self::new(rem, denom))
+
+        //(
+        //    Self(mal::Rational::from(quot)),
+        //    (Self(mal::Rational::from(rem)) / Self::from(denom)),
+        //)
     }
 
     /// will calculate [self] to the power of an integer number.
@@ -343,10 +440,12 @@ impl Rational {
         debug_assert!(rhs.is_pos());
 
         if rhs.is_int() {
-            let exp = rhs.0.numerator_ref();
-            if let Ok(exp) = u64::try_from(exp) {
-                marith::PowAssign::pow_assign(&mut self.0, exp);
-                return (self, Rational::ZERO);
+            let exp = rhs.numer();
+            if let Ok(exp) = usize::try_from(exp) {
+                //marith::PowAssign::pow_assign(&mut self.0, exp);
+                if let Some(pow) = num::checked_pow(self.0, exp) {
+                    return (Self(pow), Rational::ZERO);
+                }
             } else {
                 return (self, rhs);
             }
@@ -354,15 +453,24 @@ impl Rational {
 
         // ensure that the exponent is < 1
         // a^(b/c) -> ( b/c -> quot + rem ) -> a^quot * a^rem  // apply the quotient
-        if rhs.0.numerator_ref() > rhs.0.denominator_ref() {
-            let (num, den) = rhs.0.to_numerator_and_denominator();
-            let (quot, rem) = marith::DivRem::div_rem(num, den);
-            let rem_exp = Self(mal::Rational::from(rem));
-
-            if let Ok(apply_exp) = u64::try_from(&quot) {
-                marith::PowAssign::pow_assign(&mut self.0, apply_exp);
-                return (self, rem_exp);
+        if rhs.numer() > rhs.denom() {
+            //let (num, den) = rhs.0.to_numerator_and_denominator();
+            let numer = rhs.numer();
+            let denom = rhs.denom();
+            let (quot, rem) = num::integer::div_rem(numer, denom); //marith::DivRem::div_rem(num, den);
+                                                                   //let rem_exp = Self(mal::Rational::from(rem));
+            let rem_exp = Self::new_int(rem);
+            if let Ok(apply_exp) = usize::try_from(quot) {
+                if let Some(pow) = num::checked_pow(self.0, apply_exp) {
+                    return (Self(pow), rem_exp);
+                }
             }
+            //self.0.pow(quot)
+
+            //if let Ok(apply_exp) = u64::try_from(&quot) {
+            //    marith::PowAssign::pow_assign(&mut self.0, apply_exp);
+            //    return (self, rem_exp);
+            //}
         }
 
         // no change
@@ -379,6 +487,8 @@ impl Rational {
     }
 
     pub fn int_gcd(&self, rhs: &Self) -> Option<Rational> {
+        use num::Integer;
+
         if self.denom() == rhs.denom() {
             let n_gcd = Rational::from(self.numer().gcd(&rhs.numer()));
             Some(n_gcd / Rational::from(self.denom()))
@@ -388,6 +498,7 @@ impl Rational {
     }
 }
 
+/*
 impl Serialize for Int {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -405,6 +516,8 @@ impl<'de> Deserialize<'de> for Int {
         Ok(Self(mal::Integer::from_str(&s).unwrap()))
     }
 }
+*/
+/*
 impl Serialize for Rational {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -422,18 +535,46 @@ impl<'de> Deserialize<'de> for Rational {
         Ok(Self(mal::Rational::from_str(&s).unwrap()))
     }
 }
+*/
 
-impl<I: Into<i64>> From<(I, I)> for Rational {
-    fn from(value: (I, I)) -> Self {
-        let value = (value.0.into(), value.1.into());
-        let is_neg = (value.0 * value.1) < 0;
-        let n = mal::Integer::from(value.0.unsigned_abs());
-        let d = mal::Integer::from(value.1.unsigned_abs());
-        let mut r = mal::Rational::from_integers(n, d);
+//impl<I: Into<i128>> From<I> for Rational {
+//    fn from(value: I) -> Self {
+//        Self::new_int(value.into())
+//    }
+//}
 
-        if is_neg {
-            r *= Rational::MINUS_ONE.0;
-        }
-        Self(r)
+impl From<i128> for Rational {
+    fn from(value: i128) -> Self {
+        Self::new_int(value.into())
+    }
+}
+impl From<i64> for Rational {
+    fn from(value: i64) -> Self {
+        Self::new_int(value.into())
+    }
+}
+impl From<u64> for Rational {
+    fn from(value: u64) -> Self {
+        Self::new_int(value.into())
+    }
+}
+impl From<i32> for Rational {
+    fn from(value: i32) -> Self {
+        Self::new_int(value.into())
+    }
+}
+impl From<u32> for Rational {
+    fn from(value: u32) -> Self {
+        Self::new_int(value.into())
+    }
+}
+impl From<(i128, i128)> for Rational {
+    fn from(value: (i128, i128)) -> Self {
+        Self::new(value.0, value.1)
+    }
+}
+impl From<(i32, i32)> for Rational {
+    fn from(value: (i32, i32)) -> Self {
+        Self::new(value.0, value.1)
     }
 }

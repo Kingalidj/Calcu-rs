@@ -8,7 +8,7 @@ calcurs_macros = { path = "macros" }
 # bitflags = "2.6.0"
 malachite = "0.4.15"
 fxhash = "0.2.1"
-# ref-cast = "1.0.23"
+ref-cast = "1.0.23"
 log = "0.4.22"
 env_logger = "0.11.5"
 ordered-float = "4.2.2"
@@ -20,10 +20,11 @@ num = { version="0.4.3", features=["serde"] }
 num-bigint = { version="0.4.6", features=["serde"] }
 serde = { version="1.0.214", features=["derive", "rc"] }
 serde_json = "1.0.132"
+num-rational = "0.4.2"
 
 [features]
 #default = ["default_debug"]
-default_debug = []
+#default_debug = []
 
 [lints.clippy]
 upper_case_acronyms = "allow"

@@ -12,6 +12,7 @@ pub struct TransformStep {
     pub(crate) refs: Vec<Expr>,
 }
 
+/*
 impl fmt::Debug for TransformStep {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for prev in &self.refs {
@@ -37,6 +38,7 @@ impl fmt::Debug for TransformStep {
         Ok(())
     }
 }
+*/
 
 //#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Hash, Serialize, Deserialize)]
 //pub struct Step {

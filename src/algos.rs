@@ -2,7 +2,7 @@ use std::{borrow::Borrow, cmp, ops, slice};
 
 use crate::{
     atom::{Atom, Expr, Func, Pow, Prod, Real, Sum, SymbolicExpr},
-    rational::{Int, Rational},
+    rational::{binomial_coeff, Int, Rational},
     utils::HashSet,
 };
 
@@ -39,7 +39,7 @@ impl Sum {
                 }
                 self.args.push(rhs.clone())
             }
-            A::Irrational(_) | A::Func(_) | A::Var(_) | A::Prod(_) | A::Pow(_) => {
+            _ => {
                 if let Some(arg) = self.args.iter_mut().find(|a| {
                     a.non_rational_term()
                         .is_some_and(|t| Some(t) == rhs.non_rational_term())
@@ -50,6 +50,36 @@ impl Sum {
                     self.args.push(rhs.clone())
                 }
             }
+        }
+    }
+
+    fn add_rhs_raw(&mut self, rhs: &Expr) {
+        use Atom as A;
+
+        let rhs = rhs.flatten();
+        if let Atom::Undef = rhs.atom() {
+            self.args.clear();
+            self.args.push(Expr::undef());
+            return;
+        }
+
+        if self.is_undef() || rhs.is_zero() {
+            return;
+        }
+        //match self.first() {
+        //    Some(A::Undef | &A::ZERO) => return,
+        //    Some(_) | None => (),
+        //}
+
+        match rhs.atom() {
+            A::Undef => {
+                self.args.clear();
+                self.args.push(rhs.clone())
+            }
+            A::Sum(sum) => {
+                sum.args.iter().for_each(|a| self.add_rhs_raw(a));
+            }
+            _ => self.args.push(rhs.clone()),
         }
     }
 
@@ -64,7 +94,7 @@ impl Sum {
     fn add_sorted(lhs: &Expr, rhs: &Expr) -> Sum {
         let mut lhs = lhs;
         let mut rhs = rhs;
-        //if lhs > rhs {
+
         if Self::cmp_args(lhs, rhs).is_ge() {
             std::mem::swap(&mut lhs, &mut rhs)
         }
@@ -77,6 +107,10 @@ impl Sum {
     fn flat_merge(lhs: &Expr, mut rhs: Sum) -> Sum {
         let lhs = lhs.flatten();
 
+        if lhs.is_zero() {
+            return rhs;
+        }
+
         match lhs.atom() {
             Atom::Sum(sum) => {
                 let mut sum = sum.clone();
@@ -85,7 +119,6 @@ impl Sum {
                 });
                 sum
             }
-            &Atom::ZERO => rhs,
             _ => {
                 let mut res = vec![lhs.clone()];
                 res.append(&mut rhs.args);
@@ -108,7 +141,8 @@ impl Sum {
     }
 
     fn merge_args(p: &[Expr], q: &[Expr]) -> Sum {
-        let res = if p.is_empty() {
+        // println!("merge_args: {p:?} (+) {q:?}");
+        if p.is_empty() {
             //q.into_iter().cloned().collect()
             Sum { args: q.to_vec() }
         } else if q.is_empty() {
@@ -120,33 +154,40 @@ impl Sum {
             let p_rest = &p[1..];
             let q_rest = &q[1..];
             let h = Sum::reduce_rec(&[p1.clone(), q1.clone()]).args;
+            // println!("merge_args: {p1} (+) {q1} -> {h:?}");
             if h.is_empty() {
                 Sum::merge_args(p_rest, q_rest)
             } else if h.len() == 1 {
                 Sum::flat_merge(&h[0], Sum::merge_args(p_rest, q_rest))
             } else {
                 let rhs = if p1 == &h[0] && q1 == &h[1] {
-                    Sum::merge_args(p_rest, q)
+                    let rhs = Sum::merge_args(p_rest, q);
+                    // println!("  merge_args1: {p_rest:?} (+) {q:?} -> {rhs:?}");
+                    rhs
                 } else if q1 == &h[0] && p1 == &h[1] {
                     //assert!(q1 == &h[0], "{:?} != {:?}", q1, h[0]);
-                    Sum::merge_args(p, q_rest)
+                    let rhs = Sum::merge_args(p, q_rest);
+                    // println!("  merge_args2: {p:?} (+) {q_rest:?} -> {rhs:?}");
+                    rhs
                 } else {
                     panic!("Illegal reduction: {q:?} + {p:?} -> h")
                 };
 
+                // println!("flat_merge: {:?} (+) {:?}", h[0], rhs);
                 Sum::flat_merge(&h[0], rhs)
             }
-        };
-        res
+        }
     }
 
     pub(crate) fn reduce_rec(args: &[Expr]) -> Sum {
+        //println!("reduce_rec: {args:?}");
         let res = if args.len() < 2 {
             //return args.into_iter().cloned().collect();
             Sum {
                 args: args.to_vec(),
             }
         } else if args.len() == 2 {
+            //println!("args: {args:?}");
             let lhs = args[0].flatten();
             let rhs = args[1].flatten();
             if let (Atom::Sum(p1), Atom::Sum(p2)) = (lhs.atom(), rhs.atom()) {
@@ -193,17 +234,15 @@ impl Prod {
             return;
         }
 
-        match self.first() {
-            Some(A::Undef | &A::ZERO) => return,
-            Some(_) | None => (),
+        if self.is_undef() || self.is_zero() || rhs.is_one() {
+            return;
+        } else if rhs.is_undef() || rhs.is_zero() {
+            self.args.clear();
+            self.args.push(rhs.clone());
+            return;
         }
 
         match rhs.atom() {
-            &A::ONE => (),
-            A::Undef | &A::ZERO => {
-                self.args.clear();
-                self.args.push(rhs.clone())
-            }
             A::Prod(prod) => {
                 prod.args.iter().for_each(|a| self.mul_rhs_raw(a));
             }
@@ -220,16 +259,15 @@ impl Prod {
             return;
         }
 
-        if self.first().is_some_and(|a| a.is_zero() || a.is_undef()) {
+        if self.is_undef() || self.is_zero() || rhs.is_one() {
+            return;
+        } else if rhs.is_undef() || rhs.is_zero() {
+            self.args.clear();
+            self.args.push(rhs.clone());
             return;
         }
 
         match rhs.atom() {
-            &A::ONE => (),
-            A::Undef | &A::ZERO => {
-                self.args.clear();
-                self.args.push(rhs.clone())
-            }
             A::Prod(prod) => {
                 prod.args.iter().for_each(|a| self.mul_rhs(a));
             }
@@ -270,7 +308,13 @@ impl Prod {
                     self.args.push(rhs.clone())
                 }
             }
-            A::Irrational(_) | A::Func(_) | A::Var(_) | A::Sum(_) => self.args.push(rhs.clone()),
+            _ => {
+                if let Some(arg) = self.args.iter_mut().find(|a| a.base() == rhs.base()) {
+                    *arg = Expr::pow(arg.base(), arg.exponent() + rhs.exponent())
+                } else {
+                    self.args.push(rhs.clone())
+                }
+            }
         }
     }
 
@@ -369,6 +413,12 @@ impl Prod {
 
     fn flat_merge(lhs: &Expr, mut rhs: Prod) -> Prod {
         let lhs = lhs.flatten();
+        if lhs.is_zero() {
+            rhs.args = vec![Expr::zero()];
+            return rhs;
+        } else if lhs.is_one() {
+            return rhs;
+        }
         match lhs.atom() {
             Atom::Prod(prod) => {
                 let mut prod = prod.clone();
@@ -376,11 +426,6 @@ impl Prod {
                     prod.mul_rhs(&a);
                 });
                 prod
-            }
-            &Atom::ONE => rhs,
-            &Atom::ZERO => {
-                rhs.args = vec![Expr::zero()];
-                rhs
             }
             _ => {
                 let mut res = vec![lhs.clone()];
@@ -405,6 +450,7 @@ impl Prod {
     }
 
     fn merge_args(p: &[Expr], q: &[Expr]) -> Prod {
+        //println!("merge_args: {p:?} (*) {q:?}");
         if p.is_empty() {
             Prod { args: q.to_vec() }
         } else if q.is_empty() {
@@ -415,6 +461,7 @@ impl Prod {
             let p_rest = &p[1..];
             let q_rest = &q[1..];
             let h = Prod::reduce_rec(&[p1.clone(), q1.clone()]).args;
+            //println!("merge_args: {p1} (*) {p_rest:?} (*) {q1} (*) {q_rest:?} -> {h:?}");
             if h.is_empty() {
                 Prod::merge_args(p_rest, q_rest)
             } else if h.len() == 1 {
@@ -436,12 +483,14 @@ impl Prod {
     }
 
     pub(crate) fn reduce_rec(args: &[Expr]) -> Prod {
+        //println!("reduce_rec: {args:?}");
         if args.len() < 2 {
             //return args.into_iter().cloned().collect();
             Prod {
                 args: args.to_vec(),
             }
         } else if args.len() == 2 {
+            //println!("args: {args:?}");
             let lhs = args[0].flatten();
             let rhs = args[1].flatten();
             if let (Atom::Prod(p1), Atom::Prod(p2)) = (lhs.atom(), rhs.atom()) {
@@ -454,11 +503,11 @@ impl Prod {
                 let res = Prod::mul_sorted(lhs, rhs);
 
                 // numbers if present always at the lhs
-                assert!(
-                    (res.n_args() < 2
-                        || (res.args[0].is_number()
-                            || res.args[1].is_number() && res.args[0].is_number())),
-                );
+                //assert!(
+                //    (res.n_args() < 2
+                //        || (res.args[0].is_number()
+                //            || res.args[1].is_number() && res.args[0].is_number())),
+                //);
 
                 res
             } else if lhs.base() == rhs.base() {
@@ -547,8 +596,8 @@ impl Pow {
         //let b = A::Sum(Sum { args }).into();
 
         let mut res = Sum::zero();
-        for k in Int::range_inclusive(Int::ZERO, e.clone()) {
-            let rhs = if k == Int::ZERO {
+        for k in 0..=e {
+            let rhs = if k == 0 {
                 // 1 * a^exp
                 expand_pow(&a, &exp)
             } else if k == e {
@@ -556,7 +605,7 @@ impl Pow {
                 expand_pow(&b, &Expr::from(k.clone()))
             } else {
                 // a^k + b^(exp-k)
-                let c = Int::binomial_coeff(&e, &k);
+                let c = binomial_coeff(e, k);
                 let k_e = Expr::from(k.clone());
 
                 expand_mul(
@@ -583,12 +632,17 @@ impl Expr {
     pub fn add(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {
         use Atom as A;
         let (lhs, rhs): (&Expr, &Expr) = (lhs.borrow().flatten(), rhs.borrow().flatten());
+
+        if lhs.is_undef() || rhs.is_undef() {
+            return A::Undef.into();
+        } else if lhs.is_zero() {
+            return rhs.clone();
+        } else if rhs.is_zero() {
+            return lhs.clone();
+        }
+
         match (lhs.atom(), rhs.atom()) {
-            (A::Undef, _) => A::Undef.into(),
-            (_, A::Undef) => A::Undef.into(),
-            (&A::ZERO, _) => rhs.clone(),
-            (_, &A::ZERO) => lhs.clone(),
-            (A::Rational(r1), A::Rational(r2)) => A::Rational(r1.clone() + r2).into(),
+            (A::Rational(r1), A::Rational(r2)) => A::Rational(*r1 + r2).into(),
             (_, _) => {
                 let mut sum = Sum::zero();
                 sum.add_rhs(lhs);
@@ -596,13 +650,12 @@ impl Expr {
                 A::Sum(sum).into()
             }
         }
-        .explain("add", &[lhs, rhs])
     }
     pub fn sub(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {
         let (lhs, rhs) = (lhs.borrow(), rhs.borrow());
         let min_one = Expr::from(-1);
         let min_rhs = Expr::mul(min_one, rhs);
-        Expr::add(lhs, min_rhs).explain("sub", &[lhs, rhs])
+        Expr::add(lhs, min_rhs)
     }
     pub fn mul(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {
         use Atom as A;
@@ -628,7 +681,6 @@ impl Expr {
             prod.mul_rhs(rhs);
             A::Prod(prod).into()
         }
-        .explain("mul", &[lhs, rhs])
 
         /*
         match (lhs.atom(), rhs.atom()) {
@@ -660,7 +712,6 @@ impl Expr {
             let inv_rhs = Expr::pow(rhs, &min_one);
             Expr::mul(lhs, &inv_rhs)
         }
-        .explain("div", &[lhs, rhs])
 
         /*
         match (lhs.atom(), rhs.atom()) {
@@ -675,6 +726,15 @@ impl Expr {
             }
         }.explain("div", &[lhs, rhs])
         */
+    }
+
+    pub fn add_raw(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {
+        let (lhs, rhs) = (lhs.borrow(), rhs.borrow());
+
+        let mut prod = Sum::zero();
+        prod.add_rhs_raw(lhs);
+        prod.add_rhs_raw(rhs);
+        Atom::Sum(prod).into()
     }
 
     pub fn mul_raw(lhs: impl Borrow<Expr>, rhs: impl Borrow<Expr>) -> Expr {
@@ -699,13 +759,25 @@ impl Expr {
 
     pub fn pow(base: impl Borrow<Expr>, exponent: impl Borrow<Expr>) -> Expr {
         use Atom as A;
+
         let (base, exponent) = (base.borrow(), exponent.borrow());
+
+        if base.is_undef()
+            || exponent.is_undef()
+            || (base.is_zero() && exponent.is_zero())
+            || (base.is_zero() && exponent.is_neg())
+        {
+            return Expr::undef();
+        }
+
+        if base.is_one() {
+            return Expr::one();
+        } else if exponent.is_one() {
+            return base.clone();
+        } else if exponent.is_zero() {
+            return Expr::one();
+        }
         match (base.atom(), exponent.atom()) {
-            (A::Undef, _) | (_, A::Undef) | (&A::ZERO, &A::ZERO) => Expr::undef(),
-            (&A::ZERO, A::Rational(r)) if r.is_neg() => Expr::undef(),
-            (&A::ONE, _) => Expr::one(),
-            (_, &A::ONE) => base.clone(),
-            (_, &A::ZERO) => Expr::one(),
             (A::Rational(b), A::Rational(e)) if b.is_int() && e.is_int() => {
                 let (pow, rem) = b.clone().pow(e.clone());
                 assert!(rem.is_zero());
@@ -726,7 +798,6 @@ impl Expr {
             //}
             _ => Expr::pow_raw(base, exponent),
         }
-        .explain("pow", &[base, exponent])
     }
 
     pub fn derivative<T: Borrow<Self>>(&self, x: T) -> Self {
@@ -798,12 +869,12 @@ impl CostFn for ExprCost {
 impl Expr {
     pub fn simplify(&self) -> Vec<Self> {
         let operations: Vec<(fn(&Expr) -> Expr, &'static str)> = vec![
-            (Self::reduce, "reduce"),
             (Self::expand, "expand"),
             //(Self::expand_main_op, "expand_main_op"),
             (Self::expand_exponential, "expand_exponential"),
             (Self::expand_trig, "expand_trig"),
             (Self::expand_ln, "expand_ln"),
+            (Self::contract_trig, "contract_trig"),
             //(Self::distribute, "distribute"),
             (Self::rationalize, "rationalize"),
             (Self::factor_out, "factor_out"),
@@ -820,8 +891,8 @@ impl Expr {
         let mut steps = 0;
         while let Some(expr) = todo.pop() {
             for (op, name) in &operations {
-                let e = op(&expr);
-                println!("{name}: {expr} -> {e}");
+                let e = op(&expr).reduce();
+                //println!("{name}: {expr} -> {e}");
 
                 if !eclass.contains(&e) {
                     todo.push(e.clone());
@@ -850,7 +921,6 @@ impl Expr {
             A::Pow(pow) => pow.expand(),
             _ => expanded.clone(),
         }
-        .explain("expand", &[self])
     }
 
     pub fn expand_main_op(&self) -> Self {
@@ -890,7 +960,6 @@ impl Expr {
         let n = e.numerator().expand_trig().contract_trig();
         let d = e.denominator().expand_trig().contract_trig();
         (n / d).reduce()
-            
     }
 
     pub fn substitute_trig(&self) -> Self {
@@ -898,7 +967,7 @@ impl Expr {
         use Func as F;
 
         if self.is_atom() {
-            return self.clone()
+            return self.clone();
         }
 
         let e = self.clone().map_args(|a| *a = a.substitute_trig());
@@ -908,7 +977,7 @@ impl Expr {
             A::Func(F::Cot(x)) => Expr::cos(x) / Expr::sin(x),
             A::Func(F::Sec(x)) => Expr::one() / Expr::cos(x),
             A::Func(F::Csc(x)) => Expr::one() / Expr::sin(x),
-            _ => e
+            _ => e,
         }
     }
 
@@ -936,7 +1005,7 @@ impl Expr {
 
         let e = self.clone().map_args(|a| *a = a.contract_trig());
         if e.is_prod() || e.is_pow() {
-            contract_trig_arg(&e)
+            contract_trig_arg(&e).reduce()
         } else {
             e
         }
@@ -978,7 +1047,6 @@ impl Expr {
             A::Pow(pow) => Expr::pow(pow.base().rationalize(), pow.exponent()),
             _ => self.clone(),
         }
-        .explain("rationalize", &[self])
     }
 
     /// a/b + c/d -> (ad + cb) / (bd)
@@ -993,10 +1061,6 @@ impl Expr {
         } else {
             Self::rationalize_add(&(&a * &d), &(&c * &b)) / bd
         }
-        .explain(
-            format!("rationalize add: [{a}]/[{b}] + [{c}]/[{d}]"),
-            &[lhs, rhs],
-        )
     }
 
     /// divide lhs and rhs by their common factor and
@@ -1016,17 +1080,15 @@ impl Expr {
             //    println!("{}, {}", lhs, rhs);
             //    return (lhs.clone(), (Expr::one(), Expr::one()))
             //}
-            (A::Rational(r1), A::Rational(r2)) => {
-                match r1.int_gcd(r2) {
-                    Some(gcd) => {
-                        let rgcd = Rational::from(gcd);
-                        let l = r1.clone() / &rgcd;
-                        let r = r2.clone() / &rgcd;
-                        (rgcd.into(), (l.into(), r.into()))
-                    },
-                    None => (Expr::one(), (lhs.clone(), rhs.clone())),
+            (A::Rational(r1), A::Rational(r2)) => match r1.int_gcd(r2) {
+                Some(gcd) => {
+                    let rgcd = Rational::from(gcd);
+                    let l = r1.clone() / &rgcd;
+                    let r = r2.clone() / &rgcd;
+                    (rgcd.into(), (l.into(), r.into()))
                 }
-            }
+                None => (Expr::one(), (lhs.clone(), rhs.clone())),
+            },
             //(A::Rational(r1), A::Rational(r2)) if r1.is_int() && r2.is_int() => {
             //    let (i1, i2) = (r1.to_int().unwrap(), r2.to_int().unwrap());
             //    let gcd = i1.gcd(&i2);
@@ -1153,7 +1215,6 @@ impl Expr {
             }
             _ => self.clone(),
         }
-        .explain("factor out", &[self])
     }
 
     pub fn separate_factors(&self, x: &Self) -> (Expr, Expr) {
@@ -1187,7 +1248,7 @@ impl Expr {
         let d = self.denominator();
         let numer = n.factor_out();
         let denom = d.factor_out();
-        (numer / denom).reduce().explain("cancel", &[self, &n, &d])
+        (numer / denom).reduce()
     }
 
     pub fn substitude(&self, from: &Expr, to: &Expr) -> Self {
@@ -1310,21 +1371,21 @@ enum TrigTyp {
 /// expands the expression sin(n*phi) to
 ///
 /// sin(n*phi) = sum(j=1 && odd(j); n) { (-1)^((j-1)/2) * binom(n,j) * cos(phi)^(n-j) * sin(phi)^j  }
-fn expand_sin_n_times_phi(n: Int, phi: &Expr) -> Expr {
+fn expand_sin_n_times_phi(n: i128, phi: &Expr) -> Expr {
     _expand_sin_cos_n_times_phi(n, phi, TrigTyp::Sin)
 }
 
 /// expands the expression cos(n*phi) to
 ///
 /// cos(n*phi) = sum(j=0 && even(j); n) { (-1)^(j/2) * binom(n,j) * cos(phi)^(n-j) * sin(phi)^j  }
-fn expand_cos_n_times_phi(n: Int, phi: &Expr) -> Expr {
+fn expand_cos_n_times_phi(n: i128, phi: &Expr) -> Expr {
     _expand_sin_cos_n_times_phi(n, phi, TrigTyp::Cos)
 }
 
 /// expands the expression sin(n*phi) or cos(n*phi)
 ///
 /// helper functions for [expand_sin_n_times_phi] and [expand_cos_n_times_phi]
-fn _expand_sin_cos_n_times_phi(n: Int, phi: &Expr, typ: TrigTyp) -> Expr {
+fn _expand_sin_cos_n_times_phi(n: i128, phi: &Expr, typ: TrigTyp) -> Expr {
     let mut min_one = false;
 
     // TODO expand here?
@@ -1333,8 +1394,8 @@ fn _expand_sin_cos_n_times_phi(n: Int, phi: &Expr, typ: TrigTyp) -> Expr {
     let mut sum = Sum::zero();
     let ne = Expr::from(n.clone());
 
-    for i in Int::range_inclusive(Int::ZERO, n.clone()) {
-        if typ == TrigTyp::Cos && i.is_odd() || typ == TrigTyp::Sin && i.is_even() {
+    for i in 0..=n {
+        if typ == TrigTyp::Cos && (i % 2 != 0) || typ == TrigTyp::Sin && (i % 2 == 0) {
             continue;
         }
 
@@ -1345,7 +1406,7 @@ fn _expand_sin_cos_n_times_phi(n: Int, phi: &Expr, typ: TrigTyp) -> Expr {
             true => Expr::one(),
         };
 
-        let rhs = if i == Int::ZERO {
+        let rhs = if i == 0 {
             // 1 * cos(phi)^n
             Expr::pow(&cos, &ne)
         } else if i == n {
@@ -1353,8 +1414,8 @@ fn _expand_sin_cos_n_times_phi(n: Int, phi: &Expr, typ: TrigTyp) -> Expr {
             Expr::pow(&sin, &ne)
         } else {
             // binom(n, i) * sin(phi)^i * cos(phi)^(n-i)
-            let b = Expr::from(Int::binomial_coeff(&n, &i));
-            b * Expr::pow(&cos, Expr::from(n.clone() - &i)) * Expr::pow(&sin, Expr::from(i))
+            let b = Expr::from(binomial_coeff(n, i));
+            b * Expr::pow(&cos, Expr::from(n - &i)) * Expr::pow(&sin, Expr::from(i))
         };
 
         sum.add_rhs(&(sign * rhs));
@@ -1380,10 +1441,10 @@ fn expand_trig_arg(a: &Expr) -> (Expr, Expr) {
             let prod = prod.as_binary_mul();
             if let Some(n) = prod.0.try_unwrap_int() {
                 let n_abs = n.abs();
-                let mut s = expand_sin_n_times_phi(n_abs.clone(), &prod.1);
-                let c = expand_cos_n_times_phi(n_abs.clone(), &prod.1);
+                let mut s = expand_sin_n_times_phi(n_abs, &prod.1);
+                let c = expand_cos_n_times_phi(n_abs, &prod.1);
 
-                if n.is_neg() {
+                if n < 0 {
                     s = Expr::min_one() * s;
                 }
                 return (s, c);
@@ -1416,128 +1477,130 @@ fn contract_trig_arg(e: &Expr) -> Expr {
             }
         }
 
-        Atom::Sum(s) => {
-            s.iter_args().fold(Expr::one(), |lhs, rhs| {
-                if rhs.is_prod() || rhs.is_pow() {
-                    lhs + contract_trig_arg(rhs)
-                } else {
-                    lhs + rhs
-                }
-            })
-        }
+        Atom::Sum(s) => s.iter_args().fold(Expr::one(), |lhs, rhs| {
+            if rhs.is_prod() || rhs.is_pow() {
+                lhs + contract_trig_arg(rhs)
+            } else {
+                lhs + rhs
+            }
+        }),
         _ => e.clone(),
     }
 }
 
 fn contract_trig_pow(p: &Expr) -> Expr {
+    use num::Integer;
+
     if !p.is_pow() {
-        return p.clone()
+        return p.clone();
     }
 
     let f = p.base();
     let n = p.exponent();
 
     if !(n.is_int() && n.is_pos()) && !(f.is_sin() || f.is_cos()) {
-        return p.clone()
+        return p.clone();
     }
-
 
     let func = || {
         let en = n;
         let n = en.unwrap_rational_ref().to_int().unwrap();
-        let n_min_one = n.clone() - Int::ONE;
+        let n_min_one = n - 1;
         let f = f.unwrap_func_ref();
 
-        let half_n = n.clone()/Int::TWO;
+        let half_n = n / 2;
 
-        let binom = |l: &Int, r: &Int| Expr::from(Int::binomial_coeff(&l, &r));
-        let min_one_pow = |n: &Int| match n.is_even() {
+        let binom = |l: i128, r: i128| Expr::from(binomial_coeff(l, r));
+        let min_one_pow = |n: &i128| match n % 2 == 0 {
             true => Expr::one(),
             false => Expr::min_one(),
         };
 
         match f {
             Func::Sin(x) => {
-            if n.is_even() {
-                let a = Rational::from(Int::binomial_coeff(&n, &half_n)) / Rational::from(Int::TWO.pow(&n)?);
-                let mut b = match half_n.is_even() {
-                    true => Rational::ONE,
-                    false => Rational::MINUS_ONE,
-                };
-                b /= Rational::from(Int::TWO.pow(&n_min_one)?);
+                if n % 2 == 0 {
+                    let a = Rational::from(binomial_coeff(n, half_n))
+                        / Rational::from(2i128.checked_pow(n.try_into().ok()?)?);
+                    let mut b = match half_n.is_even() {
+                        true => Rational::ONE,
+                        false => Rational::MINUS_ONE,
+                    };
+                    b /= Rational::from(2i128.checked_pow(n_min_one.try_into().ok()?)?);
 
-                let mut sum = Expr::zero();
-                for j in Int::range_inclusive(Int::ZERO, half_n - Int::ONE) {
-                    let mut term = min_one_pow(&j);
-                    term *= binom(&n, &j);
-                    term *= Expr::cos((&en - Expr::from(Int::TWO * j)) * x);
-                    sum += term;
-                }
+                    let mut sum = Expr::zero();
+                    for j in 0..=half_n - 1 {
+                        let mut term = min_one_pow(&j);
+                        term *= binom(n, j);
+                        term *= Expr::cos((&en - Expr::from(2 * j)) * x);
+                        sum += term;
+                    }
 
-                Some(Expr::from(a) + Expr::from(b) * sum)
-            } else {
-                let mut b = match (n_min_one.clone() / Int::TWO).is_even() {
-                    true => Rational::ONE,
-                    false => Rational::MINUS_ONE,
-                };
-                b /= Rational::from(Int::TWO.pow(&n_min_one)?);
-                let mut sum = Expr::zero();
-                for j in Int::range_inclusive(Int::ZERO, half_n) {
-                    let mut term = min_one_pow(&j);
-                    term *= binom(&n, &j);
-                    term *= Expr::sin((&en - Expr::from(Int::TWO * j)) * x);
-                    sum += term;
+                    Some(Expr::from(a) + Expr::from(b) * sum)
+                } else {
+                    let mut b = match (n_min_one.clone() / 2).is_even() {
+                        true => Rational::ONE,
+                        false => Rational::MINUS_ONE,
+                    };
+                    b /= Rational::from(2i128.checked_pow(n_min_one.try_into().ok()?)?);
+                    let mut sum = Expr::zero();
+                    for j in 0..=half_n {
+                        let mut term = min_one_pow(&j);
+                        term *= binom(n, j);
+                        term *= Expr::sin((&en - Expr::from(2 * j)) * x);
+                        sum += term;
+                    }
+                    Some(Expr::from(b) * sum)
                 }
-                Some(Expr::from(b) * sum)
             }
-        },
-        Func::Cos(x) => {
-            if n.is_even() {
-                let mut a = Rational::from(Int::binomial_coeff(&n, &half_n));
-                a /= Rational::from(Int::TWO.pow(&n)?);
+            Func::Cos(x) => {
+                if n.is_even() {
+                    let mut a = Rational::from(binomial_coeff(n, half_n));
+                    a /= Rational::from(2i128.checked_pow(n.try_into().ok()?)?);
 
-                let b = Rational::ONE / Rational::from(Int::TWO.pow(&n_min_one)?);
+                    let b = Rational::ONE
+                        / Rational::from(2i128.checked_pow(n_min_one.try_into().ok()?)?);
 
-                let mut sum = Expr::zero();
-                for j in Int::range_inclusive(Int::ZERO, half_n - Int::ONE) {
-                    let mut term = binom(&n, &j);
-                    term *= Expr::cos((&en - Expr::from(Int::TWO * j)) * x);
-                    sum += term
+                    let mut sum = Expr::zero();
+                    for j in 0..=half_n - 1 {
+                        let mut term = binom(n, j);
+                        term *= Expr::cos((&en - Expr::from(2 * j)) * x);
+                        sum += term
+                    }
+                    Some(Expr::from(a) + Expr::from(b) * sum)
+                } else {
+                    let b = Rational::ONE
+                        / Rational::from(2i128.checked_pow(n_min_one.try_into().ok()?)?);
+                    let mut sum = Expr::zero();
+                    for j in 0..=half_n {
+                        let mut term = binom(n, j);
+                        term *= Expr::cos((&en - Expr::from(2 * j)) * x);
+                        sum += term
+                    }
+                    Some(Expr::from(b) * sum)
                 }
-                Some(Expr::from(a) + Expr::from(b) * sum)
-            } else {
-                let b = Int::ONE / Int::TWO.pow(&n_min_one)?;
-                let mut sum = Expr::zero();
-                for j in Int::range_inclusive(Int::ZERO, half_n) {
-                    let mut term = binom(&n, &j);
-                    term *= Expr::cos((&en - Expr::from(Int::TWO * j)) * x);
-                    sum += term
-                }
-                Some(Expr::from(b) * sum)
             }
-        },
-        _ => unreachable!(),
-    }};
+            _ => unreachable!(),
+        }
+    };
     func().unwrap_or(p.clone())
 }
 fn contract_trig_prod(p: &[Expr]) -> Expr {
     if p.is_empty() {
-        return Expr::one()
+        return Expr::one();
     } else if p.len() == 1 {
-        return contract_trig_arg(&p[0])
-    } if p.len() == 2 {
+        return contract_trig_arg(&p[0]);
+    }
+    if p.len() == 2 {
         let a = &p[0];
         let b = &p[1];
 
         if let Atom::Pow(_) = a.atom() {
             let a = contract_trig_pow(a);
-            return contract_trig_arg(&(a * b))
-        }
-        else if let Atom::Pow(_) = b.atom() {
+            return contract_trig_arg(&(a * b));
+        } else if let Atom::Pow(_) = b.atom() {
             let b = contract_trig_pow(b);
-            return contract_trig_arg(&(a * b))
-        }
-        else {
+            return contract_trig_arg(&(a * b));
+        } else {
             assert!(a.is_sin() || a.is_cos());
             assert!(b.is_sin() || b.is_cos());
 
@@ -1549,16 +1612,13 @@ fn contract_trig_prod(p: &[Expr]) -> Expr {
             let sin = |e: Expr| Expr::sin(e);
 
             if a.is_sin() && b.is_sin() {
-                return cos(theta - phi)/&two - cos(theta + phi)/&two
-            }
-            else if a.is_cos() && b.is_cos() {
-                return cos(theta + phi)/&two + cos(theta - phi)/&two
-            }
-            else if a.is_sin() && b.is_cos() {
-                return sin(theta + phi)/&two + sin(theta - phi)/&two
-            }
-            else if a.is_cos() && b.is_sin() {
-                return sin(theta + phi)/&two + sin(phi - theta)/&two
+                return cos(theta - phi) / &two - cos(theta + phi) / &two;
+            } else if a.is_cos() && b.is_cos() {
+                return cos(theta + phi) / &two + cos(theta - phi) / &two;
+            } else if a.is_sin() && b.is_cos() {
+                return sin(theta + phi) / &two + sin(theta - phi) / &two;
+            } else if a.is_cos() && b.is_sin() {
+                return sin(theta + phi) / &two + sin(phi - theta) / &two;
             } else {
                 unreachable!()
             }
@@ -1566,7 +1626,7 @@ fn contract_trig_prod(p: &[Expr]) -> Expr {
     } else {
         let a = &p[0];
         let b = contract_trig_prod(&p[1..]);
-        return contract_trig_arg(&(a * b))
+        return contract_trig_arg(&(a * b));
     }
 }
 
@@ -1696,7 +1756,7 @@ mod test {
     fn expand() {
         eq!(
             e!(x * (2 + (1 + x) ^ 2)).expand_main_op().sort_args(),
-            e!(x * 2 + x * (1 + x) ^ 2).sort_args()
+            e!(2*x + (x+1)^2 * x)
         );
         eq!(
             e!((x + (1 + x) ^ 2) ^ 2).expand_main_op().sort_args(),
@@ -1713,7 +1773,7 @@ mod test {
         );
         eq!(
             e!((x + 1) ^ 2 + (y + 1) ^ 2).expand().reduce(),
-            e!(2 + 2 * x + 2 * y + x ^ 2 + y ^ 2).sort_args(),
+            e!(y^2 + 2*y + x^2 + 2*x + 2),
         );
         eq!(
             e!(((x + 2) ^ 2 + 3) ^ 2).expand().reduce(),
@@ -1761,26 +1821,26 @@ mod test {
     #[test]
     fn factor_out() {
         eq!(
-            e!((x ^ 2 + x*y)^3).factor_out().expand_main_op(),
-            e!(x ^ 3 * (x + y)^3)
+            e!((x ^ 2 + x * y) ^ 3).factor_out().expand_main_op(),
+            e!(x ^ 3 * (x + y) ^ 3)
         );
-        eq!(e!(a * (b + b*x)).factor_out(), e!(a * b * (1 + x)));
+        eq!(e!(a * (b + b * x)).factor_out(), e!(a * b * (1 + x)));
         eq!(
-            e!(2^(1/2) + 2).factor_out(),
-            e!(2^(1/2) * (1 + 2^(1/2)))
+            e!(2 ^ (1 / 2) + 2).factor_out(),
+            e!(2 ^ (1 / 2) * (1 + 2 ^ (1 / 2)))
         );
         eq!(
-            e!(a*b*x + a*c*x + b*c*x).factor_out(),
-            e!(x * (a*b + c*(a + b))),
+            e!(a * b * x + a * c * x + b * c * x).factor_out(),
+            e!(x * (a * b + c * (a + b))),
         );
-        eq!(e!(a/x + b/x), e!(a/x + b/x))
+        eq!(e!(a / x + b / x), e!(a / x + b / x))
     }
 
     #[test]
     fn separate_factors() {
         eq!(
-            e!(c * x * sin(x)/2).separate_factors(&e!(x)),
-            (e!(c/2), e!(x * sin(x)))
+            e!(c * x * sin(x) / 2).separate_factors(&e!(x)),
+            (e!(c / 2), e!(x * sin(x)))
         );
     }
 
@@ -1853,7 +1913,7 @@ mod test {
             .reduce()
         );
         eq!(
-            e!(sin((x + y)^2)).expand_trig(),
+            e!(sin((x + y) ^ 2)).expand_trig(),
             e!(sin(x ^ 2)
                 * ((cos(x * y) ^ 2 - sin(x * y) ^ 2) * cos(y ^ 2)
                     - 2 * cos(x * y) * sin(x * y) * sin(y ^ 2))

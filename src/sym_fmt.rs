@@ -34,7 +34,7 @@ impl From<&Atom> for FmtAtom {
             Atom::Rational(r) => {
                 if r.is_neg() {
                     FmtAtom::UnrySub(FmtAtom::Rational(r.clone().abs()).into())
-                } else if r.is_fraction() && r.numer().is_one() {
+                } else if r.is_fraction() && r.numer() == 1 {
                     let n = Atom::from(r.numer());
                     let d = Atom::from(r.denom());
                     FmtAtom::Fraction(Self::from(&n).into(), Self::from(&d).into())
@@ -78,7 +78,7 @@ impl ops::Add for FmtAtom {
     fn add(self, rhs: Self) -> Self::Output {
         use FmtAtom as F;
         match (self, rhs) {
-            (F::ZERO, e) | (e, F::ZERO) => e,
+            (zero, e) | (e, zero) if zero == F::ZERO => e,
             (lhs, F::Sum(mut s)) => {
                 s.push_front(lhs);
                 F::Sum(s)
@@ -106,7 +106,7 @@ impl ops::Mul for FmtAtom {
     fn mul(self, rhs: Self) -> Self::Output {
         use FmtAtom as F;
         match (self, rhs) {
-            (F::Rational(Rational::ONE), e) | (e, F::Rational(Rational::ONE)) => e,
+            (F::Rational(one), e) | (e, F::Rational(one)) if one == Rational::ONE => e,
             (F::UnrySub(lhs), F::UnrySub(rhs)) => *lhs * *rhs,
             (F::UnrySub(lhs), rhs) => F::UnrySub((*lhs * rhs).into()),
             (lhs, F::UnrySub(rhs)) => F::UnrySub((lhs * *rhs).into()),
@@ -176,7 +176,7 @@ pub trait SymbolicFormatter {
                     Self::space(f)?;
                     Self::symbl_sub(f)?;
                     Self::space(f)?;
-                    Self::fmt_w_prec(sum_prec(), e, f)?;
+                    Self::fmt_w_prec(prod_prec(), e, f)?;
                 }
                 _ => {
                     Self::space(f)?;
@@ -260,7 +260,7 @@ pub trait SymbolicFormatter {
     #[inline(always)]
     fn unry_sub(x: &FmtAtom, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Self::symbl_sub(f)?;
-        Self::atom(x, f)
+        Self::fmt_w_prec(prod_prec(), x, f)
     }
 
     fn func_args(args: &[FmtAtom], f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -381,7 +381,8 @@ impl SymbolicFormatter for UnicodeFmt {
 
     #[inline]
     fn unry_sub(x: &FmtAtom, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}{x}", unicode::unry_sub())
+        write!(f, "{}", unicode::unry_sub())?;
+        Self::fmt_w_prec(prod_prec(), x, f)
     }
 }
 

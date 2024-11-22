@@ -73,7 +73,7 @@ impl VarPow {
         self.var_deg
             .iter()
             .map(|(_, d)| d)
-            .fold(Int::ZERO, |sum, d| sum + d)
+            .fold(0, |sum, d| sum + d)
     }
 
     fn find(&self, v: &GVar) -> Option<&Degree> {
@@ -213,7 +213,7 @@ impl<'a> MonomialView<'a> {
         }
         if self.vars.has(self.monom) {
             let v = self.monom;
-            return Some((Expr::one(), [(v.clone(), Int::ONE)].into()));
+            return Some((Expr::one(), [(v.clone(), 1)].into()));
         }
 
         match self.monom.atom() {
@@ -232,7 +232,7 @@ impl<'a> MonomialView<'a> {
                     // TODO: negative exponent?
                     A::Rational(r) if r.is_int() && r >= &Rational::ONE => {
                         let (c, mut d) = pow.base().as_monomial_view(self.vars).coeff()?;
-                        d.pow(&r.to_int().unwrap());
+                        d.pow(&r.to_int().unwrap().into());
                         return Some((Expr::pow(c, pow.exponent()), d));
                         //if self.vars.has(pow.base()) {
                         //    let v = pow.base();
@@ -311,7 +311,7 @@ impl<'a> PolynomialView<'a> {
             if let Some(d) = d.degree_of(v) {
                 Some((d.clone(), c))
             } else if d.is_const() {
-                Some((Int::ZERO, c))
+                Some((0, c))
             } else {
                 None
             }
@@ -336,7 +336,7 @@ impl<'a> PolynomialView<'a> {
         if let A::Sum(Sum { args }) = self.poly.atom() {
             if self.vars.has(self.poly) {
                 let v = self.poly;
-                coeffs.insert([(v.clone(), Int::ZERO)].into(), Expr::one());
+                coeffs.insert([(v.clone(), 0)].into(), Expr::one());
                 return coeffs;
             }
 
@@ -572,11 +572,8 @@ mod polynomial_uv {
         let poly = u.as_polynomial_view(&vars);
         assert!(poly.check());
         assert_eq!(poly.degree(), Some(2.into()));
-        assert_eq!(poly.coeffs_of_deg(&e!(x ^ 2 + 1), &Int::ONE), None);
-        assert_eq!(
-            poly.coeffs_of_deg(&e!(x ^ 2 + 1), &Int::ZERO),
-            Some(e!(x ^ 2 + 1))
-        );
+        assert_eq!(poly.coeffs_of_deg(&e!(x ^ 2 + 1), &1), None);
+        assert_eq!(poly.coeffs_of_deg(&e!(x ^ 2 + 1), &0), Some(e!(x ^ 2 + 1)));
     }
 
     #[test]

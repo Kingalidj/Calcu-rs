@@ -593,7 +593,10 @@ impl WolframContext {
 
     fn func_defs(&self) -> Vec<(String, Vec<FuncDef>)> {
         //self.func_defs.keys().cloned().collect()
-        self.func_defs.iter().map(|(a, b)| (a.clone(), b.iter().cloned().collect())).collect()
+        self.func_defs
+            .iter()
+            .map(|(a, b)| (a.clone(), b.iter().cloned().collect()))
+            .collect()
     }
 
     fn func_call(&mut self, fc: &FuncCall) {
